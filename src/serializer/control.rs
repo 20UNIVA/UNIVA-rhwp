@@ -1501,8 +1501,19 @@ fn serialize_text_box_if_present(drawing: &DrawingObjAttr, level: u16, records: 
         w.write_i16(text_box.margin_bottom).unwrap();
         w.write_u32(text_box.max_width).unwrap();
         // 원본 추가 바이트 복원 (라운드트립 보존)
+        // [Task #1058] hwplib::ForTextBox::listHeader 정합 — TextBox LIST_HEADER 의
+        // 마지막 13 byte 필드 contract:
+        //   sw.writeZero(8);                 // 8 byte zero padding
+        //   sw.writeSInt4(editableAtFormMode); // 4 byte (0 = false)
+        //   sw.writeUInt1(fieldNameFlag);     // 1 byte (0 = no fieldName)
+        // 한컴은 이 contract 가 누락되면 글상자 안 paragraph 를 본문 list 로 인식하여
+        // 신규 paragraph (각주) 추가 시 다단계 목록 번호 "1.1.1.1.1.1" 자동 부여.
+        // HWP 출처 IR 은 raw_list_header_extra 에 보존 → HWPX 출처 (raw 부재) 는 default 적용.
         if !text_box.raw_list_header_extra.is_empty() {
             w.write_bytes(&text_box.raw_list_header_extra).unwrap();
+        } else {
+            // HWPX 출처: 한컴 default 13 byte (zero 8 + editable 0 + fieldName flag 0)
+            w.write_bytes(&[0u8; 13]).unwrap();
         }
         records.push(Record {
             tag_id: tags::HWPTAG_LIST_HEADER,
