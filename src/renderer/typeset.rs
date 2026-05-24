@@ -577,7 +577,13 @@ impl TypesetEngine {
             //   - aux_trigger 제거 (empty bridge 휴리스틱은 false positive)
             // 결과: sample16-hwp5 페이지 수 64 유지 + alignment 24/64 → 60/64.
             let mut variant_vpos_reset_break = false;
-            if is_hwp3_variant && body_height_hu_for_variant > 0 {
+            if is_hwp3_variant && body_height_hu_for_variant > 0 && !para.text.is_empty() {
+                let para_sb = styles
+                    .para_styles
+                    .get(para.para_shape_id as usize)
+                    .map(|ps| ps.spacing_before)
+                    .unwrap_or(0.0);
+                let para_sb_hu = (para_sb * 7200.0 / 96.0) as i32;
                 let is_synth = |ls: &crate::model::paragraph::LineSeg| ls.tag & 0x80000000 != 0;
                 let prev_real_idx_and_ls = variant_prev_para_idx.and_then(|prev_pi| {
                     (0..=prev_pi).rev().find_map(|i| {
@@ -588,30 +594,34 @@ impl TypesetEngine {
                             .map(|ls| (i, ls))
                     })
                 });
-                let prev_real = prev_real_idx_and_ls.map(|(_, ls)| ls);
-                let curr_real = para
-                    .line_segs
-                    .first()
-                    .filter(|ls| !is_synth(ls))
-                    .or_else(|| {
-                        (para_idx + 1..paragraphs.len()).find_map(|i| {
-                            paragraphs
-                                .get(i)
-                                .and_then(|p| p.line_segs.first())
-                                .filter(|ls| !is_synth(ls))
-                        })
-                    });
-                if let (Some(prev_last), Some(curr_first)) = (prev_real, curr_real) {
+                let curr_real = para.line_segs.first().filter(|ls| !is_synth(ls));
+                if let Some((prev_real_idx, prev_last)) = prev_real_idx_and_ls {
                     let prev_end_vpos = prev_last.vertical_pos + prev_last.line_height;
-                    let curr_first_vpos = curr_first.vertical_pos;
                     let high_threshold = body_height_hu_for_variant * 95 / 100;
-                    let low_threshold = if para.line_segs.is_empty() && !para.text.is_empty() {
-                        4000i32
-                    } else {
-                        1500i32
-                    };
-                    let bridge_missing_count = prev_real_idx_and_ls.map(|(prev_i, _)| {
-                        (prev_i + 1..para_idx)
+                    let table_heading_reset = prev_real_idx + 1 == para_idx
+                        && para.line_segs.is_empty()
+                        && para.controls.is_empty()
+                        && para_has_visible_text(para)
+                        && para_sb_hu >= 500
+                        && prev_end_vpos > body_height_hu_for_variant * 85 / 100
+                        && paragraphs.get(prev_real_idx).is_some_and(|prev_para| {
+                            prev_para
+                                .controls
+                                .iter()
+                                .any(|c| matches!(c, Control::Table(t) if t.common.treat_as_char))
+                        })
+                        && paragraphs
+                            .get(para_idx + 1)
+                            .and_then(|next_para| next_para.line_segs.first())
+                            .filter(|ls| !is_synth(ls))
+                            .is_some_and(|ls| ls.vertical_pos <= 4000);
+
+                    let real_heading_or_bridge_reset = curr_real.is_some_and(|curr_first| {
+                        let curr_first_vpos = curr_first.vertical_pos;
+                        let strict_heading_reset = para_sb_hu >= 500
+                            && prev_end_vpos > high_threshold
+                            && curr_first_vpos < 1500;
+                        let bridge_missing_count = (prev_real_idx + 1..para_idx)
                             .filter(|&i| {
                                 paragraphs.get(i).is_some_and(|p| {
                                     p.line_segs.is_empty()
@@ -619,17 +629,16 @@ impl TypesetEngine {
                                         && para_has_visible_text(p)
                                 })
                             })
-                            .count()
+                            .count();
+                        let bridged_reset = bridge_missing_count >= 2
+                            && para.controls.is_empty()
+                            && para_has_visible_text(para)
+                            && curr_first_vpos <= 1500
+                            && prev_end_vpos > body_height_hu_for_variant * 75 / 100;
+                        strict_heading_reset || bridged_reset
                     });
-                    let bridged_reset = bridge_missing_count.unwrap_or(0) >= 2
-                        && para.line_segs.first().is_some_and(|ls| !is_synth(ls))
-                        && para.controls.is_empty()
-                        && para_has_visible_text(para)
-                        && curr_first_vpos <= 1500
-                        && prev_end_vpos > body_height_hu_for_variant * 75 / 100;
-                    if (prev_end_vpos > high_threshold && curr_first_vpos < low_threshold)
-                        || bridged_reset
-                    {
+
+                    if table_heading_reset || real_heading_or_bridge_reset {
                         variant_vpos_reset_break = true;
                     }
                 }

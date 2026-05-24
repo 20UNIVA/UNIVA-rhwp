@@ -16,7 +16,16 @@ fn task1105_sample16_hwp5_page_break_before_section_4_matches_hancom() {
     let doc = load_doc("samples/hwp3-sample16-hwp5.hwp");
     assert_eq!(doc.page_count(), 64);
 
+    let page20 = doc.dump_page_items(Some(19));
+    assert!(page20.contains("Table          pi=425"));
+    assert!(
+        !page20.contains("pi=426"),
+        "IDC center heading must start after the visible page break:\n{page20}"
+    );
+
     let page21 = doc.dump_page_items(Some(20));
+    assert!(page21.contains("FullParagraph  pi=426"));
+    assert!(page21.contains("FullParagraph  pi=427"));
     assert!(page21.contains("FullParagraph  pi=439"));
     assert!(
         !page21.contains("pi=440"),
