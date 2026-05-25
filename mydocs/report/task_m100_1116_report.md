@@ -30,6 +30,7 @@
 4. `k-water-rfp-2024.hwp` p5 RowBreak 표에서 마지막 단위 문단이 고립되어 과다 표시되는 절단 위치를 정정했다.
 5. HWP3/HWP5 변환본의 legacy Latin face(`HCI Poppy` 등)를 한컴 HFT 치환과 같은 방식으로 해석해 p3 영문 폭과 모양 차이를 줄였다.
 6. PR #1120 CI에서 발견된 `spacing_before` 사전 차감 회귀를 수정했다. 일반 문서 경로는 기존 #643/#1027처럼 `curr_sb`를 사전 차감하고, HWP3-origin 흐름에서만 #1116 예외로 사전 차감을 생략한다.
+7. #1116의 SVG/browser 폭 고정 출력 변경에 맞춰 SVG golden 스냅샷을 갱신했다.
 
 ## 3. 변경 파일
 
@@ -55,7 +56,9 @@
 - `mydocs/plans/task_m100_1116_impl.md`
 - `mydocs/working/task_m100_1116_stage1.md` ~ `mydocs/working/task_m100_1116_stage20.md`
 - `mydocs/working/task_m100_1116_stage21.md`
+- `mydocs/working/task_m100_1116_stage22.md`
 - `mydocs/orders/20260525.md`
+- `mydocs/orders/20260526.md`
 - `mydocs/manual/codex/docs_and_git_workflow.md`
 - `mydocs/manual/memory/feedback_pr_requires_explicit_approval.md`
 
@@ -69,6 +72,7 @@ cargo test --test issue_1105 -- --nocapture
 cargo test --test issue_1086 -- --nocapture
 cargo test --test issue_1035_alignment -- --nocapture
 cargo test --test issue_713 -- --nocapture
+cargo test --test svg_snapshot -- --nocapture
 cargo fmt --all -- --check
 cargo build --bin rhwp
 git diff --check
@@ -80,7 +84,12 @@ PR #1120 CI 실패 후 추가 검증:
 cargo test page_path_sb_prededuct --lib -- --nocapture
 cargo test hwp3_origin_page_path_keeps_spacing_before_in_vpos --lib -- --nocapture
 cargo test --lib
+UPDATE_GOLDEN=1 cargo test --test svg_snapshot -- --nocapture
 ```
+
+추가 결과:
+
+- `cargo test --test svg_snapshot -- --nocapture`: 8 passed, 0 failed.
 
 시각 검증용 산출물:
 
@@ -103,6 +112,7 @@ hwp3-sample16-hwp5-2024: C Palatino=6 HCI=0
 - `local/task1116` 브랜치는 `origin/local/task1116`에 푸시되어 있다.
 - PR 본문 초안은 `mydocs/report/task_m100_1116_pr_body.md`에 별도로 정리했다.
 - PR #1120은 `jangster77:local/task1116` → `devel` 대상으로 열린 Open PR이다.
+- PR #1120 CI에서 발견된 `spacing_before` 회귀와 SVG golden 미갱신을 수정했다.
 
 생성 명령:
 
@@ -117,5 +127,5 @@ gh pr create \
 
 ## 6. 남은 절차
 
-- 작업지시자 승인 후 새 PR을 생성하고 리뷰/머지 절차를 진행한다.
+- PR #1120 최신 CI 통과 여부를 확인한 뒤 리뷰/머지 절차를 진행한다.
 - 이슈 #1116 close는 작업지시자 승인 후, 대상 브랜치 포함 여부를 확인한 뒤 수행한다.
