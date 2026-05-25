@@ -1,10 +1,10 @@
-## Summary
-- Align HWP3-origin sample16 page 3 vertical layout with Hancom 3mm grid references.
-- Fix 2022 BCP tail-line handling and k-water 2024 RowBreak table cut position.
-- Normalize legacy Latin font substitution so HCI Poppy resolves consistently across HWP3/HWP5 variants.
-- Add final report and document that internal task PR creation requires separate approval.
+## 요약
+- HWP3-origin sample16 3쪽 본문 세로 배치를 한컴 3mm 격자 기준에 맞춰 보정했습니다.
+- 2022 저장본의 BCP 꼬리 줄 처리와 k-water 2024 RowBreak 표 절단 위치를 정정했습니다.
+- `HCI Poppy` 등 legacy Latin 폰트가 HWP3/HWP5 변환본에서 일관되게 한컴 HFT 치환 결과로 해석되도록 보정했습니다.
+- 최종 보고서를 추가하고, 내부 타스크 PR 생성은 별도 승인 후 진행한다는 절차를 문서화했습니다.
 
-## Verification
+## 검증
 - cargo test --test issue_1116 -- --nocapture
 - cargo test --test issue_1105 -- --nocapture
 - cargo test --test issue_1086 -- --nocapture
@@ -13,6 +13,6 @@
 - cargo fmt --all -- --check
 - cargo build --bin rhwp
 - git diff --check
-- Regenerated 3mm SVGs for the sample16 variants and confirmed Latin glyphs now resolve as Palatino=6, HCI=0.
+- sample16 변환본 5종의 3mm SVG를 재생성하고, Latin glyph가 `Palatino=6`, `HCI=0`으로 해석되는지 확인했습니다.
 
-Related to #1116
+관련 이슈: #1116
