@@ -231,6 +231,33 @@ fn sample16_hwp5_page3_svg_latin_glyphs_pin_browser_width() {
     );
 }
 
+fn assert_page3_latin_poppy_resolves_to_palatino(rel_path: &str) {
+    let svg = render_svg(rel_path, 2);
+    let latin_c_attrs = extract_text_attrs(&svg, "C");
+    assert!(
+        latin_c_attrs
+            .iter()
+            .any(|attrs| attrs.contains("font-family=\"Palatino Linotype,")),
+        "{rel_path} p3 Latin glyphs must resolve HCI Poppy to Palatino Linotype: {latin_c_attrs:?}"
+    );
+    assert!(
+        latin_c_attrs
+            .iter()
+            .all(|attrs| !attrs.contains("font-family=\"HCI Poppy,")),
+        "{rel_path} p3 Latin glyphs must not fall back through unresolved HCI Poppy: {latin_c_attrs:?}"
+    );
+}
+
+#[test]
+fn sample16_hwp5_2022_page3_latin_font_matches_legacy_hancom_mapping() {
+    assert_page3_latin_poppy_resolves_to_palatino("samples/hwp3-sample16-hwp5-2022.hwp");
+}
+
+#[test]
+fn sample16_hwp3_page3_latin_font_matches_legacy_hancom_mapping() {
+    assert_page3_latin_poppy_resolves_to_palatino("samples/hwp3-sample16.hwp");
+}
+
 #[test]
 fn sample16_hwp5_page3_heading_positions_follow_lineseg_vpos() {
     let svg = render_svg("samples/hwp3-sample16-hwp5.hwp", 2);
