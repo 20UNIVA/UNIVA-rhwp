@@ -330,3 +330,55 @@ fn sample16_hwp5_page3_bcp_tail_paragraph_stays_single_visual_line_for_pdf_oracl
         "p83 BCP 문단은 한컴 PDF 정답지처럼 단일 시각 줄로 유지되어야 함: {p83}"
     );
 }
+
+#[test]
+fn sample16_hwp5_2022_page3_bcp_tail_paragraph_folds_orphan_lineseg() {
+    let doc = load_doc("samples/hwp3-sample16-hwp5-2022.hwp");
+    let dump = doc.dump_page_items(Some(2));
+    let p83 = dump
+        .lines()
+        .find(|line| line.contains("FullParagraph  pi=83"))
+        .unwrap_or_else(|| panic!("2022 p3 pi=83 dump line not found:\n{dump}"));
+    let summary = dump
+        .lines()
+        .find(|line| line.contains("단 0 (items=19"))
+        .unwrap_or_else(|| panic!("2022 p3 단 요약을 찾을 수 없음:\n{dump}"));
+
+    assert!(
+        p83.contains("h=31.5")
+            && p83.contains("lines=27.7")
+            && p83.contains("lh=17.3")
+            && p83.contains("ls=10.4"),
+        "2022 p83 BCP 문단의 마지막 LINE_SEG 꼬리는 한컴오피스처럼 앞 줄에 접혀야 함: {p83}"
+    );
+    assert!(
+        summary.contains("used=874.5px")
+            && summary.contains("hwp_used≈841.6px")
+            && summary.contains("diff=+32.9px"),
+        "2022 p3 단 요약은 p83 꼬리 LINE_SEG를 별도 시각 줄로 세지 않아야 함: {summary}"
+    );
+}
+
+#[test]
+fn sample16_hwp5_2022_page3_bcp_tail_glyph_stays_on_hancom_line() {
+    let svg = render_svg("samples/hwp3-sample16-hwp5-2022.hwp", 2);
+    let tail_glyphs = extract_text_positions(&svg, "립");
+
+    let folded_tail = tail_glyphs
+        .iter()
+        .find(|(x, y)| *x > 620.0 && (*y - 881.35).abs() < 1.0)
+        .copied();
+    assert!(
+        folded_tail.is_some(),
+        "2022 p83 BCP `수립`의 `립`은 한컴오피스처럼 p83 본문 줄 y≈881.35에 있어야 함: {tail_glyphs:?}"
+    );
+
+    let orphan_tail = tail_glyphs
+        .iter()
+        .find(|(x, y)| (*x - 126.7).abs() < 2.0 && (*y - 909.1).abs() < 2.0)
+        .copied();
+    assert!(
+        orphan_tail.is_none(),
+        "2022 p83 BCP `립`이 다음 줄 머리에 단독 배치되면 p84 이하가 한컴오피스보다 내려감: {tail_glyphs:?}"
+    );
+}
