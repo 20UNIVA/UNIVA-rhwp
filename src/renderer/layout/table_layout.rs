@@ -3715,6 +3715,9 @@ impl LayoutEngine {
                 let u = &units[j];
                 // 시작 유닛(j==start)은 항상 소비 — 진행 보장.
                 if j > start && u.hard_break_before {
+                    Self::rewind_rowbreak_orphan_before_hard_break(
+                        table, &units, start, &mut j, &mut h,
+                    );
                     hit_hard_break = true;
                     break;
                 }
@@ -3776,6 +3779,9 @@ impl LayoutEngine {
                 let u = &units[j];
                 // 시작 유닛(j==start)은 항상 소비 — 진행 보장.
                 if j > start && u.hard_break_before {
+                    Self::rewind_rowbreak_orphan_before_hard_break(
+                        table, &units, start, &mut j, &mut h,
+                    );
                     hit_hard_break = true;
                     break;
                 }
@@ -3798,6 +3804,29 @@ impl LayoutEngine {
             hit_hard_break,
             fully_consumed,
             consumed_height,
+        }
+    }
+
+    fn rewind_rowbreak_orphan_before_hard_break(
+        table: &crate::model::table::Table,
+        units: &[CellUnit],
+        start: usize,
+        j: &mut usize,
+        h: &mut f64,
+    ) {
+        if !matches!(
+            table.page_break,
+            crate::model::table::TablePageBreak::RowBreak
+        ) || *j <= start + 1
+        {
+            return;
+        }
+
+        let hard_break_unit = &units[*j];
+        let prev = &units[*j - 1];
+        if prev.para_idx == hard_break_unit.para_idx {
+            *h -= prev.height;
+            *j -= 1;
         }
     }
 

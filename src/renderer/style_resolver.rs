@@ -457,6 +457,13 @@ pub(crate) fn resolve_font_substitution(
     alt_type: u8,
     lang_index: usize,
 ) -> Option<&'static str> {
+    // HWP3 원본/일부 한컴 재저장본은 HCI 영문 폰트를 TTF(type=1) 또는
+    // unknown(type=0)으로 싣기도 한다. 한컴은 같은 face를 보여주므로
+    // alt_type 차이와 무관하게 legacy 영문 HFT 치환을 우선 적용한다.
+    if let Some(result) = resolve_legacy_latin_font(name, lang_index) {
+        return Some(result);
+    }
+
     // HFT(type=2) 폰트 치환
     if alt_type == 2 {
         if let Some(result) = resolve_hft_font(name, lang_index) {
@@ -466,6 +473,53 @@ pub(crate) fn resolve_font_substitution(
 
     // TTF(type=1) 또는 알수없음(type=0) 치환
     resolve_ttf_font(name)
+}
+
+fn resolve_legacy_latin_font(name: &str, lang_index: usize) -> Option<&'static str> {
+    if lang_index != 1 {
+        return None;
+    }
+
+    match name {
+        "HCI Poppy" => Some("Palatino Linotype"),
+        "HCI Tulip"
+        | "HCI Morning Glory"
+        | "HCI Centaurea"
+        | "HCI Bellflower"
+        | "AmeriGarmnd BT"
+        | "Bodoni Bd BT"
+        | "Bodoni Bk BT"
+        | "Baskerville BT"
+        | "GoudyOlSt BT"
+        | "Cooper Blk BT"
+        | "Stencil BT"
+        | "BrushScript BT"
+        | "CommercialScript BT"
+        | "Liberty BT"
+        | "MurrayHill Bd BT"
+        | "ParkAvenue BT"
+        | "CentSchbook BT"
+        | "펜흘림" => Some("HY견명조"),
+        "HCI Hollyhock"
+        | "HCI Hollyhock Narrow"
+        | "HCI Acacia"
+        | "Swis721 BT"
+        | "Hobo BT"
+        | "Orbit-B BT"
+        | "Blippo Blk BT"
+        | "BroadwayEngraved BT"
+        | "FuturaBlack BT"
+        | "Newtext Bk BT"
+        | "DomCasual BT"
+        | "가는안상수체영문"
+        | "중간안상수체영문"
+        | "굵은안상수체영문" => Some("HY중고딕"),
+        "HCI Columbine" | "Courier10 BT" | "OCR-A BT" | "OCR-B-10 BT" | "Orator10 BT" => {
+            Some("Calibri")
+        }
+        "BernhardFashion BT" | "Freehand591 BT" => Some("HY중고딕"),
+        _ => None,
+    }
 }
 
 /// HFT 폰트 → @font-face 등록 폰트 치환 (언어별)

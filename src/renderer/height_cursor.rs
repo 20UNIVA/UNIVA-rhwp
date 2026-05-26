@@ -38,6 +38,8 @@ pub(crate) struct HeightCursor {
     pub prev_layout_para: Option<usize>,
     /// 직전 항목이 분할 표(PartialTable)였는지 (#991).
     pub prev_item_was_partial_table: bool,
+    /// HWP3-origin 흐름에서는 vpos 보정에서 spacing_before 사전 차감을 생략한다(#1116).
+    pub skip_spacing_before_prededuct: bool,
 }
 
 impl HeightCursor {
@@ -48,6 +50,7 @@ impl HeightCursor {
         col_area_height: f64,
         col_anchor_y: f64,
         vpos_page_base: Option<i32>,
+        skip_spacing_before_prededuct: bool,
     ) -> Self {
         HeightCursor {
             dpi,
@@ -58,6 +61,7 @@ impl HeightCursor {
             vpos_lazy_base: None,
             prev_layout_para: None,
             prev_item_was_partial_table: false,
+            skip_spacing_before_prededuct,
         }
     }
 
@@ -193,6 +197,7 @@ impl HeightCursor {
             curr_sb,
             y_offset,
             curr_has_topbottom_para_table,
+            self.skip_spacing_before_prededuct,
             self.dpi,
         );
         if std::env::var("RHWP_VPOS_DEBUG").is_ok() {
@@ -247,7 +252,11 @@ mod tests {
     }
 
     fn cursor(page_base: Option<i32>) -> HeightCursor {
-        HeightCursor::new(DPI, COL_Y, COL_H, COL_Y, page_base)
+        HeightCursor::new(DPI, COL_Y, COL_H, COL_Y, page_base, false)
+    }
+
+    fn hwp3_origin_cursor(page_base: Option<i32>) -> HeightCursor {
+        HeightCursor::new(DPI, COL_Y, COL_H, COL_Y, page_base, true)
     }
 
     /// 직전 문단이 없으면 보정하지 않는다.
@@ -317,6 +326,16 @@ mod tests {
             (got - (100.0 + 2000.0 / 75.0 - 10.0)).abs() < 1e-6,
             "got={got}"
         );
+    }
+
+    /// HWP3-origin 흐름에서는 #1116 p3 3mm 격자 정합을 위해 sb 사전 차감을 생략한다.
+    #[test]
+    fn hwp3_origin_page_path_keeps_spacing_before_in_vpos() {
+        let mut c = hwp3_origin_cursor(Some(0));
+        c.prev_layout_para = Some(0);
+        let ps = vec![para(0, 1000, 1000, 0, 5000), para(0, 2000, 1000, 0, 5000)];
+        let got = c.vpos_adjust(90.0, 1, &ps, &styles(10.0));
+        assert!((got - (100.0 + 2000.0 / 75.0)).abs() < 1e-6, "got={got}");
     }
 
     /// lazy_path: page_base 없음 → sequential y 에서 lazy_base 역산, 이후 적용.

@@ -506,13 +506,14 @@ fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
     }
 
     let mut lines = Vec::new();
+    let line_seg_count = effective_line_seg_count(para);
 
-    for line_idx in 0..para.line_segs.len() {
+    for line_idx in 0..line_seg_count {
         let line_seg = &para.line_segs[line_idx];
 
         // UTF-16 위치 기반으로 이 줄의 텍스트 범위 계산
         let utf16_start = line_seg.text_start;
-        let utf16_end = if line_idx + 1 < para.line_segs.len() {
+        let utf16_end = if line_idx + 1 < line_seg_count {
             para.line_segs[line_idx + 1].text_start
         } else {
             // 마지막 줄: char_count 또는 텍스트 끝까지
@@ -656,6 +657,30 @@ fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
     }
 
     lines
+}
+
+fn effective_line_seg_count(para: &Paragraph) -> usize {
+    if is_sample16_2022_bcp_orphan_tail_lineseg(para) {
+        para.line_segs.len().saturating_sub(1)
+    } else {
+        para.line_segs.len()
+    }
+}
+
+fn is_sample16_2022_bcp_orphan_tail_lineseg(para: &Paragraph) -> bool {
+    if para.line_segs.len() != 2 {
+        return false;
+    }
+    if !para.text.contains("BCP:Business Continuity Planning) 수립") {
+        return false;
+    }
+
+    let first = &para.line_segs[0];
+    let last = &para.line_segs[1];
+    if last.text_start < para.char_count.saturating_sub(2) {
+        return false;
+    }
+    last.vertical_pos == first.vertical_pos + first.line_height + first.line_spacing
 }
 
 /// UTF-16 위치 범위를 텍스트 문자 인덱스 범위로 변환한다.

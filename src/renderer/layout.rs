@@ -239,6 +239,7 @@ pub(crate) fn vpos_corrected_end_y(
     curr_sb: f64,
     y_offset: f64,
     curr_has_topbottom_para_table: bool,
+    skip_spacing_before_prededuct: bool,
     dpi: f64,
 ) -> (f64, bool) {
     // [Task #412] page_path: col_anchor_y 기준, lazy_path: col_area_y 기준.
@@ -248,8 +249,15 @@ pub(crate) fn vpos_corrected_end_y(
         col_area_y
     };
     let raw_end_y = anchor + hwpunit_to_px(vpos_end - base, dpi);
-    // [Task #643] sb_N 사전 차감 — vpos_end 는 line 0 상단, layout 이 sb_N 을 다시 더함.
-    let end_y = (raw_end_y - curr_sb).max(col_area_y);
+    let end_y = if skip_spacing_before_prededuct {
+        // HWP3-origin HWP5 변환본은 parser 단계에서 paragraph vpos에서 spacing_before를
+        // 이미 분리한다. 여기서 다시 sb_N을 사전 차감하면 문단 사이 간격이 사라져
+        // sample16 p3의 3mm 격자 기준보다 본문이 위로 붙는다.
+        raw_end_y
+    } else {
+        raw_end_y - curr_sb
+    }
+    .max(col_area_y);
     // [Task #643] 단계당 백워드 허용폭 8px.
     const MAX_BACKWARD_PX: f64 = 8.0;
     // [Task #874 #8] stale/inflated vpos forward jump 가드.
@@ -345,6 +353,8 @@ pub struct LayoutEngine {
     current_body_area: std::cell::Cell<(f64, f64, f64, f64)>,
     /// HWP3-origin HWP5 변환본 여부.
     is_hwp3_variant: std::cell::Cell<bool>,
+    /// HWP3 원본 및 HWP3-origin HWP5 변환본의 본문 흐름 spacing_before 보정 여부.
+    use_hwp3_origin_flow_spacing_before: std::cell::Cell<bool>,
 }
 
 mod border_rendering;
@@ -398,6 +408,7 @@ impl LayoutEngine {
             current_paper_width: std::cell::Cell::new(0.0),
             current_body_area: std::cell::Cell::new((0.0, 0.0, 0.0, 0.0)),
             is_hwp3_variant: std::cell::Cell::new(false),
+            use_hwp3_origin_flow_spacing_before: std::cell::Cell::new(false),
         }
     }
 
@@ -429,6 +440,11 @@ impl LayoutEngine {
 
     pub fn set_hwp3_variant(&self, enabled: bool) {
         self.is_hwp3_variant.set(enabled);
+        self.use_hwp3_origin_flow_spacing_before.set(enabled);
+    }
+
+    pub fn set_hwp3_origin_flow_spacing_before(&self, enabled: bool) {
+        self.use_hwp3_origin_flow_spacing_before.set(enabled);
     }
 
     /// 이미 렌더된 인라인 이미지 노드의 y 좌표를 dy만큼 이동 (캡션 Top 보정)
@@ -2418,6 +2434,7 @@ impl LayoutEngine {
             col_area.height,
             col_anchor_y,
             vpos_page_base_init,
+            self.use_hwp3_origin_flow_spacing_before.get(),
         );
 
         // 1차 패스: 표, 문단, 텍스트 렌더링 (글상자 제외)

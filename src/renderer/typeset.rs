@@ -179,6 +179,8 @@ struct TypesetState {
     vpos_prev_partial_table: bool,
     /// 컬럼 시작 시점의 current_height (page_path anchor — 렌더러 col_anchor_y 대응).
     vpos_col_anchor: f64,
+    /// HWP3-origin 흐름에서는 vpos 보정에서 spacing_before 사전 차감을 생략한다(#1116).
+    skip_spacing_before_prededuct: bool,
 }
 
 /// [Task #853] ColumnDef 의 "디자인 spacing"(px): 1단이면 `간격`, 다단이면 0.
@@ -322,6 +324,7 @@ impl TypesetState {
             vpos_prev_layout_para: None,
             vpos_prev_partial_table: false,
             vpos_col_anchor: 0.0,
+            skip_spacing_before_prededuct: false,
         }
     }
 
@@ -534,6 +537,7 @@ impl TypesetEngine {
             hide_empty_line,
             false,
             false,
+            false,
         )
     }
 
@@ -552,6 +556,7 @@ impl TypesetEngine {
         measured_tables: &[MeasuredTable],
         hide_empty_line: bool,
         is_hwp3_variant: bool,
+        skip_spacing_before_prededuct: bool,
         hwp3_origin_page_tolerance: bool,
     ) -> PaginationResult {
         let layout = PageLayoutInfo::from_page_def(page_def, column_def, self.dpi);
@@ -583,6 +588,7 @@ impl TypesetEngine {
         );
         st.hide_empty_line = hide_empty_line;
         st.is_hwp3_variant = is_hwp3_variant;
+        st.skip_spacing_before_prededuct = skip_spacing_before_prededuct;
         st.current_zone_design_spacing_px = column_def_design_spacing_px(column_def, self.dpi);
 
         // 머리말/꼬리말/쪽 번호/새 번호/감추기 컨트롤 수집
@@ -1830,6 +1836,7 @@ impl TypesetEngine {
             vpos_lazy_base: st.vpos_lazy_base,
             prev_layout_para: st.vpos_prev_layout_para,
             prev_item_was_partial_table: st.vpos_prev_partial_table,
+            skip_spacing_before_prededuct: st.skip_spacing_before_prededuct,
         };
         let y = hc.vpos_adjust(st.current_height, para_idx, paragraphs, styles);
         // lazy_base 는 지연 산출 시 갱신될 수 있으므로 회수.
@@ -2033,7 +2040,8 @@ impl TypesetEngine {
             let vpos_h: Option<f64> = if let (Some(first), Some(last)) =
                 (para.line_segs.first(), para.line_segs.last())
             {
-                let span_hu = (last.vertical_pos + last.line_height) - first.vertical_pos;
+                let span_hu =
+                    (last.vertical_pos + last.line_height + last.line_spacing) - first.vertical_pos;
                 if span_hu > 0 {
                     Some(crate::renderer::hwpunit_to_px(span_hu, self.dpi))
                 } else {
