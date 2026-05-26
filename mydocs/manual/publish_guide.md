@@ -46,7 +46,7 @@ GitHub Release 생성 (태그)
 
 > **중요**: GitHub Release를 생성하면 5곳 모두 자동 배포된다. 수동 `npm publish`나 `publish.sh`를 실행하지 않는다.
 > 단, release workflow를 재실행하면서 이미 VS Code/Open VSX 배포가 끝난 경우에는
-> `workflow_dispatch`의 `publish_vscode=false` 입력으로 npm publish만 다시 시도한다.
+> `workflow_dispatch`의 `publish_extensions=false` 입력으로 npm publish만 다시 시도한다.
 
 ### GitHub Secrets 설정
 

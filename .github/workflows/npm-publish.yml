@@ -5,17 +5,19 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      publish_vscode:
-        description: 'Publish VSCode/Open VSX extension'
+      publish_extensions:
+        description: 'Publish VSCode Marketplace and Open VSX extensions'
         type: boolean
         default: true
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   build-wasm:
     name: Build WASM
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
       - uses: actions/checkout@v5
@@ -52,9 +54,6 @@ jobs:
     name: Publish @rhwp/core
     needs: build-wasm
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
       - uses: actions/checkout@v5
@@ -89,9 +88,6 @@ jobs:
     name: Publish @rhwp/editor
     needs: build-wasm
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
       - uses: actions/checkout@v5
@@ -116,10 +112,8 @@ jobs:
   publish-vscode:
     name: Publish VSCode Extension
     needs: build-wasm
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_vscode }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_extensions }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
       - uses: actions/checkout@v5
