@@ -15,7 +15,7 @@
   <a href="https://www.npmjs.com/package/@rhwp/core"><img src="https://img.shields.io/npm/v/@rhwp/core?label=npm" alt="npm" /></a>
   <a href="https://marketplace.visualstudio.com/items?itemName=edwardkim.rhwp-vscode"><img src="https://img.shields.io/badge/VS%20Code-Marketplace-007ACC" alt="VS Code" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.75%2B-orange.svg" alt="Rust" /></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.93.1-orange.svg" alt="Rust" /></a>
   <a href="https://webassembly.org/"><img src="https://img.shields.io/badge/WebAssembly-Ready-blue.svg" alt="WASM" /></a>
 </p>
 
@@ -30,7 +30,7 @@
 
 ---
 
-Open **HWP files anywhere**. Free, no installation required.
+Open **HWP/HWPX files anywhere**. Free, no installation required.
 
 **HWP** is the dominant document format in South Korea — used by government agencies, schools, courts, and most organizations. Until now, there has been no viable open-source solution to read or edit these files.
 
@@ -70,6 +70,29 @@ Foundation  Typeset   Collab    Complete
 - SVG export (CLI) + Canvas rendering (WASM/Web)
 - Web editor + hwpctl-compatible API (30 Actions, Field API)
 - 1,100+ tests
+
+#### v0.7.13 Cycle (2026-05-18 ~ 2026-05-26)
+
+> Focused HWPX rendering/save compatibility fixes, exam/public-agency document regression fixes, and browser extension v0.2.3 preparation
+
+**HWPX → HWP Save Compatibility**
+- Improved table/cell axis contracts, cell LIST_HEADER materialization, gradient `BORDER_FILL`, cell inner margins, and cell background image fill mode serialization
+- Implemented memo control serialization, memo style preservation, TOC field marker/page text output, page-number hide/restart controls, and related paragraph-control save paths
+- Resolved multiple Hancom corruption/interrupted-render cases across `hwpx-h-01/02/03`, `mel-001`, `aift`, `exam_kor`, and `exam_social` fixtures
+
+**HWPX Rendering Parity**
+- Improved master pages (even/odd/last), headers/footers, paragraph numbering, paragraph borders, and exam passage boxes
+- Improved textbox positioning, gradient fills, and rounded-corner rendering
+- Improved SVG and web-canvas visual parity against Hancom-converted fixtures including `exam_kor.hwpx`, `exam_social.hwpx`, and `hwp3-sample16-hwp5.hwpx`
+
+**Pagination and Layout Fixes**
+- Fixed HWPX `treat_as_char` table LINE_SEG height over-inflation, nested table page splitting, picture pushdown/vpos double counting, and multi-column endnote vpos handling
+- Improved caret movement around TAC shapes and repeated spaces
+
+**Release and Extensions**
+- Published `@rhwp/core` / `@rhwp/editor` v0.7.13 to npm
+- Attached Linux/macOS/Windows CLI binaries and SHA-256 checksums to GitHub Release `v0.7.13`
+- rhwp Chrome / Edge / Firefox extension v0.2.3 bundles rhwp core 0.7.13 WASM, adds local `file://` access guidance, and suppresses duplicate local-file downloads on Chrome/Edge
 
 #### v0.7.9 Cycle (2026-05-01)
 
@@ -194,6 +217,7 @@ See the [roadmap document](mydocs/eng/report/rhwp-milestone.md) for details.
 ### Output
 - SVG export (CLI, legacy + layer replay)
 - Canvas rendering (WASM/Web)
+- HWP save path for native HWP editing and HWPX → HWP conversion
 - Debug overlay (paragraph/table boundaries + indices + y-coordinates)
 
 ### Multi-Renderer Backends
@@ -231,6 +255,8 @@ See the [roadmap document](mydocs/eng/report/rhwp-milestone.md) for details.
 - Template data binding support
 
 ## npm Packages — Use in Your Web Project
+
+Current release: `@rhwp/core` / `@rhwp/editor` v0.7.13.
 
 ### Embed a Full Editor (3 lines)
 
@@ -282,7 +308,7 @@ document.getElementById('viewer').innerHTML = doc.renderPageSvg(0);
 New contributors: start with the [onboarding guide](mydocs/eng/manual/onboarding_guide.md). It covers project architecture, debugging tools, and the development workflow at a glance.
 
 ### Requirements
-- Rust 1.75+
+- Rust 1.93.1 (pinned by `rust-toolchain.toml`)
 - Docker (for WASM build)
 - Node.js 18+ (for web editor)
 
