@@ -49,6 +49,22 @@ cargo clippy (server)     error 0 (warning 1: store::exists — 테스트 전용
 
 → **"클라이언트 연결을 끊어도 서버단에 파일·패치가 유지되고, 모델이 조회·export 가능"** 이라는 핵심 요구를 실증.
 
+### 5. 브라우저 E2E (Docker WASM 빌드 후 수행 — 끝단 실증)
+
+Docker daemon 기동 → `docker compose run --rm wasm` 으로 WASM `pkg/` 생성 →
+`tsc` 에러 0 (이전 @wasm 에러 해소) → `vite build` 성공(번들 + PWA SW).
+신규 `rhwp-studio/e2e/ssr-session.test.mjs` (puppeteer headless Chrome):
+```
+studio ?fileId=SSRE2E&ssrBase=http://127.0.0.1:7720 로드
+postMessage loadFile({fileId}) → 세션 생성 (GET /ir 200)  PASS
+키보드 입력 "E2EMIRROR" → 디바운스 배치 미러링
+  → 서버 IR: "…마바사E2EMIRROR아자차…"  PASS (브라우저 편집이 실제 서버 반영)
+DELETE(연결 끊김) → GET /ir → "E2EMIRROR" 유지  PASS (sqlite 복원)
+```
+→ **클라이언트 편집 → 서버 미러링 → 연결 끊김 후 유지**의 전 경로를 실제 브라우저에서 실증.
+
+(주의: vite/puppeteer는 Node 20.19+ 필요. 본 환경은 Node 23(nvm)으로 실행. 기본 Node 20.10에서는 vite 실행 불가.)
+
 ### 기타 검증 (이전 단계 누적)
 - Stage 3: 서버 재시작 후 복원 PASS
 - Stage 5: export 라운드트립(hwp/hwpx 재파싱 시 편집 보존) PASS
@@ -56,7 +72,7 @@ cargo clippy (server)     error 0 (warning 1: store::exists — 테스트 전용
 
 ## 한계 (환경 제약)
 
-- **브라우저 E2E 미수행**: WASM `pkg/` 산출물 생성은 Docker WASM 빌드가 필요한데, 본 환경에서 Docker daemon 미실행으로 불가. studio 측은 타입 검증 + 프로토콜 일치 + 결정성 회귀로 대체 검증. WASM 빌드 가능 환경에서 `rhwp-studio` 를 `?fileId=&ssrBase=` 로 띄워 브라우저 E2E 후속 권장.
+- 브라우저 E2E는 Node 23(nvm) + 외부 기동 서버로 수행. CI 통합 시 Node 버전·서버 spawn(`E2E_SPAWN_SERVER=1`) 정비 필요.
 
 ## 다음 단계
 
