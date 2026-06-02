@@ -75,6 +75,12 @@ struct ExportQuery {
     fmt: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct IrQuery {
+    /// 0-based 페이지 번호. 미지정 시 전체 문서를 반환한다.
+    page: Option<u32>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionInfo {
@@ -262,13 +268,14 @@ async fn put_snapshot(
 async fn get_ir(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
+    Query(q): Query<IrQuery>,
 ) -> Result<Response, AppError> {
     let session = get_or_restore(&state, &file_id)?;
     let s = session.lock().unwrap();
+    // page 미지정 → 전체, page=n → 해당 페이지 문단만(절대 인덱스 유지 → 편집 op 그대로 유효)
     let json = s
         .core
-        .document()
-        .to_ir_json()
+        .to_ir_json_paged(q.page)
         .map_err(|e| AppError::internal(format!("IR 직렬화 실패: {e}")))?;
     Ok(([(header::CONTENT_TYPE, "application/json")], json).into_response())
 }

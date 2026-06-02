@@ -20,6 +20,12 @@ pub const IR_VIEW_SCHEMA_VERSION: u32 = 1;
 pub struct DocumentIrView {
     pub schema_version: u32,
     pub section_count: usize,
+    /// 페이지 필터로 조회한 경우 그 페이지 번호(0-based). 전체 조회면 생략.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<u32>,
+    /// 문서 전체 페이지 수.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_count: Option<u32>,
     pub sections: Vec<SectionView>,
 }
 
@@ -68,7 +74,7 @@ pub struct ControlView {
 }
 
 impl Document {
-    /// 모델 조회용 IR 뷰를 생성한다.
+    /// 모델 조회용 IR 뷰를 생성한다(전체 문단).
     pub fn to_ir_view(&self) -> DocumentIrView {
         let sections = self
             .sections
@@ -81,22 +87,7 @@ impl Document {
                     .paragraphs
                     .iter()
                     .enumerate()
-                    .map(|(pi, para)| ParagraphView {
-                        index: pi,
-                        text: para.text.clone(),
-                        char_count: para.char_count,
-                        para_shape_id: para.para_shape_id,
-                        style_id: para.style_id,
-                        char_runs: para
-                            .char_shapes
-                            .iter()
-                            .map(|cs| CharRunView {
-                                start: cs.start_pos,
-                                char_shape_id: cs.char_shape_id,
-                            })
-                            .collect(),
-                        controls: para.controls.iter().map(control_view).collect(),
-                    })
+                    .map(|(pi, para)| paragraph_view(pi, para))
                     .collect(),
             })
             .collect();
@@ -104,13 +95,77 @@ impl Document {
         DocumentIrView {
             schema_version: IR_VIEW_SCHEMA_VERSION,
             section_count: self.sections.len(),
+            page: None,
+            page_count: None,
             sections,
         }
     }
 
-    /// 모델 조회용 IR 뷰를 JSON 문자열로 직렬화한다.
+    /// `keep(section_idx, para_idx)` 가 true인 문단만 포함하는 IR 뷰를 생성한다.
+    ///
+    /// 페이지 필터 조회에 사용한다. 포함된 문단의 `index`(section/paragraph)는
+    /// **절대 인덱스 그대로** 유지되므로, 모델이 본 좌표로 그대로 편집 op를 보낼 수 있다.
+    /// (`paragraph_count` 도 섹션 전체 문단 수를 유지한다.)
+    pub fn to_ir_view_filtered(
+        &self,
+        keep: &std::collections::HashSet<(usize, usize)>,
+    ) -> DocumentIrView {
+        let sections = self
+            .sections
+            .iter()
+            .enumerate()
+            .filter_map(|(si, section)| {
+                let paragraphs: Vec<ParagraphView> = section
+                    .paragraphs
+                    .iter()
+                    .enumerate()
+                    .filter(|(pi, _)| keep.contains(&(si, *pi)))
+                    .map(|(pi, para)| paragraph_view(pi, para))
+                    .collect();
+                if paragraphs.is_empty() {
+                    None
+                } else {
+                    Some(SectionView {
+                        index: si,
+                        paragraph_count: section.paragraphs.len(),
+                        paragraphs,
+                    })
+                }
+            })
+            .collect();
+
+        DocumentIrView {
+            schema_version: IR_VIEW_SCHEMA_VERSION,
+            section_count: self.sections.len(),
+            page: None,
+            page_count: None,
+            sections,
+        }
+    }
+
+    /// 모델 조회용 IR 뷰를 JSON 문자열로 직렬화한다(전체 문단).
     pub fn to_ir_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(&self.to_ir_view())
+    }
+}
+
+/// 단일 문단을 조회 뷰로 변환한다(인덱스는 절대값).
+fn paragraph_view(pi: usize, para: &super::paragraph::Paragraph) -> ParagraphView {
+    ParagraphView {
+        index: pi,
+        text: para.text.clone(),
+        char_count: para.char_count,
+        para_shape_id: para.para_shape_id,
+        style_id: para.style_id,
+        char_runs: para
+            .char_shapes
+            .iter()
+            .map(|cs| CharRunView {
+                start: cs.start_pos,
+                char_shape_id: cs.char_shape_id,
+            })
+            .collect(),
+        controls: para.controls.iter().map(control_view).collect(),
     }
 }
 
@@ -194,6 +249,31 @@ mod tests {
         assert_eq!(pv.style_id, 1);
         assert_eq!(pv.char_runs.len(), 1);
         assert_eq!(pv.char_runs[0].char_shape_id, 7);
+    }
+
+    #[test]
+    fn test_to_ir_view_filtered_keeps_absolute_index() {
+        use std::collections::HashSet;
+        let mut doc = Document::default();
+        doc.sections.push(Section {
+            paragraphs: vec![
+                Paragraph { text: "A".into(), char_count: 1, ..Default::default() },
+                Paragraph { text: "B".into(), char_count: 1, ..Default::default() },
+                Paragraph { text: "C".into(), char_count: 1, ..Default::default() },
+            ],
+            ..Default::default()
+        });
+        // 문단 인덱스 2만 남긴다.
+        let mut keep = HashSet::new();
+        keep.insert((0usize, 2usize));
+        let v = doc.to_ir_view_filtered(&keep);
+        assert_eq!(v.sections.len(), 1);
+        // 섹션 전체 문단 수는 유지(절대 맥락 제공)
+        assert_eq!(v.sections[0].paragraph_count, 3);
+        // 필터된 문단만 포함, index는 절대값 2
+        assert_eq!(v.sections[0].paragraphs.len(), 1);
+        assert_eq!(v.sections[0].paragraphs[0].index, 2);
+        assert_eq!(v.sections[0].paragraphs[0].text, "C");
     }
 
     #[test]
