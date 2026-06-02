@@ -3,6 +3,7 @@ import type { DocumentInfo } from '@/core/types';
 import { EventBus } from '@/core/event-bus';
 import { CanvasView } from '@/view/canvas-view';
 import { InputHandler } from '@/engine/input-handler';
+import { SessionClient } from '@/core/session-client';
 import { Toolbar } from '@/ui/toolbar';
 import { MenuBar } from '@/ui/menu-bar';
 import { loadWebFonts } from '@/core/font-loader';
@@ -51,6 +52,41 @@ let canvasView: CanvasView | null = null;
 let inputHandler: InputHandler | null = null;
 let toolbar: Toolbar | null = null;
 let ruler: Ruler | null = null;
+
+// ─── SSR 세션 (fileId 단위 서버 미러링) ──────────────────
+let sessionClient: SessionClient | null = null;
+/** URL query 에서 SSR 설정을 읽는다. iframe 부모가 `?fileId=&ssrBase=` 로 전달. */
+const SSR_BASE_URL = new URLSearchParams(location.search).get('ssrBase') ?? '';
+const SSR_URL_FILE_ID = new URLSearchParams(location.search).get('fileId');
+
+/**
+ * fileId가 주어지면 SSR 세션을 생성하고 편집 미러링을 연결한다.
+ * minio 연동은 외부 모듈 담당 — 여기서는 원본 바이트만 서버로 전달한다.
+ */
+async function connectSsrSession(bytes: Uint8Array, fileId: string): Promise<void> {
+  try {
+    sessionClient?.dispose();
+    const format = wasm.getSourceFormat() === 'hwpx' ? 'hwpx' : 'hwp';
+    const client = new SessionClient({
+      baseUrl: SSR_BASE_URL,
+      fileId,
+      format,
+      getSnapshotBytes: () => {
+        try {
+          return wasm.exportHwpx();
+        } catch {
+          return null;
+        }
+      },
+    });
+    await client.createSession(bytes);
+    sessionClient = client;
+    if (inputHandler) inputHandler.mirrorSink = client;
+    console.info(`[SSR] 세션 연결됨: fileId=${fileId}, base=${SSR_BASE_URL || '(same-origin)'}`);
+  } catch (e) {
+    console.warn('[SSR] 세션 연결 실패 — 로컬 편집으로 계속', e);
+  }
+}
 
 
 // ─── 커맨드 시스템 ─────────────────────────────
@@ -588,6 +624,7 @@ async function loadBytes(
   fileName: string,
   fileHandle: typeof wasm.currentFileHandle,
   startTime = performance.now(),
+  fileId: string | null = null,
 ): Promise<void> {
   const docInfo = wasm.loadDocument(data, fileName);
   wasm.currentFileHandle = fileHandle;
@@ -596,6 +633,10 @@ async function loadBytes(
   // HWPX 토스트는 모달과의 이벤트 충돌을 피하기 위해 모달 닫힌 후 표시.
   await initializeDocument(docInfo, `${fileName} — ${docInfo.pageCount}페이지 (${elapsed.toFixed(1)}ms)`);
   notifyHwpxSaveModeIfNeeded();
+
+  // SSR: fileId가 있으면 서버 세션 생성 + 편집 미러링 연결.
+  const fid = fileId ?? SSR_URL_FILE_ID;
+  if (fid) await connectSsrSession(data, fid);
 }
 
 /**
@@ -863,7 +904,7 @@ window.addEventListener('message', async (e) => {
         return;
       }
       const bytes = new Uint8Array(msg.data);
-      await loadBytes(bytes, msg.fileName || 'document.hwp', null);
+      await loadBytes(bytes, msg.fileName || 'document.hwp', null, performance.now(), msg.fileId ?? null);
       e.source?.postMessage({ type: 'rhwp-response', id: msg.id, result: { pageCount: wasm.pageCount } }, { targetOrigin: '*' });
     } catch (err: any) {
       e.source?.postMessage({ type: 'rhwp-response', id: msg.id, error: err.message || String(err) }, { targetOrigin: '*' });
@@ -892,7 +933,7 @@ window.addEventListener('message', async (e) => {
           break;
         }
         const bytes = new Uint8Array(params.data);
-        await loadBytes(bytes, params.fileName || 'document.hwp', null);
+        await loadBytes(bytes, params.fileName || 'document.hwp', null, performance.now(), params.fileId ?? null);
         reply({ pageCount: wasm.pageCount });
         break;
       }

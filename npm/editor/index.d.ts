@@ -27,8 +27,15 @@ export interface HwpVerifyResult {
 }
 
 export declare class RhwpEditor {
-  /** HWP 파일을 로드합니다 */
-  loadFile(data: ArrayBuffer | Uint8Array, fileName?: string): Promise<LoadResult>;
+  /**
+   * HWP 파일을 로드합니다.
+   * @param options.fileId SSR 세션 식별자(=minio fileId). 지정 시 서버 세션 생성 + 편집 미러링.
+   */
+  loadFile(
+    data: ArrayBuffer | Uint8Array,
+    fileName?: string,
+    options?: { fileId?: string | null },
+  ): Promise<LoadResult>;
   /** 현재 문서의 페이지 수를 반환합니다 */
   pageCount(): Promise<number>;
   /** 특정 페이지를 SVG 문자열로 렌더링합니다 */
