@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
@@ -67,6 +67,12 @@ struct CreateReq {
 #[serde(rename_all = "camelCase")]
 struct SnapshotReq {
     file_base64: String,
+}
+
+#[derive(Deserialize)]
+struct ExportQuery {
+    /// "hwp" | "hwpx". 미지정 시 세션 생성 시 포맷을 따른다.
+    fmt: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -267,6 +273,44 @@ async fn get_ir(
     Ok(([(header::CONTENT_TYPE, "application/json")], json).into_response())
 }
 
+/// 현재 세션 문서를 hwp/hwpx 바이너리로 내보낸다.
+///
+/// **확정 저장 경계**: 외부 모듈(minio 연동)이 이 엔드포인트로 바이트를 받아
+/// minio에 업로드한다. 본 서버는 바이트 제공까지만 책임진다.
+async fn export(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+    Query(q): Query<ExportQuery>,
+) -> Result<Response, AppError> {
+    let session = get_or_restore(&state, &file_id)?;
+    let s = session.lock().unwrap();
+    let doc = s.core.document();
+    let fmt = q.fmt.as_deref().unwrap_or(&s.format);
+
+    let (bytes, ext) = match fmt {
+        "hwpx" => (
+            rhwp::serializer::serialize_hwpx(doc)
+                .map_err(|e| AppError::internal(format!("hwpx 직렬화 실패: {e:?}")))?,
+            "hwpx",
+        ),
+        _ => (
+            rhwp::serialize_document(doc)
+                .map_err(|e| AppError::internal(format!("hwp 직렬화 실패: {e:?}")))?,
+            "hwp",
+        ),
+    };
+
+    let disposition = format!("attachment; filename=\"{file_id}.{ext}\"");
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
 async fn delete_session(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
@@ -282,6 +326,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/ops", post(apply_ops))
         .route("/sessions/:id/snapshot", put(put_snapshot))
         .route("/sessions/:id/ir", get(get_ir))
+        .route("/sessions/:id/export", get(export))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
         .with_state(state)
