@@ -212,6 +212,44 @@ mod tests {
         assert_eq!(para_text(&core, 0, 0), "HelloWorld");
     }
 
+    /// 전체 문서 텍스트(문단 join) — 결정성 비교용.
+    fn doc_text(core: &DocumentCore) -> Vec<String> {
+        core.document().sections[0]
+            .paragraphs
+            .iter()
+            .map(|p| p.text.clone())
+            .collect()
+    }
+
+    /// 결정성 회귀: EditOperation 적용 결과 == 동일 시퀀스의 native 직접 호출 결과.
+    /// (native 직접 호출은 클라이언트 WASM `insertText`/`splitParagraph` 등이 거치는 경로와 동일)
+    #[test]
+    fn test_op_apply_equals_direct_native() {
+        // (a) op 적용 경로
+        let mut a = core_with_text("Hello");
+        a.apply_edit_op(&EditOperation::InsertText {
+            section: 0,
+            para: 0,
+            offset: 5,
+            text: " World".to_string(),
+        })
+        .unwrap();
+        a.apply_edit_op(&EditOperation::SplitParagraph {
+            section: 0,
+            para: 0,
+            offset: 5,
+        })
+        .unwrap();
+
+        // (b) native 직접 호출 경로 (= WASM 편집 경로)
+        let mut b = core_with_text("Hello");
+        b.insert_text_native(0, 0, 5, " World").unwrap();
+        b.split_paragraph_native(0, 0, 5).unwrap();
+
+        assert_eq!(doc_text(&a), doc_text(&b), "op 적용과 native 직접 호출 결과가 일치해야 함");
+        assert_eq!(doc_text(&a), vec!["Hello".to_string(), " World".to_string()]);
+    }
+
     #[test]
     fn test_apply_ops_json() {
         let mut core = core_with_text("");
