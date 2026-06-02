@@ -1,0 +1,313 @@
+//! rhwp SSR 세션 서버.
+//!
+//! 문서별 `fileId`(=minio fileId) 단위로 `DocumentCore` 를 서버 메모리에 보유하고
+//! sqlite 에 영속한다. 클라이언트(iframe) 가 닫혀도 상태가 유지되며, AI 모델은
+//! `GET /sessions/{id}/ir` 로 현재 문서 상태(IR JSON)를 조회할 수 있다.
+//!
+//! minio 다운로드/업로드는 **외부 모듈** 책임이다. 본 서버는 input 으로
+//! `fileId` + 파일 바이트만 받는다.
+//!
+//! ## API
+//! - `POST   /sessions`              세션 생성/재생성 `{fileId, format?, fileBase64}`
+//! - `POST   /sessions/{id}/ops`     연산형 patch 적용 `[EditOperation, ...]`
+//! - `PUT    /sessions/{id}/snapshot` 스냅샷형 동기화 `{fileBase64}`
+//! - `GET    /sessions/{id}/ir`      현재 상태 IR JSON (모델 조회)
+//! - `DELETE /sessions/{id}`         메모리 세션 해제 (영속 유지)
+//! - `GET    /health`                헬스 체크
+
+mod store;
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use axum::{
+    extract::{Path, State},
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{delete, get, post, put},
+    Json, Router,
+};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tokio::net::TcpListener;
+use tower_http::cors::CorsLayer;
+
+use rhwp::DocumentCore;
+
+use store::{PersistedSession, Store};
+
+/// 서버 공유 상태.
+#[derive(Clone)]
+struct AppState {
+    sessions: Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>,
+    store: Arc<Store>,
+}
+
+/// 메모리에 보유되는 단일 세션.
+struct Session {
+    core: DocumentCore,
+    #[allow(dead_code)]
+    format: String,
+    /// 다음에 부여할 op/snapshot seq.
+    next_seq: i64,
+}
+
+// ─── 요청/응답 DTO ────────────────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateReq {
+    file_id: String,
+    format: Option<String>,
+    file_base64: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SnapshotReq {
+    file_base64: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionInfo {
+    file_id: String,
+    seq: i64,
+    section_count: usize,
+    paragraph_count: usize,
+}
+
+// ─── 에러 ────────────────────────────────────────────
+
+struct AppError {
+    status: StatusCode,
+    msg: String,
+}
+
+impl AppError {
+    fn new(status: StatusCode, msg: impl Into<String>) -> Self {
+        AppError {
+            status,
+            msg: msg.into(),
+        }
+    }
+    fn bad_request(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, msg)
+    }
+    fn unprocessable(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, msg)
+    }
+    fn not_found(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, msg)
+    }
+    fn internal(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, msg)
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (self.status, Json(json!({ "error": self.msg }))).into_response()
+    }
+}
+
+impl From<rusqlite::Error> for AppError {
+    fn from(e: rusqlite::Error) -> Self {
+        AppError::internal(format!("sqlite: {e}"))
+    }
+}
+
+// ─── 코어 빌드 헬퍼 ────────────────────────────────────
+
+/// 파일 바이트를 파싱하여 레이아웃 준비된 `DocumentCore` 를 만든다.
+fn build_core(bytes: &[u8]) -> Result<DocumentCore, AppError> {
+    let doc = rhwp::parse_document(bytes)
+        .map_err(|e| AppError::unprocessable(format!("문서 파싱 실패: {e}")))?;
+    let mut core = DocumentCore::new_empty();
+    core.set_document(doc);
+    Ok(core)
+}
+
+/// 영속 데이터로부터 코어를 복원한다(base/snapshot + 이후 ops 재적용).
+fn restore_core(p: &PersistedSession) -> Result<DocumentCore, AppError> {
+    let mut core = build_core(&p.base_blob)?;
+    if !p.ops.is_empty() {
+        let joined = p
+            .ops
+            .iter()
+            .map(|(_, j)| j.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        core.apply_edit_ops_json(&format!("[{joined}]"))
+            .map_err(|e| AppError::internal(format!("op 재적용 실패: {e}")))?;
+    }
+    Ok(core)
+}
+
+/// 메모리 세션을 얻거나, 없으면 sqlite에서 복원하여 등록한다.
+fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Session>>, AppError> {
+    if let Some(s) = state.sessions.lock().unwrap().get(file_id) {
+        return Ok(s.clone());
+    }
+    let persisted = state
+        .store
+        .load(file_id)?
+        .ok_or_else(|| AppError::not_found(format!("세션 없음: {file_id}")))?;
+    let core = restore_core(&persisted)?;
+    let session = Arc::new(Mutex::new(Session {
+        core,
+        format: persisted.format,
+        next_seq: persisted.last_seq + 1,
+    }));
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .insert(file_id.to_string(), session.clone());
+    Ok(session)
+}
+
+/// 세션 정보 요약(문단 합계 포함)을 만든다.
+fn session_info(file_id: &str, session: &Session) -> SessionInfo {
+    let doc = session.core.document();
+    let paragraph_count = doc.sections.iter().map(|s| s.paragraphs.len()).sum();
+    SessionInfo {
+        file_id: file_id.to_string(),
+        seq: session.next_seq - 1,
+        section_count: doc.sections.len(),
+        paragraph_count,
+    }
+}
+
+// ─── 핸들러 ───────────────────────────────────────────
+
+async fn health() -> &'static str {
+    "ok"
+}
+
+async fn create_session(
+    State(state): State<AppState>,
+    Json(req): Json<CreateReq>,
+) -> Result<Json<SessionInfo>, AppError> {
+    let bytes = STANDARD
+        .decode(req.file_base64.as_bytes())
+        .map_err(|e| AppError::bad_request(format!("base64 디코드 실패: {e}")))?;
+    let core = build_core(&bytes)?;
+    let format = req.format.unwrap_or_else(|| "hwpx".to_string());
+
+    state.store.create_session(&req.file_id, &format, &bytes)?;
+
+    let session = Session {
+        core,
+        format,
+        next_seq: 1,
+    };
+    let info = session_info(&req.file_id, &session);
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .insert(req.file_id.clone(), Arc::new(Mutex::new(session)));
+    Ok(Json(info))
+}
+
+async fn apply_ops(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+    Json(ops): Json<Vec<serde_json::Value>>,
+) -> Result<Json<SessionInfo>, AppError> {
+    let session = get_or_restore(&state, &file_id)?;
+    let mut s = session.lock().unwrap();
+
+    let ops_json = serde_json::to_string(&ops)
+        .map_err(|e| AppError::bad_request(format!("ops 직렬화 실패: {e}")))?;
+    s.core
+        .apply_edit_ops_json(&ops_json)
+        .map_err(|e| AppError::unprocessable(format!("op 적용 실패: {e}")))?;
+
+    for op in &ops {
+        let seq = s.next_seq;
+        state.store.append_op(&file_id, seq, &op.to_string())?;
+        s.next_seq += 1;
+    }
+    Ok(Json(session_info(&file_id, &s)))
+}
+
+async fn put_snapshot(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+    Json(req): Json<SnapshotReq>,
+) -> Result<Json<SessionInfo>, AppError> {
+    let session = get_or_restore(&state, &file_id)?;
+    let bytes = STANDARD
+        .decode(req.file_base64.as_bytes())
+        .map_err(|e| AppError::bad_request(format!("base64 디코드 실패: {e}")))?;
+    let core = build_core(&bytes)?;
+
+    let mut s = session.lock().unwrap();
+    s.core = core;
+    let seq = s.next_seq;
+    state.store.append_snapshot(&file_id, seq, &bytes)?;
+    s.next_seq += 1;
+    Ok(Json(session_info(&file_id, &s)))
+}
+
+async fn get_ir(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+) -> Result<Response, AppError> {
+    let session = get_or_restore(&state, &file_id)?;
+    let s = session.lock().unwrap();
+    let json = s
+        .core
+        .document()
+        .to_ir_json()
+        .map_err(|e| AppError::internal(format!("IR 직렬화 실패: {e}")))?;
+    Ok(([(header::CONTENT_TYPE, "application/json")], json).into_response())
+}
+
+async fn delete_session(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+) -> impl IntoResponse {
+    state.sessions.lock().unwrap().remove(&file_id);
+    StatusCode::NO_CONTENT
+}
+
+fn router(state: AppState) -> Router {
+    Router::new()
+        .route("/health", get(health))
+        .route("/sessions", post(create_session))
+        .route("/sessions/:id/ops", post(apply_ops))
+        .route("/sessions/:id/snapshot", put(put_snapshot))
+        .route("/sessions/:id/ir", get(get_ir))
+        .route("/sessions/:id", delete(delete_session))
+        .layer(CorsLayer::permissive())
+        .with_state(state)
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "rhwp_server=info,tower_http=info".into()),
+        )
+        .init();
+
+    let db_path = std::env::var("RHWP_SERVER_DB").unwrap_or_else(|_| "rhwp-sessions.db".to_string());
+    let store = Store::open(&db_path).expect("sqlite 열기 실패");
+    let state = AppState {
+        sessions: Arc::new(Mutex::new(HashMap::new())),
+        store: Arc::new(store),
+    };
+
+    let addr = std::env::var("RHWP_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:7710".to_string());
+    let listener = TcpListener::bind(&addr).await.expect("bind 실패");
+    tracing::info!("rhwp-server listening on {addr} (db={db_path})");
+
+    axum::serve(listener, router(state))
+        .await
+        .expect("서버 종료됨");
+}
