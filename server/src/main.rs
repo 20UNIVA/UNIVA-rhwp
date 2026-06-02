@@ -15,6 +15,7 @@
 //! - `DELETE /sessions/{id}`         메모리 세션 해제 (영속 유지)
 //! - `GET    /health`                헬스 체크
 
+mod storage;
 mod store;
 
 use std::collections::HashMap;
@@ -35,6 +36,7 @@ use tower_http::cors::CorsLayer;
 
 use rhwp::DocumentCore;
 
+use storage::Storage;
 use store::{PersistedSession, Store};
 
 /// 서버 공유 상태.
@@ -42,6 +44,7 @@ use store::{PersistedSession, Store};
 struct AppState {
     sessions: Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>,
     store: Arc<Store>,
+    storage: Arc<Storage>,
 }
 
 /// 메모리에 보유되는 단일 세션.
@@ -66,6 +69,13 @@ struct CreateReq {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SnapshotReq {
+    file_base64: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateDocReq {
+    filename: Option<String>,
     file_base64: String,
 }
 
@@ -157,27 +167,52 @@ fn restore_core(p: &PersistedSession) -> Result<DocumentCore, AppError> {
     Ok(core)
 }
 
-/// 메모리 세션을 얻거나, 없으면 sqlite에서 복원하여 등록한다.
-fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Session>>, AppError> {
-    if let Some(s) = state.sessions.lock().unwrap().get(file_id) {
-        return Ok(s.clone());
+/// 메모리 세션을 얻거나, 없으면 sqlite → (그래도 없으면) minio download 순으로 복원하여 등록한다.
+async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Session>>, AppError> {
+    // 1) 메모리
+    {
+        let guard = state.sessions.lock().unwrap();
+        if let Some(s) = guard.get(file_id) {
+            return Ok(s.clone());
+        }
     }
-    let persisted = state
-        .store
-        .load(file_id)?
-        .ok_or_else(|| AppError::not_found(format!("세션 없음: {file_id}")))?;
-    let core = restore_core(&persisted)?;
-    let session = Arc::new(Mutex::new(Session {
-        core,
-        format: persisted.format,
-        next_seq: persisted.last_seq + 1,
-    }));
-    state
-        .sessions
-        .lock()
-        .unwrap()
-        .insert(file_id.to_string(), session.clone());
-    Ok(session)
+    // 2) sqlite 복원 (작업 중 상태 우선 — 편집 진행분 보존)
+    if let Some(persisted) = state.store.load(file_id)? {
+        let core = restore_core(&persisted)?;
+        let session = Arc::new(Mutex::new(Session {
+            core,
+            format: persisted.format,
+            next_seq: persisted.last_seq + 1,
+        }));
+        state
+            .sessions
+            .lock()
+            .unwrap()
+            .insert(file_id.to_string(), session.clone());
+        return Ok(session);
+    }
+    // 3) minio download 폴백 (외부가 fileId만 지정하고 진입한 경우)
+    if state.storage.enabled() {
+        let bytes = state
+            .storage
+            .download(file_id)
+            .await
+            .map_err(|e| AppError::not_found(format!("세션·저장소 모두 없음: {file_id} ({e})")))?;
+        let core = build_core(&bytes)?;
+        state.store.create_session(file_id, "hwp", &bytes)?;
+        let session = Arc::new(Mutex::new(Session {
+            core,
+            format: "hwp".to_string(),
+            next_seq: 1,
+        }));
+        state
+            .sessions
+            .lock()
+            .unwrap()
+            .insert(file_id.to_string(), session.clone());
+        return Ok(session);
+    }
+    Err(AppError::not_found(format!("세션 없음: {file_id}")))
 }
 
 /// 세션 정보 요약(문단 합계 포함)을 만든다.
@@ -224,12 +259,55 @@ async fn create_session(
     Ok(Json(info))
 }
 
+/// 파일을 minio에 업로드하여 file_id를 발급받고, 그 file_id로 세션을 생성한다.
+/// fileId가 없는 신규 문서(빈 문서 포함)의 진입점.
+async fn create_document(
+    State(state): State<AppState>,
+    Json(req): Json<CreateDocReq>,
+) -> Result<Json<SessionInfo>, AppError> {
+    let bytes = STANDARD
+        .decode(req.file_base64.as_bytes())
+        .map_err(|e| AppError::bad_request(format!("base64 디코드 실패: {e}")))?;
+    let filename = req.filename.unwrap_or_else(|| "document.hwp".to_string());
+
+    // 1) 파싱 검증 (업로드 전에 유효성 확인)
+    let core = build_core(&bytes)?;
+    let format = if filename.to_lowercase().ends_with("hwpx") {
+        "hwpx"
+    } else {
+        "hwp"
+    }
+    .to_string();
+
+    // 2) minio upload → file_id
+    let file_id = state
+        .storage
+        .upload(bytes.clone(), &filename)
+        .await
+        .map_err(|e| AppError::internal(format!("저장소 업로드 실패: {e}")))?;
+
+    // 3) 발급된 file_id로 세션 생성
+    state.store.create_session(&file_id, &format, &bytes)?;
+    let session = Session {
+        core,
+        format,
+        next_seq: 1,
+    };
+    let info = session_info(&file_id, &session);
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .insert(file_id.clone(), Arc::new(Mutex::new(session)));
+    Ok(Json(info))
+}
+
 async fn apply_ops(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
     Json(ops): Json<Vec<serde_json::Value>>,
 ) -> Result<Json<SessionInfo>, AppError> {
-    let session = get_or_restore(&state, &file_id)?;
+    let session = get_or_restore(&state, &file_id).await?;
     let mut s = session.lock().unwrap();
 
     let ops_json = serde_json::to_string(&ops)
@@ -251,7 +329,7 @@ async fn put_snapshot(
     Path(file_id): Path<String>,
     Json(req): Json<SnapshotReq>,
 ) -> Result<Json<SessionInfo>, AppError> {
-    let session = get_or_restore(&state, &file_id)?;
+    let session = get_or_restore(&state, &file_id).await?;
     let bytes = STANDARD
         .decode(req.file_base64.as_bytes())
         .map_err(|e| AppError::bad_request(format!("base64 디코드 실패: {e}")))?;
@@ -270,7 +348,7 @@ async fn get_ir(
     Path(file_id): Path<String>,
     Query(q): Query<IrQuery>,
 ) -> Result<Response, AppError> {
-    let session = get_or_restore(&state, &file_id)?;
+    let session = get_or_restore(&state, &file_id).await?;
     let s = session.lock().unwrap();
     // page 미지정 → 전체, page=n → 해당 페이지 문단만(절대 인덱스 유지 → 편집 op 그대로 유효)
     let json = s
@@ -289,7 +367,7 @@ async fn export(
     Path(file_id): Path<String>,
     Query(q): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
-    let session = get_or_restore(&state, &file_id)?;
+    let session = get_or_restore(&state, &file_id).await?;
     let s = session.lock().unwrap();
     let doc = s.core.document();
     let fmt = q.fmt.as_deref().unwrap_or(&s.format);
@@ -330,6 +408,7 @@ fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/sessions", post(create_session))
+        .route("/documents", post(create_document))
         .route("/sessions/:id/ops", post(apply_ops))
         .route("/sessions/:id/snapshot", put(put_snapshot))
         .route("/sessions/:id/ir", get(get_ir))
@@ -350,9 +429,12 @@ async fn main() {
 
     let db_path = std::env::var("RHWP_SERVER_DB").unwrap_or_else(|_| "rhwp-sessions.db".to_string());
     let store = Store::open(&db_path).expect("sqlite 열기 실패");
+    let storage = Storage::from_env();
+    tracing::info!("외부 저장소 연동: {}", if storage.enabled() { "활성" } else { "비활성(UPLOAD_URL/DOWNLOAD_URL 미설정)" });
     let state = AppState {
         sessions: Arc::new(Mutex::new(HashMap::new())),
         store: Arc::new(store),
+        storage: Arc::new(storage),
     };
 
     let addr = std::env::var("RHWP_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:7710".to_string());
