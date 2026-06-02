@@ -34,6 +34,8 @@ runTest('SSR 빈문서 업로드 + 열기 분기 E2E', async ({ page, browser })
   assert(!!blankFid, '빈 문서 진입 시 fileId 자동 발급');
   assert(isBlank === true, '빈 문서 세션 isBlank=true');
   assert((await irText(blankFid)) != null, '서버에 빈문서 세션 생성됨');
+  const urlA = await page.evaluate(() => location.search);
+  assert(urlA.includes(`fileId=${blankFid}`), `URL에 fileId 반영됨 (${urlA})`);
 
   // ── 시나리오 C: 빈 문서를 편집한 뒤 다른 문서 열기 → 빈 세션 보존 ──
   await clickEditArea(page);
@@ -60,6 +62,8 @@ runTest('SSR 빈문서 업로드 + 열기 분기 E2E', async ({ page, browser })
   console.log(`  [C] 열기 후 fileId=${openedFid} (blank=${blankFid})`);
   assert(openedFid && openedFid !== blankFid, '열기 시 새 fileId로 전환');
   assert((await page.evaluate(() => window.__ssr.isBlank)) === false, '전환 후 isBlank=false');
+  const urlC = await page.evaluate(() => location.search);
+  assert(urlC.includes(`fileId=${openedFid}`), `열기 후 URL fileId 갱신됨 (${urlC})`);
   // 편집했던 빈 문서 세션은 서버에 편집("KEEPME") 보존
   const keptText = await irText(blankFid);
   console.log(`  [C] 편집했던 빈문서 서버 상태: ${keptText ? keptText.slice(0, 20) : '(없음)'}`);

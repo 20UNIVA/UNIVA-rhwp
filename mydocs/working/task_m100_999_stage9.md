@@ -22,6 +22,7 @@
   - 미편집이면 `ssrDeleteSession(prevFileId)` (빈세션 닫기) 후 새 문서 업로드
   - 편집했으면 닫지 않고(서버 보존) 새 문서 업로드
 - dev 전역 `window.__ssr = { fileId, isBlank }` 노출(E2E용)
+- **URL 동기화**: fileId가 바뀔 때마다 `syncUrlFileId()`가 `history.replaceState`로 주소창 `?fileId=` 갱신(ssrBase 등 보존). 새로고침/공유 시 그 문서로 복원됨. (이슈: 열기 후 URL에 fileId 미반영 → 수정)
 
 ## 검증 (E2E, 실서버 + 실제 minio)
 

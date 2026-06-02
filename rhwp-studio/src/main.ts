@@ -67,6 +67,21 @@ const SSR_URL_FILE_ID = SSR_PARAMS.get('fileId');
 /** SSR 모드 활성 조건 — fileId/ssrBase/ssr 중 하나라도 있으면. */
 const SSR_MODE = SSR_PARAMS.has('fileId') || SSR_PARAMS.has('ssrBase') || SSR_PARAMS.has('ssr');
 
+/**
+ * 현재 세션 fileId를 주소창 URL(`?fileId=`)에 반영한다(history.replaceState).
+ * 새로고침/공유 시 그 문서로 복원되도록 한다. ssrBase 등 다른 파라미터는 보존.
+ */
+function syncUrlFileId(fileId: string): void {
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.get('fileId') === fileId) return;
+    u.searchParams.set('fileId', fileId);
+    history.replaceState(history.state, '', u.toString());
+  } catch {
+    /* URL 갱신 실패는 치명적이지 않음 */
+  }
+}
+
 /** Uint8Array → base64 (청크 처리). */
 function ssrBytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -105,6 +120,7 @@ async function createSsrSession(bytes: Uint8Array, fileId: string): Promise<void
     await client.createSession(bytes);
     sessionClient = client;
     currentSsrFileId = fileId;
+    syncUrlFileId(fileId);
     if (inputHandler) inputHandler.mirrorSink = client;
     console.info(`[SSR] 세션 생성됨: fileId=${fileId}`);
   } catch (e) {
@@ -122,6 +138,7 @@ function attachSsrMirror(fileId: string): void {
   client.attach();
   sessionClient = client;
   currentSsrFileId = fileId;
+  syncUrlFileId(fileId);
   if (inputHandler) inputHandler.mirrorSink = client;
   console.info(`[SSR] 세션 미러링 연결됨: fileId=${fileId}`);
 }
