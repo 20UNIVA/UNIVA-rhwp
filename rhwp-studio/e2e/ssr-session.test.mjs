@@ -53,7 +53,7 @@ async function waitServer() {
 
 await waitServer();
 
-runTest('SSR 세션 미러링 E2E', async ({ page }) => {
+runTest('SSR 세션 미러링 E2E', async ({ page, browser }) => {
   // 2. studio 로드 (fileId + ssrBase query)
   const url = `${VITE_URL}/?fileId=${FILE_ID}&ssrBase=${encodeURIComponent(SERVER_BASE)}`;
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
@@ -104,6 +104,29 @@ runTest('SSR 세션 미러링 E2E', async ({ page }) => {
   const irAfter = await fetch(`${SERVER_BASE}/sessions/${FILE_ID}/ir`).then((r) => r.json());
   const textAfter = irAfter.sections.flatMap((s) => s.paragraphs.map((p) => p.text)).join('');
   assert(textAfter.includes(MARKER), `연결 끊김(DELETE) 후 sqlite 복원으로 편집 유지`);
+
+  // 7. 재진입 복원: 새 탭에서 파일 없이 같은 fileId URL로 진입 → 서버 상태가 화면에 떠야 함
+  //    (same-URL reload는 PWA SW/history 때문에 navigation이 멈출 수 있어 새 탭 사용)
+  const page2 = await browser.newPage();
+  await page2.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page2.waitForFunction(() => !!window.__wasm, { timeout: 15000 });
+  // restoreSsrSessionIfNeeded() 비동기 완료 대기 (export fetch + loadDocument)
+  await page2.waitForFunction(
+    () => (window.__wasm?.pageCount ?? 0) > 0,
+    { timeout: 10000 },
+  ).catch(() => {});
+  const restoredPages = await page2.evaluate(() => window.__wasm?.pageCount ?? 0);
+  const restoredText = await page2.evaluate(() => {
+    const c = window.__wasm;
+    if (!c || !c.pageCount) return '';
+    let t = '';
+    const n = c.getParagraphCount?.(0) ?? 0;
+    for (let i = 0; i < n; i++) t += c.getTextRange?.(0, i, 0, 200) ?? '';
+    return t;
+  });
+  console.log(`  재진입 후 pageCount=${restoredPages}, marker 포함=${restoredText.includes(MARKER)}`);
+  assert(restoredPages > 0, `재진입 시 파일 없이 서버에서 문서 복원 로드 (pageCount=${restoredPages})`);
+  assert(restoredText.includes(MARKER), `재진입 복원 문서에 이전 편집("${MARKER}") 포함`);
 }, { skipLoadApp: true });
 
 cleanup();

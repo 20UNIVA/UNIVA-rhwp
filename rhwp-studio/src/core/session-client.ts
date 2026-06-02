@@ -84,6 +84,15 @@ export class SessionClient implements MirrorSink {
     this.installUnloadFlush();
   }
 
+  /**
+   * 이미 서버에 존재하는 세션에 미러링만 연결한다(세션 재생성 없음).
+   * 재진입 복원 로드 시 사용 — `createSession`을 호출하면 서버 ops가 초기화되므로
+   * 복원 경로에서는 반드시 이 메서드를 쓴다.
+   */
+  attach(): void {
+    this.installUnloadFlush();
+  }
+
   queueOp(op: EditOperation): void {
     this.queue.push(op);
     this.scheduleOpFlush();

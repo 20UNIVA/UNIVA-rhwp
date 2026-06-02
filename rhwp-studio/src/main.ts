@@ -59,32 +59,77 @@ let sessionClient: SessionClient | null = null;
 const SSR_BASE_URL = new URLSearchParams(location.search).get('ssrBase') ?? '';
 const SSR_URL_FILE_ID = new URLSearchParams(location.search).get('fileId');
 
+/** fileId용 SessionClient를 만든다(세션 생성/연결은 호출부에서). */
+function buildSessionClient(fileId: string): SessionClient {
+  const format = wasm.getSourceFormat() === 'hwpx' ? 'hwpx' : 'hwp';
+  return new SessionClient({
+    baseUrl: SSR_BASE_URL,
+    fileId,
+    format,
+    getSnapshotBytes: () => {
+      try {
+        return wasm.exportHwpx();
+      } catch {
+        return null;
+      }
+    },
+  });
+}
+
 /**
- * fileId가 주어지면 SSR 세션을 생성하고 편집 미러링을 연결한다.
+ * 신규: 원본 바이트로 서버 세션을 **생성**하고 미러링을 연결한다.
+ * (서버에 같은 fileId 세션이 있으면 ops가 초기화되며 재생성됨)
  * minio 연동은 외부 모듈 담당 — 여기서는 원본 바이트만 서버로 전달한다.
  */
-async function connectSsrSession(bytes: Uint8Array, fileId: string): Promise<void> {
+async function createSsrSession(bytes: Uint8Array, fileId: string): Promise<void> {
   try {
     sessionClient?.dispose();
-    const format = wasm.getSourceFormat() === 'hwpx' ? 'hwpx' : 'hwp';
-    const client = new SessionClient({
-      baseUrl: SSR_BASE_URL,
-      fileId,
-      format,
-      getSnapshotBytes: () => {
-        try {
-          return wasm.exportHwpx();
-        } catch {
-          return null;
-        }
-      },
-    });
+    const client = buildSessionClient(fileId);
     await client.createSession(bytes);
     sessionClient = client;
     if (inputHandler) inputHandler.mirrorSink = client;
-    console.info(`[SSR] 세션 연결됨: fileId=${fileId}, base=${SSR_BASE_URL || '(same-origin)'}`);
+    console.info(`[SSR] 세션 생성됨: fileId=${fileId}, base=${SSR_BASE_URL || '(same-origin)'}`);
   } catch (e) {
-    console.warn('[SSR] 세션 연결 실패 — 로컬 편집으로 계속', e);
+    console.warn('[SSR] 세션 생성 실패 — 로컬 편집으로 계속', e);
+  }
+}
+
+/**
+ * 복원: 이미 서버에 존재하는 세션에 미러링만 **연결**한다(세션 재생성 없음).
+ * 화면 문서는 호출 전에 서버 export 바이트로 이미 로드된 상태여야 한다.
+ */
+function attachSsrMirror(fileId: string): void {
+  sessionClient?.dispose();
+  const client = buildSessionClient(fileId);
+  client.attach();
+  sessionClient = client;
+  if (inputHandler) inputHandler.mirrorSink = client;
+  console.info(`[SSR] 세션 미러링 연결됨(복원): fileId=${fileId}`);
+}
+
+/**
+ * 부팅 시 URL에 fileId가 있고 서버에 해당 세션이 존재하면,
+ * 서버의 현재 상태(export)를 가져와 화면에 로드하고 미러링을 연결한다.
+ * (프론트를 닫았다 다시 열어도 서버 상태가 화면에 복원됨)
+ */
+async function restoreSsrSessionIfNeeded(): Promise<void> {
+  if (!SSR_URL_FILE_ID) return;
+  // `?url=`로 외부 문서를 지정한 경우 그쪽을 우선한다.
+  if (new URLSearchParams(location.search).get('url')) return;
+  try {
+    const res = await fetch(
+      `${SSR_BASE_URL}/sessions/${encodeURIComponent(SSR_URL_FILE_ID)}/export`,
+    );
+    if (!res.ok) {
+      // 세션 미존재(404 등) — 외부가 파일을 줄 때까지 빈 상태 유지.
+      return;
+    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    // restore=true: createSession 없이 미러링만 연결(서버 상태 보존)
+    await loadBytes(bytes, SSR_URL_FILE_ID, null, performance.now(), SSR_URL_FILE_ID, true);
+    console.info(`[SSR] 서버 세션 복원 로드 완료: fileId=${SSR_URL_FILE_ID}`);
+  } catch (e) {
+    console.warn('[SSR] 세션 복원 시도 실패', e);
   }
 }
 
@@ -275,6 +320,8 @@ async function initialize(): Promise<void> {
     setupEventListeners();
     setupGlobalShortcuts();
     loadFromUrlParam();
+    // SSR: 재진입 시 fileId로 서버에 보관된 현재 상태를 복원 로드.
+    void restoreSsrSessionIfNeeded();
 
     // E2E 테스트용 전역 노출 (개발 모드 전용)
     if (import.meta.env.DEV) {
@@ -625,6 +672,7 @@ async function loadBytes(
   fileHandle: typeof wasm.currentFileHandle,
   startTime = performance.now(),
   fileId: string | null = null,
+  restore = false,
 ): Promise<void> {
   const docInfo = wasm.loadDocument(data, fileName);
   wasm.currentFileHandle = fileHandle;
@@ -634,9 +682,14 @@ async function loadBytes(
   await initializeDocument(docInfo, `${fileName} — ${docInfo.pageCount}페이지 (${elapsed.toFixed(1)}ms)`);
   notifyHwpxSaveModeIfNeeded();
 
-  // SSR: fileId가 있으면 서버 세션 생성 + 편집 미러링 연결.
+  // SSR: fileId가 있으면 미러링 연결.
+  // - restore=true : 서버 기존 세션에 미러링만 연결(상태 보존)
+  // - restore=false: 원본 바이트로 서버 세션 생성/재생성
   const fid = fileId ?? SSR_URL_FILE_ID;
-  if (fid) await connectSsrSession(data, fid);
+  if (fid) {
+    if (restore) attachSsrMirror(fid);
+    else await createSsrSession(data, fid);
+  }
 }
 
 /**
