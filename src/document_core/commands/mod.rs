@@ -1,5 +1,6 @@
 mod clipboard;
 mod document;
+pub mod edit_op;
 mod footnote_ops;
 mod formatting;
 mod header_footer_ops;
