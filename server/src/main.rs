@@ -50,10 +50,16 @@ struct AppState {
 /// 메모리에 보유되는 단일 세션.
 struct Session {
     core: DocumentCore,
-    #[allow(dead_code)]
     format: String,
+    /// 저장(덮어쓰기) 시 사용할 파일명.
+    filename: String,
     /// 다음에 부여할 op/snapshot seq.
     next_seq: i64,
+}
+
+/// format 기반 기본 파일명.
+fn default_filename(file_id: &str, format: &str) -> String {
+    format!("{file_id}.{format}")
 }
 
 // ─── 요청/응답 DTO ────────────────────────────────────
@@ -179,9 +185,11 @@ async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Ses
     // 2) sqlite 복원 (작업 중 상태 우선 — 편집 진행분 보존)
     if let Some(persisted) = state.store.load(file_id)? {
         let core = restore_core(&persisted)?;
+        let filename = default_filename(file_id, &persisted.format);
         let session = Arc::new(Mutex::new(Session {
             core,
             format: persisted.format,
+            filename,
             next_seq: persisted.last_seq + 1,
         }));
         state
@@ -203,6 +211,7 @@ async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Ses
         let session = Arc::new(Mutex::new(Session {
             core,
             format: "hwp".to_string(),
+            filename: default_filename(file_id, "hwp"),
             next_seq: 1,
         }));
         state
@@ -245,9 +254,11 @@ async fn create_session(
 
     state.store.create_session(&req.file_id, &format, &bytes)?;
 
+    let filename = default_filename(&req.file_id, &format);
     let session = Session {
         core,
         format,
+        filename,
         next_seq: 1,
     };
     let info = session_info(&req.file_id, &session);
@@ -279,18 +290,20 @@ async fn create_document(
     }
     .to_string();
 
-    // 2) minio upload → file_id
+    // 2) minio upload → file_id (신규: file_id 미지정)
     let file_id = state
         .storage
-        .upload(bytes.clone(), &filename)
+        .upload(bytes.clone(), &filename, None)
         .await
-        .map_err(|e| AppError::internal(format!("저장소 업로드 실패: {e}")))?;
+        .map_err(|e| AppError::internal(format!("저장소 업로드 실패: {e}")))?
+        .file_id;
 
     // 3) 발급된 file_id로 세션 생성
     state.store.create_session(&file_id, &format, &bytes)?;
     let session = Session {
         core,
         format,
+        filename,
         next_seq: 1,
     };
     let info = session_info(&file_id, &session);
@@ -396,6 +409,37 @@ async fn export(
         .into_response())
 }
 
+/// 저장 — 현재 세션 문서를 같은 file_id로 minio에 덮어쓰기 업로드한다.
+/// (에디터 "저장" 버튼이 호출. 외부 upload API에 file_id 포함 → 해당 위치 덮어씀)
+async fn save_document(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let session = get_or_restore(&state, &file_id).await?;
+    // lock 안에서 동기 직렬화 → guard drop 후 await upload (MutexGuard는 await 경계를 넘지 않음)
+    let (bytes, filename) = {
+        let s = session.lock().unwrap();
+        let doc = s.core.document();
+        let bytes = match s.format.as_str() {
+            "hwpx" => rhwp::serializer::serialize_hwpx(doc)
+                .map_err(|e| AppError::internal(format!("hwpx 직렬화 실패: {e:?}")))?,
+            _ => rhwp::serialize_document(doc)
+                .map_err(|e| AppError::internal(format!("hwp 직렬화 실패: {e:?}")))?,
+        };
+        (bytes, s.filename.clone())
+    };
+    let res = state
+        .storage
+        .upload(bytes, &filename, Some(&file_id))
+        .await
+        .map_err(|e| AppError::internal(format!("저장(덮어쓰기) 실패: {e}")))?;
+    Ok(Json(json!({
+        "fileId": res.file_id,
+        "minioKey": res.minio_key,
+        "updated": res.updated,
+    })))
+}
+
 async fn delete_session(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
@@ -413,6 +457,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/snapshot", put(put_snapshot))
         .route("/sessions/:id/ir", get(get_ir))
         .route("/sessions/:id/export", get(export))
+        .route("/sessions/:id/save", post(save_document))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
         .with_state(state)

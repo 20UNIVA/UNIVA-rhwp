@@ -47,6 +47,18 @@ function hwpSaveCurrentHandle(
 export type SaveCurrentDocumentResult = 'saved' | 'cancelled' | 'failed' | 'unsupported';
 
 export async function saveCurrentDocument(services: CommandServices): Promise<SaveCurrentDocumentResult> {
+  // SSR 세션 모드: 로컬 저장 대신 서버(minio 덮어쓰기)에 저장한다.
+  if (services.saveToServer) {
+    try {
+      if (await services.saveToServer()) {
+        services.documentState.markClean('save');
+        console.log('[file:save] SSR 서버 저장 완료');
+        return 'saved';
+      }
+    } catch (e) {
+      console.warn('[file:save] 서버 저장 실패 — 로컬 저장으로 폴백', e);
+    }
+  }
   try {
     const saveName = services.wasm.fileName;
     const sourceFormat = services.wasm.getSourceFormat();

@@ -249,6 +249,20 @@ const commandServices: CommandServices = {
   getContext,
   getInputHandler: () => inputHandler,
   getViewportManager: () => canvasView?.getViewportManager() ?? null,
+  // SSR 모드면 저장을 서버 minio 덮어쓰기로 라우팅.
+  saveToServer: SSR_MODE
+    ? async () => {
+        if (!currentSsrFileId) return false;
+        // 디바운스 큐에 남은 편집을 먼저 서버에 반영한 뒤 저장.
+        await sessionClient?.flushOps();
+        const res = await fetch(
+          `${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/save`,
+          { method: 'POST' },
+        );
+        if (!res.ok) throw new Error(`save HTTP ${res.status}`);
+        return true;
+      }
+    : undefined,
 };
 
 const dispatcher = new CommandDispatcher(registry, commandServices, eventBus);
@@ -420,6 +434,7 @@ async function initialize(): Promise<void> {
         get fileId() { return currentSsrFileId; },
         get isBlank() { return currentIsBlank; },
       };
+      (window as any).__dispatcher = dispatcher;
     }
   } catch (error) {
     msg.textContent = `WASM 초기화 실패: ${error}`;
