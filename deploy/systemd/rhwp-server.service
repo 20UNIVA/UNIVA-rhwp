@@ -1,0 +1,19 @@
+[Unit]
+Description=rhwp SSR session server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 패키지를 /opt/rhwp/rhwp-vm-package 에 둔 경우
+WorkingDirectory=/opt/rhwp/rhwp-vm-package
+EnvironmentFile=/opt/rhwp/rhwp-vm-package/.env
+Environment=RHWP_STUDIO_DIR=/opt/rhwp/rhwp-vm-package/studio
+ExecStart=/opt/rhwp/rhwp-vm-package/rhwp-server
+Restart=on-failure
+RestartSec=3
+# sqlite/로그 디렉터리 권한에 맞춰 User 조정
+# User=rhwp
+
+[Install]
+WantedBy=multi-user.target

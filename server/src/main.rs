@@ -449,7 +449,7 @@ async fn delete_session(
 }
 
 fn router(state: AppState) -> Router {
-    Router::new()
+    let mut app = Router::new()
         .route("/health", get(health))
         .route("/sessions", post(create_session))
         .route("/documents", post(create_document))
@@ -460,7 +460,19 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/save", post(save_document))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
-        .with_state(state)
+        .with_state(state);
+
+    // RHWP_STUDIO_DIR 가 지정되면 studio 정적 자산(dist)도 같은 포트에서 서빙한다.
+    // → single-origin 배포(별도 웹서버/CORS 불필요). 미지정 시 API 전용(기존 동작).
+    if let Ok(dir) = std::env::var("RHWP_STUDIO_DIR") {
+        if !dir.is_empty() {
+            tracing::info!("studio 정적 서빙: {dir}");
+            app = app.fallback_service(
+                tower_http::services::ServeDir::new(dir).append_index_html_on_directories(true),
+            );
+        }
+    }
+    app
 }
 
 #[tokio::main]
