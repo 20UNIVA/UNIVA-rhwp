@@ -17,6 +17,7 @@
 | 6 | `rhwp-studio/e2e/ws-bridge.test.mjs` 양방향 검증 e2e 테스트. *Puppeteer DOM 검사가 Canvas 렌더링과 부적합*하여 *Node WebSocket 직접 구독 + 서버 IR 영속 확인*으로 검증 방식 수정. | ✅ 통과. 양방향 모두 확인: 서버→클라 broadcast 수신 OK + 클라→서버 ops 후 서버 IR에 영속 OK. | `f3e5167f` → `977f7a9d` (수정) |
 | 7 | `hwp_sub_agent_simulation_ssr.ipynb` 신설 (작업 공간 루트, 7 cells). 기존 노트북 cell 6(LLM 인프라)·cell 10(sub_agent_run)을 *byte-level 동일하게 복사*, cell 1·3·4·6은 신규 작성. SSR 라우터가 `hwp-doc-patch` 명령 가로채 `POST /workbench`로 라우팅. | ✅ 통과. 7 cells 정상 생성·검증. 알려진 한계: `google_search` 함수가 새 노트북에 없어 LLM이 google_web_search tool 호출 시 NameError — Sub-1 시연 시나리오(insert_text)에서는 영향 없음. | (git untracked, 작업 공간 루트는 git 저장소 아님) |
 | 8 | 종단 회귀 검증 + 보고서 작성 | ✅ 진행 중 (본 보고서) |
+| — | 수동 시연 중 발견 **Critical fix #2**: `onServerEvent` ops/workbench 두 분기 모두 *wasm 변경 후 `eventBus.emit('document-changed')` 호출이 누락*되어 IR 만 바뀌고 Canvas 가 옛 그림 그대로. `InputHandler` 가 자체 편집 후 같은 이벤트를 발행하는 패턴을 그대로 따라 보정. ops 분기는 실제 적용된 op 가 있을 때만(`appliedCount > 0`) 발행. | ✅ Incognito 탭으로 수동 시연 통과 확인. | `c2a67ec1` |
 
 ## 자동 검증 결과
 
@@ -60,6 +61,15 @@ paragraph text: REGRESS
 1. **LLM 실제 호출 → 브라우저 시각 반영**: 새 노트북 cell 0~6 순서 실행 → LLM이 `Bash("hwp-doc-patch insert_text ...")` 호출 → POST /workbench → ServerEvent::Ops broadcast → 브라우저 main.ts `onServerEvent` → WASM insertText → Canvas 재렌더링.
 2. **브라우저 직접 편집 → 서버 sqlite 영속**: 사용자가 브라우저에서 키 입력 → InputHandler가 `sessionClient.queueOp(op)` 호출 → WS 메시지 → 서버 `handle_client_text` → `apply_edit_ops_json` + sqlite 기록.
 
+### 시연 시 주의사항 — PWA Service Worker 캐시
+
+`rhwp-studio` 는 `vite-plugin-pwa` 로 `sw.js` 를 자동 생성·등록한다. *이미 페이지를 한 번 열어둔 브라우저 탭*은 새 `dist/index-<hash>.js` 가 떴어도 SW 가 옛 main 번들을 캐시에서 돌려주기 때문에 *하드 리로드만으로는 갱신되지 않는 경우*가 있다. 본 시연 중 실제 발생.
+
+권장 시연 절차:
+
+- **새 브라우저 시크릿 탭/incognito** 에서 출력 URL 열기. SW 등록 없는 깨끗한 상태로 보장.
+- 또는 일반 탭이라면 DevTools → Application → Service Workers → Unregister + Clear storage → Hard reload.
+
 ## Sub-1의 알려진 한계 (Sub-2로 미룸)
 
 | 항목 | 위치 | 처리 |
@@ -79,5 +89,5 @@ paragraph text: REGRESS
 
 ## 다음 단계
 
-- 사용자 수동 시연 통과 후 Sub-1 종료.
+- 사용자 수동 시연 *통과 확인됨* (2026-06-06, Incognito 탭). Sub-1 닫기.
 - Sub-2: 11+1 워크벤치 액션을 EditOperation variants로 추가해 *완전 SoT* 달성.
