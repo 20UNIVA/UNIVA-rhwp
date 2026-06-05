@@ -1,95 +1,109 @@
 /**
- * SSR 세션 클라이언트.
+ * SSR 세션 클라이언트 — *양방향 WebSocket*.
  *
- * iframe(rhwp-studio)이 VM의 rhwp-server에 직접 HTTP로 연결하여,
- * 편집을 서버 세션에 미러링한다(디바운스 배치). 프론트가 닫혀도 서버단에
- * 문서·patch가 유지되고 모델이 조회할 수 있게 하는 클라이언트 측 절반이다.
+ * 한 WS 채널로:
+ *   - *클라 → 서버* 미러링: queueOp(디바운스), requestSnapshot, attach(beforeunload flush)
+ *   - *서버 → 클라* 수신: onServerEvent(콜백)에 ServerEvent를 전달
  *
- * - 연산형 편집: `queueOp(op)` → 디바운스 후 `POST /sessions/{id}/ops`
- * - 스냅샷형 편집(붙여넣기/객체/표 등): `requestSnapshot()` → 전체 export `PUT /snapshot`
- * - 종료 시 잔여 큐 flush(`beforeunload`).
+ * 기존 외부 API(MirrorSink, queueOp, requestSnapshot, attach, createSession)는 유지.
+ * 호출자(InputHandler 등)는 변경 0.
  */
 import type { EditOperation } from '@/engine/edit-op';
 
-/** 편집 미러링 싱크 — InputHandler가 편집 후 호출한다. */
 export interface MirrorSink {
-  /** 연산형 편집을 큐에 넣는다(디바운스 배치 전송). */
   queueOp(op: EditOperation): void;
-  /** 스냅샷형 편집 — 전체 문서 동기화를 요청한다. */
   requestSnapshot(): void;
 }
 
-/** Uint8Array → base64 (청크 처리로 대용량 안전). */
+/** WS 텍스트 프레임 본문 — 서버 → 클라 */
+export type ServerEvent =
+  | { kind: 'ops'; seq: number; ops: EditOpJson[] }
+  | { kind: 'workbench'; seq: number; action: string; payload: unknown };
+
+interface EditOpJson {
+  op: string;
+  section?: number;
+  para?: number;
+  offset?: number;
+  text?: string;
+  count?: number;
+  deleted_text?: string;
+  prev_len?: number;
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
+  let bin = '';
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
-  return btoa(binary);
+  return btoa(bin);
 }
 
 export interface SessionClientOptions {
-  /** 서버 base URL. 빈 문자열이면 same-origin 상대경로. */
+  /** 서버 base URL. http(s)://host:port. WS URL은 ws(s)://...로 자동 변환. */
   baseUrl: string;
   fileId: string;
-  /** 스냅샷 동기화 시 현재 문서를 내보내는 함수(예: () => wasm.exportHwpx()). */
   getSnapshotBytes: () => Uint8Array | null;
-  /** 원본 포맷("hwp" | "hwpx"). 세션 생성/스냅샷 메타. */
   format?: string;
-  /** 디바운스 간격(ms). 기본 600. */
   debounceMs?: number;
+  /** 서버가 발행한 이벤트를 받았을 때 콜백. main.ts에서 ops/workbench 분기 처리. */
+  onServerEvent?: (ev: ServerEvent) => void;
+  /** WS 재연결 백오프 — 기본 [500, 1000, 2000, 5000, 10000] ms */
+  reconnectDelaysMs?: number[];
 }
 
+const DEFAULT_BACKOFF = [500, 1000, 2000, 5000, 10000];
+
 export class SessionClient implements MirrorSink {
-  private readonly baseUrl: string;
+  private readonly baseUrlHttp: string;
+  private readonly baseUrlWs: string;
   private readonly fileId: string;
   private readonly getSnapshotBytes: () => Uint8Array | null;
   private readonly format: string;
   private readonly debounceMs: number;
+  private readonly onServerEvent?: (ev: ServerEvent) => void;
+  private readonly reconnectDelaysMs: number[];
 
+  private ws: WebSocket | null = null;
+  private reconnectIdx = 0;
+  private connected = false;
+  private sendBuffer: string[] = []; // WS 닫혀 있을 때 큐
   private queue: EditOperation[] = [];
   private opTimer: ReturnType<typeof setTimeout> | null = null;
-  private snapTimer: ReturnType<typeof setTimeout> | null = null;
-  private flushing = false;
   private unloadHandler: (() => void) | null = null;
 
   constructor(opts: SessionClientOptions) {
-    this.baseUrl = opts.baseUrl.replace(/\/$/, '');
+    this.baseUrlHttp = opts.baseUrl.replace(/\/$/, '');
+    this.baseUrlWs = this.baseUrlHttp.replace(/^http/, 'ws');
     this.fileId = opts.fileId;
     this.getSnapshotBytes = opts.getSnapshotBytes;
     this.format = opts.format ?? 'hwpx';
     this.debounceMs = opts.debounceMs ?? 600;
+    this.onServerEvent = opts.onServerEvent;
+    this.reconnectDelaysMs = opts.reconnectDelaysMs ?? DEFAULT_BACKOFF;
   }
 
-  private url(path: string): string {
-    return `${this.baseUrl}${path}`;
-  }
-
-  /** fileId + 원본 바이트로 서버 세션을 생성/재생성한다. */
+  /** fileId + 원본 바이트로 서버 세션을 생성/재생성. 이후 WS 연결. */
   async createSession(bytes: Uint8Array): Promise<void> {
     const body = JSON.stringify({
       fileId: this.fileId,
       format: this.format,
       fileBase64: bytesToBase64(bytes),
     });
-    const res = await fetch(this.url('/sessions'), {
+    const res = await fetch(this.baseUrlHttp + '/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
     });
-    if (!res.ok) {
-      throw new Error(`세션 생성 실패: HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`세션 생성 실패: HTTP ${res.status}`);
+    this.openWs();
     this.installUnloadFlush();
   }
 
-  /**
-   * 이미 서버에 존재하는 세션에 미러링만 연결한다(세션 재생성 없음).
-   * 재진입 복원 로드 시 사용 — `createSession`을 호출하면 서버 ops가 초기화되므로
-   * 복원 경로에서는 반드시 이 메서드를 쓴다.
-   */
+  /** 이미 서버에 존재하는 세션에 WS만 연결. createSession을 호출하면 ops 초기화. */
   attach(): void {
+    this.openWs();
     this.installUnloadFlush();
   }
 
@@ -99,83 +113,125 @@ export class SessionClient implements MirrorSink {
   }
 
   requestSnapshot(): void {
-    // 스냅샷은 전체 문서 상태를 포함하므로 보류 중인 연산 큐는 폐기한다.
-    this.queue.length = 0;
-    if (this.opTimer) {
-      clearTimeout(this.opTimer);
-      this.opTimer = null;
-    }
-    if (this.snapTimer) return;
-    this.snapTimer = setTimeout(() => {
-      this.snapTimer = null;
-      void this.flushSnapshot();
-    }, this.debounceMs);
+    const bytes = this.getSnapshotBytes();
+    if (!bytes) return;
+    const msg = JSON.stringify({
+      kind: 'snapshot',
+      file_base64: bytesToBase64(bytes),
+    });
+    this.sendOrBuffer(msg);
   }
 
   private scheduleOpFlush(): void {
     if (this.opTimer) clearTimeout(this.opTimer);
-    this.opTimer = setTimeout(() => {
-      this.opTimer = null;
-      void this.flushOps();
-    }, this.debounceMs);
+    this.opTimer = setTimeout(() => this.flushOps(), this.debounceMs);
   }
 
-  /** 큐에 쌓인 연산을 서버에 배치 전송한다. */
-  async flushOps(): Promise<void> {
-    if (this.flushing || this.queue.length === 0) return;
-    this.flushing = true;
-    const batch = this.queue.splice(0);
-    try {
-      const res = await fetch(this.url(`/sessions/${encodeURIComponent(this.fileId)}/ops`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(batch),
-      });
-      if (!res.ok) throw new Error(`ops 전송 실패: HTTP ${res.status}`);
-    } catch (e) {
-      // 실패 시 큐 복원(다음 flush에서 재시도).
-      this.queue.unshift(...batch);
-      console.warn('[SessionClient] ops flush 실패, 재시도 예약', e);
-      this.scheduleOpFlush();
-    } finally {
-      this.flushing = false;
+  /** 큐에 쌓인 연산을 즉시 WS로 전송한다. main.ts의 saveToServer 경로에서 await로 호출. */
+  flushOps(): Promise<void> {
+    if (this.queue.length === 0) return Promise.resolve();
+    const ops = this.queue;
+    this.queue = [];
+    const msg = JSON.stringify({ kind: 'ops', ops });
+    this.sendOrBuffer(msg);
+    return Promise.resolve();
+  }
+
+  private sendOrBuffer(msg: string): void {
+    if (this.ws && this.connected) {
+      try {
+        this.ws.send(msg);
+      } catch {
+        this.sendBuffer.push(msg);
+      }
+    } else {
+      this.sendBuffer.push(msg);
     }
   }
 
-  private async flushSnapshot(): Promise<void> {
-    const bytes = this.getSnapshotBytes();
-    if (!bytes) return;
-    try {
-      const res = await fetch(this.url(`/sessions/${encodeURIComponent(this.fileId)}/snapshot`), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileBase64: bytesToBase64(bytes) }),
-      });
-      if (!res.ok) throw new Error(`snapshot 전송 실패: HTTP ${res.status}`);
-    } catch (e) {
-      console.warn('[SessionClient] snapshot flush 실패', e);
-    }
+  private openWs(): void {
+    if (this.ws) return;
+    const url = `${this.baseUrlWs}/sessions/${encodeURIComponent(this.fileId)}/ws`;
+    this.ws = new WebSocket(url);
+
+    this.ws.addEventListener('open', () => {
+      this.connected = true;
+      this.reconnectIdx = 0;
+      while (this.sendBuffer.length > 0) {
+        const m = this.sendBuffer.shift()!;
+        try {
+          this.ws!.send(m);
+        } catch {
+          this.sendBuffer.unshift(m);
+          break;
+        }
+      }
+    });
+
+    this.ws.addEventListener('message', (e) => {
+      let parsed: ServerEvent;
+      try {
+        parsed = JSON.parse(e.data) as ServerEvent;
+      } catch {
+        console.warn('[session-client] WS 메시지 JSON 파싱 실패:', e.data);
+        return;
+      }
+      if (this.onServerEvent) {
+        try {
+          this.onServerEvent(parsed);
+        } catch (err) {
+          console.error('[session-client] onServerEvent 예외:', err);
+        }
+      }
+    });
+
+    this.ws.addEventListener('close', () => {
+      this.connected = false;
+      this.ws = null;
+      this.scheduleReconnect();
+    });
+
+    this.ws.addEventListener('error', (e) => {
+      console.warn('[session-client] WS 에러:', e);
+      // close 이벤트가 뒤따라 옴 → 거기서 재연결
+    });
   }
 
-  /** 종료 직전 잔여 연산을 sendBeacon으로 best-effort 전송한다. */
+  private scheduleReconnect(): void {
+    const delay =
+      this.reconnectDelaysMs[
+        Math.min(this.reconnectIdx, this.reconnectDelaysMs.length - 1)
+      ];
+    this.reconnectIdx += 1;
+    setTimeout(() => this.openWs(), delay);
+  }
+
   private installUnloadFlush(): void {
     if (this.unloadHandler) return;
     this.unloadHandler = () => {
-      if (this.queue.length === 0) return;
-      const batch = this.queue.splice(0);
-      const url = this.url(`/sessions/${encodeURIComponent(this.fileId)}/ops`);
-      const blob = new Blob([JSON.stringify(batch)], { type: 'application/json' });
-      navigator.sendBeacon?.(url, blob);
+      if (this.opTimer) clearTimeout(this.opTimer);
+      void this.flushOps();
     };
     window.addEventListener('beforeunload', this.unloadHandler);
   }
 
-  /** 리스너 해제 + 잔여 flush. */
+  /** WS 연결 해제 + beforeunload 리스너 제거 + 잔여 큐 flush. */
   dispose(): void {
     if (this.unloadHandler) {
       window.removeEventListener('beforeunload', this.unloadHandler);
       this.unloadHandler = null;
     }
+    if (this.opTimer) {
+      clearTimeout(this.opTimer);
+      this.opTimer = null;
+    }
     void this.flushOps();
+    if (this.ws) {
+      // close 이벤트가 scheduleReconnect를 트리거하지 않도록 ws를 null로 먼저.
+      const ws = this.ws;
+      this.ws = null;
+      this.connected = false;
+      ws.close();
+    }
   }
 }
