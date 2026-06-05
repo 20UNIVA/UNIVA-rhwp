@@ -29,16 +29,17 @@
 
 ```
 WS endpoint:  GET ws://127.0.0.1:7710/sessions/:id/ws
-방향:         양방향 텍스트 프레임 (JSON)
+방향:         양방향 텍스트 프레임 (JSON). "kind" 필드가 메시지 종류 식별.
+              방향은 채널 컨텍스트로 결정되므로 별도 dir 필드 불필요.
 
-서버 → 클라 (ServerEvent):
-  {"dir":"server","kind":"ops","seq":N,"ops":[EditOperation,…]}
-  {"dir":"server","kind":"workbench","seq":N,"action":"…","payload":{…}}
+서버 → 클라 (ServerEvent enum):
+  {"kind":"ops","seq":N,"ops":[EditOperation,…]}
+  {"kind":"workbench","seq":N,"action":"…","payload":{…}}
 
-클라 → 서버 (ClientMessage):
-  {"dir":"client","kind":"ops","ops":[EditOperation,…]}        — 사용자 키입력 미러
-  {"dir":"client","kind":"snapshot","fileBase64":"…"}          — 전체 동기화
-  {"dir":"client","kind":"ping"}                                — keep-alive
+클라 → 서버 (ClientMessage enum):
+  {"kind":"ops","ops":[EditOperation,…]}            — 사용자 키입력 미러
+  {"kind":"snapshot","file_base64":"…"}             — 전체 동기화 (snake_case)
+  {"kind":"ping"}                                    — keep-alive
 
 다른 endpoint는 HTTP 그대로:
   POST /sessions              세션 생성 (노트북·클라 모두 사용)
