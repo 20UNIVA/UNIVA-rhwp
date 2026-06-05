@@ -3,6 +3,7 @@ import type { DocumentInfo } from '@/core/types';
 import { EventBus } from '@/core/event-bus';
 import { CanvasView } from '@/view/canvas-view';
 import { InputHandler } from '@/engine/input-handler';
+import { SessionClient } from '@/core/session-client';
 import { Toolbar } from '@/ui/toolbar';
 import { MenuBar } from '@/ui/menu-bar';
 import { loadWebFonts } from '@/core/font-loader';
@@ -52,6 +53,171 @@ let inputHandler: InputHandler | null = null;
 let toolbar: Toolbar | null = null;
 let ruler: Ruler | null = null;
 
+// ─── SSR 세션 (fileId 단위 서버 미러링) ──────────────────
+let sessionClient: SessionClient | null = null;
+/** 현재 연결된 SSR 세션 fileId. */
+let currentSsrFileId: string | null = null;
+/** 현재 세션이 "빈 문서로 시작"되었는지(열기 시 미편집이면 닫기 위함). */
+let currentIsBlank = false;
+
+const SSR_PARAMS = new URLSearchParams(location.search);
+/** iframe 부모가 `?fileId=&ssrBase=` 로 전달. */
+const SSR_BASE_URL = SSR_PARAMS.get('ssrBase') ?? '';
+const SSR_URL_FILE_ID = SSR_PARAMS.get('fileId');
+/** SSR 모드 활성 조건 — fileId/ssrBase/ssr 중 하나라도 있으면. */
+const SSR_MODE = SSR_PARAMS.has('fileId') || SSR_PARAMS.has('ssrBase') || SSR_PARAMS.has('ssr');
+
+/**
+ * 현재 세션 fileId를 주소창 URL(`?fileId=`)에 반영한다(history.replaceState).
+ * 새로고침/공유 시 그 문서로 복원되도록 한다. ssrBase 등 다른 파라미터는 보존.
+ */
+function syncUrlFileId(fileId: string): void {
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.get('fileId') === fileId) return;
+    u.searchParams.set('fileId', fileId);
+    history.replaceState(history.state, '', u.toString());
+  } catch {
+    /* URL 갱신 실패는 치명적이지 않음 */
+  }
+}
+
+/** Uint8Array → base64 (청크 처리). */
+function ssrBytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/** fileId용 SessionClient를 만든다(세션 생성/연결은 호출부에서). */
+function buildSessionClient(fileId: string): SessionClient {
+  const format = wasm.getSourceFormat() === 'hwpx' ? 'hwpx' : 'hwp';
+  return new SessionClient({
+    baseUrl: SSR_BASE_URL,
+    fileId,
+    format,
+    getSnapshotBytes: () => {
+      try {
+        return wasm.exportHwpx();
+      } catch {
+        return null;
+      }
+    },
+  });
+}
+
+/**
+ * 원본 바이트로 서버 세션을 **생성**하고 미러링을 연결한다.
+ * (외부가 fileId 를 명시한 경우 — loadFile({fileId}))
+ */
+async function createSsrSession(bytes: Uint8Array, fileId: string): Promise<void> {
+  try {
+    sessionClient?.dispose();
+    const client = buildSessionClient(fileId);
+    await client.createSession(bytes);
+    sessionClient = client;
+    currentSsrFileId = fileId;
+    syncUrlFileId(fileId);
+    if (inputHandler) inputHandler.mirrorSink = client;
+    console.info(`[SSR] 세션 생성됨: fileId=${fileId}`);
+  } catch (e) {
+    console.warn('[SSR] 세션 생성 실패 — 로컬 편집으로 계속', e);
+  }
+}
+
+/**
+ * 이미 서버에 존재하는 세션에 미러링만 **연결**한다(세션 재생성 없음).
+ * 화면 문서는 호출 전에 이미 로드된 상태여야 한다.
+ */
+function attachSsrMirror(fileId: string): void {
+  sessionClient?.dispose();
+  const client = buildSessionClient(fileId);
+  client.attach();
+  sessionClient = client;
+  currentSsrFileId = fileId;
+  syncUrlFileId(fileId);
+  if (inputHandler) inputHandler.mirrorSink = client;
+  console.info(`[SSR] 세션 미러링 연결됨: fileId=${fileId}`);
+}
+
+/** 문서 바이트를 서버에 업로드(POST /documents)하여 발급된 fileId를 반환한다. */
+async function ssrUploadNewDocument(bytes: Uint8Array, filename: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${SSR_BASE_URL}/documents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, fileBase64: ssrBytesToBase64(bytes) }),
+    });
+    if (!res.ok) {
+      console.warn('[SSR] 문서 업로드 실패', res.status);
+      return null;
+    }
+    return (await res.json()).fileId ?? null;
+  } catch (e) {
+    console.warn('[SSR] 문서 업로드 예외', e);
+    return null;
+  }
+}
+
+/** 서버 세션을 메모리에서 해제(DELETE). 영속(sqlite/minio)은 유지된다. */
+async function ssrDeleteSession(fileId: string): Promise<void> {
+  try {
+    await fetch(`${SSR_BASE_URL}/sessions/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * 부팅 시 fileId 가 없고 SSR 모드면, 빈 문서를 만들어 업로드(fileId 발급)하고 미러링한다.
+ * 한 번도 편집하지 않은 채 다른 문서를 열면 이 세션은 닫힌다(handleSsrLocalOpen).
+ */
+async function startBlankSsrDocument(): Promise<void> {
+  try {
+    await createNewDocument();
+    const bytes = wasm.exportHwpx();
+    const fid = await ssrUploadNewDocument(bytes, 'document.hwpx');
+    if (fid) {
+      attachSsrMirror(fid);
+      currentIsBlank = true;
+      console.info(`[SSR] 빈 문서 세션 시작: fileId=${fid}`);
+    }
+  } catch (e) {
+    console.warn('[SSR] 빈 문서 시작 실패', e);
+  }
+}
+
+/**
+ * 부팅 시 fileId 가 있으면 서버 현재 상태(export)를 화면에 복원 로드한다.
+ * 서버에 세션이 없어도 GET /export 가 minio download 폴백으로 가져온다.
+ */
+async function restoreSsrSessionIfNeeded(): Promise<void> {
+  if (!SSR_URL_FILE_ID) return;
+  if (SSR_PARAMS.get('url')) return; // `?url=` 우선
+  try {
+    const res = await fetch(`${SSR_BASE_URL}/sessions/${encodeURIComponent(SSR_URL_FILE_ID)}/export`);
+    if (!res.ok) return; // 세션·저장소에 없음 — 빈 상태 유지
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    await loadBytes(bytes, SSR_URL_FILE_ID, null, performance.now(), SSR_URL_FILE_ID, true);
+    console.info(`[SSR] 서버 세션 복원 로드 완료: fileId=${SSR_URL_FILE_ID}`);
+  } catch (e) {
+    console.warn('[SSR] 세션 복원 시도 실패', e);
+  }
+}
+
+/** SSR 부팅 — fileId 있으면 복원, 없으면 빈 문서 시작. */
+async function ssrBootstrap(): Promise<void> {
+  if (!SSR_MODE) return;
+  if (SSR_URL_FILE_ID) {
+    await restoreSsrSessionIfNeeded();
+  } else {
+    await startBlankSsrDocument();
+  }
+}
+
 
 // ─── 커맨드 시스템 ─────────────────────────────
 const registry = new CommandRegistry();
@@ -83,6 +249,20 @@ const commandServices: CommandServices = {
   getContext,
   getInputHandler: () => inputHandler,
   getViewportManager: () => canvasView?.getViewportManager() ?? null,
+  // SSR 모드면 저장을 서버 minio 덮어쓰기로 라우팅.
+  saveToServer: SSR_MODE
+    ? async () => {
+        if (!currentSsrFileId) return false;
+        // 디바운스 큐에 남은 편집을 먼저 서버에 반영한 뒤 저장.
+        await sessionClient?.flushOps();
+        const res = await fetch(
+          `${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/save`,
+          { method: 'POST' },
+        );
+        if (!res.ok) throw new Error(`save HTTP ${res.status}`);
+        return true;
+      }
+    : undefined,
 };
 
 const dispatcher = new CommandDispatcher(registry, commandServices, eventBus);
@@ -239,6 +419,8 @@ async function initialize(): Promise<void> {
     setupEventListeners();
     setupGlobalShortcuts();
     loadFromUrlParam();
+    // SSR: fileId 있으면 서버 상태 복원, 없으면 빈 문서 업로드로 세션 시작.
+    void ssrBootstrap();
 
     // E2E 테스트용 전역 노출 (개발 모드 전용)
     if (import.meta.env.DEV) {
@@ -248,6 +430,11 @@ async function initialize(): Promise<void> {
       (window as any).__canvaskitRenderMode = canvaskitMode;
       (window as any).__canvaskitSurfaceRequest = canvaskitSurfaceRequest;
       (window as any).__renderProfile = renderProfile;
+      (window as any).__ssr = {
+        get fileId() { return currentSsrFileId; },
+        get isBlank() { return currentIsBlank; },
+      };
+      (window as any).__dispatcher = dispatcher;
     }
   } catch (error) {
     msg.textContent = `WASM 초기화 실패: ${error}`;
@@ -588,7 +775,15 @@ async function loadBytes(
   fileName: string,
   fileHandle: typeof wasm.currentFileHandle,
   startTime = performance.now(),
+  fileId: string | null = null,
+  restore = false,
 ): Promise<void> {
+  // SSR 로컬 열기 분기를 위해, 새 문서 로드(=markClean) 전에 직전 세션의
+  // "빈 문서 + 미편집" 여부를 캡처한다.
+  const prevBlankUnedited =
+    SSR_MODE && !restore && !fileId && currentIsBlank && currentSsrFileId != null && !documentState.isDirty();
+  const prevFileId = currentSsrFileId;
+
   const docInfo = wasm.loadDocument(data, fileName);
   wasm.currentFileHandle = fileHandle;
   const elapsed = performance.now() - startTime;
@@ -596,6 +791,26 @@ async function loadBytes(
   // HWPX 토스트는 모달과의 이벤트 충돌을 피하기 위해 모달 닫힌 후 표시.
   await initializeDocument(docInfo, `${fileName} — ${docInfo.pageCount}페이지 (${elapsed.toFixed(1)}ms)`);
   notifyHwpxSaveModeIfNeeded();
+
+  // SSR 세션 연결
+  if (restore && fileId) {
+    // 부팅 복원: 서버 기존 세션에 미러링만 연결
+    attachSsrMirror(fileId);
+    currentIsBlank = false;
+  } else if (fileId) {
+    // 외부가 fileId 명시(loadFile({fileId})): 그 fileId로 세션 생성
+    await createSsrSession(data, fileId);
+    currentIsBlank = false;
+  } else if (SSR_MODE) {
+    // 로컬 "열기": minio 업로드로 새 fileId 발급 후 미러링.
+    // 직전 세션이 빈 문서 + 미편집이면 닫고(닫지 않으면 유지), 새 문서 세션으로 전환.
+    if (prevBlankUnedited && prevFileId) await ssrDeleteSession(prevFileId);
+    const fid = await ssrUploadNewDocument(data, fileName);
+    if (fid) {
+      attachSsrMirror(fid);
+      currentIsBlank = false;
+    }
+  }
 }
 
 /**
@@ -863,7 +1078,7 @@ window.addEventListener('message', async (e) => {
         return;
       }
       const bytes = new Uint8Array(msg.data);
-      await loadBytes(bytes, msg.fileName || 'document.hwp', null);
+      await loadBytes(bytes, msg.fileName || 'document.hwp', null, performance.now(), msg.fileId ?? null);
       e.source?.postMessage({ type: 'rhwp-response', id: msg.id, result: { pageCount: wasm.pageCount } }, { targetOrigin: '*' });
     } catch (err: any) {
       e.source?.postMessage({ type: 'rhwp-response', id: msg.id, error: err.message || String(err) }, { targetOrigin: '*' });
@@ -892,7 +1107,7 @@ window.addEventListener('message', async (e) => {
           break;
         }
         const bytes = new Uint8Array(params.data);
-        await loadBytes(bytes, params.fileName || 'document.hwp', null);
+        await loadBytes(bytes, params.fileName || 'document.hwp', null, performance.now(), params.fileId ?? null);
         reply({ pageCount: wasm.pageCount });
         break;
       }

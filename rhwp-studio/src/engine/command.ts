@@ -1,5 +1,6 @@
 import type { WasmBridge } from '@/core/wasm-bridge';
 import type { DocumentPosition, CharProperties } from '@/core/types';
+import type { EditOperation } from './edit-op';
 
 /** 편집 명령 공통 인터페이스 */
 export interface EditCommand {
@@ -13,6 +14,12 @@ export interface EditCommand {
   mergeWith(other: EditCommand): EditCommand | null;
   /** 리소스 해제 (스냅샷 명령의 메모리 반환 등). 스택에서 제거될 때 호출. */
   discard?(wasm: WasmBridge): void;
+  /**
+   * SSR 세션 미러링용 양방향 편집 연산으로 직렬화한다.
+   * `execute()` 이후 호출되어야 한다(삭제 텍스트/병합 지점 등 inverse 데이터가 채워진 뒤).
+   * 연산으로 표현할 수 없거나 셀 내부 편집인 경우 `null` 을 반환한다(→ 스냅샷 동기화로 폴백).
+   */
+  serialize?(): EditOperation | null;
 }
 
 // ─── 편집 작업 서술자 (라우팅 통합) ────────────────────
@@ -122,6 +129,17 @@ export class InsertTextCommand implements EditCommand {
 
     return new InsertTextCommand(this.position, this.text + other.text, this.timestamp);
   }
+
+  serialize(): EditOperation | null {
+    if (isCell(this.position)) return null;
+    return {
+      op: 'insert_text',
+      section: this.position.sectionIndex,
+      para: this.position.paragraphIndex,
+      offset: this.position.charOffset,
+      text: this.text,
+    };
+  }
 }
 
 // ─── 텍스트 삭제 명령 ─────────────────────────────────
@@ -193,6 +211,18 @@ export class DeleteTextCommand implements EditCommand {
     }
     return null;
   }
+
+  serialize(): EditOperation | null {
+    if (isCell(this.position)) return null;
+    return {
+      op: 'delete_text',
+      section: this.position.sectionIndex,
+      para: this.position.paragraphIndex,
+      offset: this.position.charOffset,
+      count: this.count,
+      deleted_text: this.deletedText,
+    };
+  }
 }
 
 // ─── 강제 줄바꿈 명령 (Shift+Enter) ─────────────────────
@@ -263,6 +293,16 @@ export class SplitParagraphCommand implements EditCommand {
   }
 
   mergeWith(): null { return null; }
+
+  serialize(): EditOperation | null {
+    if (isCell(this.position)) return null;
+    return {
+      op: 'split_paragraph',
+      section: this.position.sectionIndex,
+      para: this.position.paragraphIndex,
+      offset: this.position.charOffset,
+    };
+  }
 }
 
 // ─── 문단 병합 명령 (문단 시작에서 Backspace) ─────────
@@ -291,6 +331,16 @@ export class MergeParagraphCommand implements EditCommand {
   }
 
   mergeWith(): null { return null; }
+
+  serialize(): EditOperation | null {
+    if (isCell(this.position)) return null;
+    return {
+      op: 'merge_paragraph',
+      section: this.position.sectionIndex,
+      para: this.position.paragraphIndex,
+      prev_len: this.mergePointOffset,
+    };
+  }
 }
 
 // ─── 선택 영역 삭제 명령 ─────────────────────────────

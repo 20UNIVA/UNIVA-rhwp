@@ -7,6 +7,7 @@ import { SelectionRenderer } from './selection-renderer';
 import { CommandHistory } from './history';
 import { DeleteSelectionCommand, ApplyCharFormatCommand, SnapshotCommand } from './command';
 import type { OperationDescriptor } from './command';
+import type { MirrorSink } from '@/core/session-client';
 import { VirtualScroll } from '@/view/virtual-scroll';
 import { ViewportManager } from '@/view/viewport-manager';
 import type { DocumentPosition, CharProperties, ParaProperties, CursorRect, FormObjectHitResult } from '@/core/types';
@@ -84,6 +85,8 @@ export class InputHandler {
   private textarea: HTMLTextAreaElement;
   private active = false;
   private insertMode = true;  // true=삽입, false=수정(덮어쓰기)
+  /** SSR 세션 미러링 싱크 (없으면 미러링 비활성) */
+  mirrorSink: MirrorSink | null = null;
   /** 마지막 셀 키 (눈금자 셀 bbox 중복 조회 방지) */
   private lastCellKey: string | null = null;
   private dispatcher: CommandDispatcher | null = null;
@@ -1556,6 +1559,23 @@ export class InputHandler {
         this.history.recordWithoutExecute(desc.command);
         break;
       }
+    }
+    this.mirror(desc);
+  }
+
+  /**
+   * 편집을 SSR 세션 서버로 미러링한다.
+   * 연산형(serialize 가능)은 op 큐에, 그 외(스냅샷형/직렬화 불가/셀 내부)는
+   * 전체 스냅샷 동기화로 폴백한다.
+   */
+  private mirror(desc: OperationDescriptor): void {
+    if (!this.mirrorSink) return;
+    if (desc.kind === 'command' || desc.kind === 'record') {
+      const op = desc.command.serialize?.() ?? null;
+      if (op) this.mirrorSink.queueOp(op);
+      else this.mirrorSink.requestSnapshot();
+    } else {
+      this.mirrorSink.requestSnapshot();
     }
   }
 

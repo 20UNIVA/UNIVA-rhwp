@@ -3138,6 +3138,68 @@ impl DocumentCore {
             .map(|(md, _)| md)
     }
 
+    /// `PageItem` 에서 원본 문단 인덱스를 얻는다.
+    fn page_item_para_index(item: &crate::renderer::pagination::PageItem) -> usize {
+        use crate::renderer::pagination::PageItem;
+        match item {
+            PageItem::FullParagraph { para_index }
+            | PageItem::PartialParagraph { para_index, .. }
+            | PageItem::Table { para_index, .. }
+            | PageItem::PartialTable { para_index, .. }
+            | PageItem::Shape { para_index, .. } => *para_index,
+        }
+    }
+
+    /// 0-based 전역 페이지 번호에 (일부라도) 배치된 본문 문단의 `(section_idx, para_idx)` 집합.
+    /// 범위를 벗어난 페이지면 빈 집합.
+    pub fn page_paragraph_set(&self, page: u32) -> std::collections::HashSet<(usize, usize)> {
+        let mut set = std::collections::HashSet::new();
+        let mut global = 0u32;
+        for (sec_idx, pr) in self.pagination.iter().enumerate() {
+            let body_len = self
+                .document
+                .sections
+                .get(sec_idx)
+                .map(|s| s.paragraphs.len())
+                .unwrap_or(0);
+            for p in pr.pages.iter() {
+                if global == page {
+                    for cc in &p.column_contents {
+                        for item in &cc.items {
+                            let pi = Self::page_item_para_index(item);
+                            // 미주 등 본문 밖 문단(para_index >= body_len)은 제외.
+                            if pi < body_len {
+                                set.insert((sec_idx, pi));
+                            }
+                        }
+                    }
+                }
+                global += 1;
+            }
+        }
+        set
+    }
+
+    /// 모델 조회용 IR JSON.
+    /// - `page = None` : 전체 문단
+    /// - `page = Some(n)` : 0-based 페이지 n에 배치된 문단만 (절대 인덱스 유지 → 편집 op 좌표 그대로 유효)
+    ///
+    /// 응답에는 `page`(필터 시) 와 `page_count`(항상) 메타가 포함된다.
+    pub fn to_ir_json_paged(&self, page: Option<u32>) -> Result<String, serde_json::Error> {
+        let total = self.page_count();
+        let mut view = match page {
+            None => self.document.to_ir_view(),
+            Some(p) => {
+                let keep = self.page_paragraph_set(p);
+                let mut v = self.document.to_ir_view_filtered(&keep);
+                v.page = Some(p);
+                v
+            }
+        };
+        view.page_count = Some(total);
+        serde_json::to_string(&view)
+    }
+
     // =====================================================================
     // 클립보드 API (내부)
     // =====================================================================

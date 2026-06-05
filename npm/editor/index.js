@@ -125,19 +125,21 @@ class RhwpEditor {
    *
    * @param data - HWP 파일의 ArrayBuffer 또는 Uint8Array
    * @param fileName - 파일 이름 (선택)
+   * @param options - { fileId } SSR 세션 식별자(=minio fileId). 지정 시 에디터가
+   *                  서버 세션을 생성하고 편집을 미러링한다(닫아도 서버단 유지).
    * @returns { pageCount: number }
    *
    * @example
    * ```javascript
    * const resp = await fetch('document.hwp');
    * const buffer = await resp.arrayBuffer();
-   * const result = await editor.loadFile(buffer, 'document.hwp');
+   * const result = await editor.loadFile(buffer, 'document.hwp', { fileId: 'minio-abc' });
    * console.log(`${result.pageCount}페이지`);
    * ```
    */
-  async loadFile(data, fileName = 'document.hwp') {
+  async loadFile(data, fileName = 'document.hwp', options = {}) {
     const bytes = data instanceof ArrayBuffer ? Array.from(new Uint8Array(data)) : Array.from(data);
-    return this._request('loadFile', { data: bytes, fileName });
+    return this._request('loadFile', { data: bytes, fileName, fileId: options.fileId ?? null });
   }
 
   /**

@@ -67,4 +67,9 @@ export interface CommandServices {
   getInputHandler: () => InputHandler | null;
   /** ViewportManager 접근 (문서 미로드 시 null) */
   getViewportManager: () => ViewportManager | null;
+  /**
+   * SSR 세션 저장(서버 minio 덮어쓰기). 설정 시 file:save 가 로컬 저장 대신 이것을 우선 시도한다.
+   * 반환 true = 서버 저장 성공. 미설정/false 면 기존 로컬 저장으로 진행.
+   */
+  saveToServer?: () => Promise<boolean>;
 }

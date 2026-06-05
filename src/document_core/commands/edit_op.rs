@@ -1,0 +1,263 @@
+//! SSR 세션용 **양방향 편집 연산(EditOperation) 프로토콜**.
+//!
+//! 클라이언트(WASM)에서 일어난 결정적 편집을 서버 `DocumentCore` 에 동일하게
+//! 재현하기 위한 직렬화 가능한 연산 단위다. 각 연산은 정방향(`apply`)과
+//! 역방향(`apply_inverse`) 적용을 모두 지원하도록 **inverse 데이터**(삭제 텍스트,
+//! 병합 전 문단 길이 등)를 함께 담는다.
+//!
+//! 적용기는 새 로직을 만들지 않고 기존 `*_native` 편집 메서드를 그대로 호출한다.
+//! → 클라이언트 WASM 경로와 서버 native 경로가 **같은 코드**를 거쳐 결정성이 보장된다.
+//!
+//! 붙여넣기/객체 삽입/표 행·열 편집 등 역연산을 연산으로 표현할 수 없는 작업은
+//! 본 프로토콜이 아니라 **전체 스냅샷 동기화**로 처리한다(서버 `PUT /snapshot`).
+
+use serde::{Deserialize, Serialize};
+
+use crate::document_core::DocumentCore;
+use crate::error::HwpError;
+
+/// 양방향 편집 연산.
+///
+/// `op` 태그로 구분되는 외부 JSON 프로토콜이다.
+/// 위치 인덱스는 모두 0-based.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum EditOperation {
+    /// 문단 내 글자 오프셋에 텍스트 삽입.
+    InsertText {
+        section: usize,
+        para: usize,
+        offset: usize,
+        text: String,
+    },
+    /// 문단 내 글자 오프셋부터 `count` 글자 삭제.
+    /// `deleted_text` 는 역적용(복원)을 위해 삭제된 내용을 보존한다.
+    DeleteText {
+        section: usize,
+        para: usize,
+        offset: usize,
+        count: usize,
+        #[serde(default)]
+        deleted_text: String,
+    },
+    /// `para` 를 `offset` 위치에서 둘로 분할(Enter). 분할 결과 `para+1` 이 생긴다.
+    SplitParagraph {
+        section: usize,
+        para: usize,
+        offset: usize,
+    },
+    /// `para` 를 직전 문단(`para-1`)에 병합(문단 시작에서 Backspace).
+    /// `prev_len` 은 병합 전 `para-1` 의 글자 길이(역적용 시 분할 지점).
+    MergeParagraph {
+        section: usize,
+        para: usize,
+        prev_len: usize,
+    },
+}
+
+impl DocumentCore {
+    /// 편집 연산을 정방향 적용한다.
+    pub fn apply_edit_op(&mut self, op: &EditOperation) -> Result<(), HwpError> {
+        match op {
+            EditOperation::InsertText {
+                section,
+                para,
+                offset,
+                text,
+            } => {
+                self.insert_text_native(*section, *para, *offset, text)?;
+            }
+            EditOperation::DeleteText {
+                section,
+                para,
+                offset,
+                count,
+                ..
+            } => {
+                self.delete_text_native(*section, *para, *offset, *count)?;
+            }
+            EditOperation::SplitParagraph {
+                section,
+                para,
+                offset,
+            } => {
+                self.split_paragraph_native(*section, *para, *offset)?;
+            }
+            EditOperation::MergeParagraph { section, para, .. } => {
+                self.merge_paragraph_native(*section, *para)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 편집 연산을 역방향 적용한다(undo).
+    pub fn apply_inverse_edit_op(&mut self, op: &EditOperation) -> Result<(), HwpError> {
+        match op {
+            // 삽입의 역 = 같은 위치에서 삽입한 글자 수만큼 삭제
+            EditOperation::InsertText {
+                section,
+                para,
+                offset,
+                text,
+            } => {
+                let count = text.chars().count();
+                self.delete_text_native(*section, *para, *offset, count)?;
+            }
+            // 삭제의 역 = 보존해 둔 텍스트를 같은 위치에 재삽입
+            EditOperation::DeleteText {
+                section,
+                para,
+                offset,
+                deleted_text,
+                ..
+            } => {
+                self.insert_text_native(*section, *para, *offset, deleted_text)?;
+            }
+            // 분할의 역 = 분할로 생긴 para+1 을 para 에 병합
+            EditOperation::SplitParagraph { section, para, .. } => {
+                self.merge_paragraph_native(*section, *para + 1)?;
+            }
+            // 병합의 역 = 병합 대상이던 para-1 을 prev_len 위치에서 다시 분할
+            EditOperation::MergeParagraph {
+                section,
+                para,
+                prev_len,
+            } => {
+                self.split_paragraph_native(*section, *para - 1, *prev_len)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 편집 연산 배치를 순차 정방향 적용한다.
+    pub fn apply_edit_ops(&mut self, ops: &[EditOperation]) -> Result<(), HwpError> {
+        for op in ops {
+            self.apply_edit_op(op)?;
+        }
+        Ok(())
+    }
+
+    /// JSON 배열(`[EditOperation, ...]`)을 파싱하여 순차 적용한다.
+    pub fn apply_edit_ops_json(&mut self, json: &str) -> Result<(), HwpError> {
+        let ops: Vec<EditOperation> = serde_json::from_str(json)
+            .map_err(|e| HwpError::RenderError(format!("EditOperation JSON 파싱 실패: {e}")))?;
+        self.apply_edit_ops(&ops)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 빈 문서(섹션1/문단1 + 스타일·페이지네이션 초기화) 위에 텍스트를 올린 코어를 만든다.
+    fn core_with_text(text: &str) -> DocumentCore {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        if !text.is_empty() {
+            core.insert_text_native(0, 0, 0, text).unwrap();
+        }
+        core
+    }
+
+    fn para_text(core: &DocumentCore, section: usize, para: usize) -> String {
+        core.document.sections[section].paragraphs[para].text.clone()
+    }
+
+    #[test]
+    fn test_insert_text_roundtrip() {
+        let mut core = core_with_text("AC");
+        let op = EditOperation::InsertText {
+            section: 0,
+            para: 0,
+            offset: 1,
+            text: "B".to_string(),
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "ABC");
+        core.apply_inverse_edit_op(&op).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "AC");
+    }
+
+    #[test]
+    fn test_delete_text_roundtrip() {
+        let mut core = core_with_text("ABCDE");
+        let op = EditOperation::DeleteText {
+            section: 0,
+            para: 0,
+            offset: 1,
+            count: 2,
+            deleted_text: "BC".to_string(),
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "ADE");
+        core.apply_inverse_edit_op(&op).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "ABCDE");
+    }
+
+    #[test]
+    fn test_split_merge_roundtrip() {
+        let mut core = core_with_text("HelloWorld");
+        let split = EditOperation::SplitParagraph {
+            section: 0,
+            para: 0,
+            offset: 5,
+        };
+        core.apply_edit_op(&split).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 2);
+        assert_eq!(para_text(&core, 0, 0), "Hello");
+        assert_eq!(para_text(&core, 0, 1), "World");
+        // 역적용 → 다시 한 문단
+        core.apply_inverse_edit_op(&split).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 1);
+        assert_eq!(para_text(&core, 0, 0), "HelloWorld");
+    }
+
+    /// 전체 문서 텍스트(문단 join) — 결정성 비교용.
+    fn doc_text(core: &DocumentCore) -> Vec<String> {
+        core.document().sections[0]
+            .paragraphs
+            .iter()
+            .map(|p| p.text.clone())
+            .collect()
+    }
+
+    /// 결정성 회귀: EditOperation 적용 결과 == 동일 시퀀스의 native 직접 호출 결과.
+    /// (native 직접 호출은 클라이언트 WASM `insertText`/`splitParagraph` 등이 거치는 경로와 동일)
+    #[test]
+    fn test_op_apply_equals_direct_native() {
+        // (a) op 적용 경로
+        let mut a = core_with_text("Hello");
+        a.apply_edit_op(&EditOperation::InsertText {
+            section: 0,
+            para: 0,
+            offset: 5,
+            text: " World".to_string(),
+        })
+        .unwrap();
+        a.apply_edit_op(&EditOperation::SplitParagraph {
+            section: 0,
+            para: 0,
+            offset: 5,
+        })
+        .unwrap();
+
+        // (b) native 직접 호출 경로 (= WASM 편집 경로)
+        let mut b = core_with_text("Hello");
+        b.insert_text_native(0, 0, 5, " World").unwrap();
+        b.split_paragraph_native(0, 0, 5).unwrap();
+
+        assert_eq!(doc_text(&a), doc_text(&b), "op 적용과 native 직접 호출 결과가 일치해야 함");
+        assert_eq!(doc_text(&a), vec!["Hello".to_string(), " World".to_string()]);
+    }
+
+    #[test]
+    fn test_apply_ops_json() {
+        let mut core = core_with_text("");
+        let json = r#"[
+            {"op":"insert_text","section":0,"para":0,"offset":0,"text":"가"},
+            {"op":"insert_text","section":0,"para":0,"offset":1,"text":"나"}
+        ]"#;
+        core.apply_edit_ops_json(json).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "가나");
+    }
+}
