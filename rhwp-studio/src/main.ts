@@ -23,6 +23,8 @@ import { CommandPalette } from '@/ui/command-palette';
 import { showValidationModalIfNeeded } from '@/ui/validation-modal';
 import { showToast } from '@/ui/toast';
 import { initRhwpDev } from '@/core/rhwp-dev';
+import { getActionDef } from '@/hwpctl/action-registry';
+import { HwpCtrl, ParameterSet } from '@/hwpctl/index';
 import { DocumentDirtyState } from '@/core/document-dirty-state';
 import { CellSelectionRenderer } from '@/engine/cell-selection-renderer';
 import { TableObjectRenderer } from '@/engine/table-object-renderer';
@@ -104,6 +106,67 @@ function buildSessionClient(fileId: string): SessionClient {
         return wasm.exportHwpx();
       } catch {
         return null;
+      }
+    },
+    onServerEvent: (ev) => {
+      // shape 가드 (Task 4 review Important #2)
+      if (!ev || typeof ev !== 'object' || !('kind' in ev)) {
+        console.warn('[main] ServerEvent shape 미일치 — 무시:', ev);
+        return;
+      }
+      if (ev.kind === 'ops') {
+        if (!Array.isArray(ev.ops)) {
+          console.warn('[main] ops 필드 누락 — 무시');
+          return;
+        }
+        for (const op of ev.ops) {
+          try {
+            switch (op.op) {
+              case 'insert_text':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para !== 'number' ||
+                    typeof op.offset !== 'number' ||
+                    typeof op.text !== 'string') {
+                  console.warn('[main] insert_text 필드 누락:', op);
+                  break;
+                }
+                wasm.insertText(op.section, op.para, op.offset, op.text);
+                break;
+              case 'split_paragraph':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para !== 'number' ||
+                    typeof op.offset !== 'number') {
+                  console.warn('[main] split_paragraph 필드 누락:', op);
+                  break;
+                }
+                wasm.splitParagraph(op.section, op.para, op.offset);
+                break;
+              default:
+                console.warn(`[main] Sub-1 미지원 ops op: ${op.op}`);
+            }
+          } catch (e) {
+            console.error('[main] WASM op 적용 실패:', op, e);
+          }
+        }
+      } else if (ev.kind === 'workbench') {
+        if (typeof ev.action !== 'string') {
+          console.warn('[main] workbench action 필드 누락');
+          return;
+        }
+        const def = getActionDef(ev.action);
+        if (!def?.executor) {
+          console.warn(`[main] 알 수 없는 hwpctl action: ${ev.action}`);
+          return;
+        }
+        try {
+          const ctrl = new HwpCtrl(wasm as any);
+          const set = ev.payload != null ? Object.assign(new ParameterSet(def.parameterSetId ?? ev.action), ev.payload) : null;
+          def.executor(ctrl, set);
+        } catch (e) {
+          console.error(`[main] hwpctl executor 예외: ${ev.action}`, e);
+        }
+      } else {
+        console.warn(`[main] 알 수 없는 ServerEvent kind:`, (ev as { kind?: string }).kind);
       }
     },
   });
