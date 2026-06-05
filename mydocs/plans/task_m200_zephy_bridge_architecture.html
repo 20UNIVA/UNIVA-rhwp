@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNIVA-rhwp SSR Sub-1 — WebSocket 양방향 통신 + 코드 레벨</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    margin: 0; padding: 2rem; background: #f8fafc; color: #1a202c;
+    min-height: 100vh;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 0.4rem; }
+  .lead { color: #555; margin: 0 0 1.5rem; font-size: 0.92rem; line-height: 1.55; max-width: 980px; }
+
+  .controls {
+    display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem;
+    padding: 0.8rem 1rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+  }
+  .controls > strong { align-self: center; margin-right: 0.6rem; font-size: 0.9rem; color: #4a5568; }
+  .step-btn {
+    padding: 0.4rem 0.85rem; font-size: 0.86rem;
+    background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .step-btn:hover { background: #edf2f7; }
+  .step-btn.active { background: #3182ce; color: #fff; border-color: #3182ce; }
+  .step-btn.setup { color: #805ad5; }
+  .step-btn.setup.active { background: #805ad5; border-color: #805ad5; color: #fff; }
+  .reset-btn { margin-left: auto; padding: 0.4rem 0.85rem; font-size: 0.86rem; background: #fff5f5; border: 1px solid #fc8181; color: #c53030; border-radius: 6px; cursor: pointer; }
+  .reset-btn:hover { background: #fed7d7; }
+
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    grid-template-areas:
+      "llm      notebook"
+      "frontend server";
+    gap: 1.5rem;
+    height: 600px;
+    margin-bottom: 1rem;
+    position: relative;
+  }
+  .box {
+    background: #fff;
+    border: 2px solid #cbd5e0;
+    border-radius: 10px;
+    padding: 0.9rem 1rem 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .box:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .box.active { border-color: #3182ce; box-shadow: 0 0 0 3px rgba(49,130,206,0.15); }
+  .box.highlight { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(49,130,206,0.5); }
+    50% { box-shadow: 0 0 0 8px rgba(49,130,206,0); }
+  }
+  .box-title { font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #718096; margin-bottom: 0.2rem; }
+  .box-name { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+  .box-detail { font-size: 0.78rem; color: #4a5568; line-height: 1.45; margin-bottom: 0.5rem; }
+  .box-detail code { background: #edf2f7; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.92em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .box-files { margin-top: auto; font-size: 0.72rem; line-height: 1.35; }
+  .box-files .group { margin-bottom: 0.3rem; }
+  .box-files .group-label {
+    display: inline-block; padding: 0.05rem 0.4rem; margin-right: 0.3rem;
+    border-radius: 3px; font-size: 0.66rem; font-weight: 600; vertical-align: middle;
+  }
+  .box-files .group-label.existing { background: #e6fffa; color: #234e52; }
+  .box-files .group-label.new { background: #fefcbf; color: #744210; }
+  .box-files .group-label.modify { background: #ebf8ff; color: #2c5282; }
+  .box-files .file-chip {
+    display: inline-block; background: #f7fafc; padding: 0.05rem 0.35rem; margin: 0.1rem 0.15rem 0.1rem 0;
+    border-radius: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 0.72rem; color: #2d3748;
+  }
+  .box-files .file-chip.new { background: #fffaf0; color: #7b341e; border: 1px dashed #ed8936; }
+  .box-files .file-chip.modify { background: #ebf8ff; color: #2c5282; border: 1px dashed #3182ce; }
+  .box-llm { grid-area: llm; border-top: 4px solid #d69e2e; }
+  .box-notebook { grid-area: notebook; border-top: 4px solid #38a169; }
+  .box-server { grid-area: server; border-top: 4px solid #3182ce; }
+  .box-frontend { grid-area: frontend; border-top: 4px solid #805ad5; }
+
+  svg.connections {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .arrow { stroke: #cbd5e0; stroke-width: 2; fill: none; transition: all 0.3s; }
+  .arrow.setup { stroke-dasharray: 5,3; }
+  .arrow.active { stroke: #3182ce; stroke-width: 3; }
+  .arrow.active.setup { stroke: #805ad5; }
+  .arrow.active.ws { stroke: #d53f8c; stroke-width: 3; }
+  .arrowhead { fill: #cbd5e0; transition: all 0.3s; }
+  .arrowhead.active { fill: #3182ce; }
+  .arrowhead.active.setup { fill: #805ad5; }
+  .arrowhead.active.ws { fill: #d53f8c; }
+  .arrow-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; fill: #718096;
+    transition: all 0.3s;
+  }
+  .arrow-label.active { fill: #2c5282; font-weight: 600; }
+  .arrow-label.active.setup { fill: #553c9a; }
+  .arrow-label.active.ws { fill: #97266d; font-weight: 600; }
+
+  .narration {
+    background: #fff; padding: 1.1rem 1.4rem;
+    border: 1px solid #e2e8f0; border-radius: 8px;
+    border-left: 5px solid #3182ce;
+    min-height: 120px;
+  }
+  .narration h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+  .narration .step-tag {
+    display: inline-block; padding: 0.15rem 0.55rem; background: #ebf8ff; color: #2c5282;
+    border-radius: 4px; font-size: 0.78rem; font-weight: 600; margin-right: 0.5rem;
+  }
+  .narration .step-tag.setup { background: #faf5ff; color: #553c9a; }
+  .narration .step-tag.ws { background: #fff5f7; color: #97266d; }
+  .narration p { margin: 0.4rem 0; font-size: 0.92rem; line-height: 1.6; color: #2d3748; }
+  .narration code { background: #edf2f7; padding: 0.05rem 0.35rem; border-radius: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 0.88em; }
+
+  .code-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin-top: 0.7rem; }
+  .code-card {
+    padding: 0.6rem 0.8rem; border-radius: 6px; font-size: 0.84rem; line-height: 1.5;
+  }
+  .code-card.existing { background: #f0fff4; border-left: 3px solid #38a169; }
+  .code-card.new { background: #fffbeb; border-left: 3px solid #ed8936; }
+  .code-card .card-title {
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    margin-bottom: 0.3rem;
+  }
+  .code-card.existing .card-title { color: #276749; }
+  .code-card.new .card-title { color: #9c4221; }
+  .code-card ul { margin: 0.2rem 0 0 1.1rem; padding: 0; font-size: 0.84rem; }
+  .code-card ul li { margin: 0.1rem 0; }
+  .code-card code { background: rgba(0,0,0,0.06); padding: 0.05rem 0.3rem; border-radius: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 0.88em; }
+  .code-card .why { font-style: italic; color: #4a5568; margin-top: 0.25rem; font-size: 0.78rem; }
+
+  .legend {
+    display: flex; gap: 1rem; flex-wrap: wrap; padding: 0.6rem 1rem;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+    margin-top: 1rem; font-size: 0.82rem; color: #4a5568;
+  }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+  .legend-line { width: 24px; height: 2px; background: #3182ce; }
+  .legend-line.setup { background: #805ad5; background-image: repeating-linear-gradient(to right, #805ad5 0 4px, transparent 4px 7px); height: 2px; }
+  .legend-line.ws { background: #d53f8c; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .legend-swatch.existing { background: #c6f6d5; border-left: 3px solid #38a169; }
+  .legend-swatch.new { background: #feebc8; border-left: 3px solid #ed8936; }
+
+  .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+  .role-panel {
+    background: #fff; padding: 1rem 1.2rem; border: 1px solid #e2e8f0; border-radius: 8px;
+    display: none;
+  }
+  .role-panel.show { display: block; }
+  .role-panel h3 { margin: 0 0 0.7rem; font-size: 0.98rem; }
+  .role-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+  .role-col {
+    padding: 0.6rem 0.7rem; border-radius: 6px;
+  }
+  .role-col.existing { background: #f0fff4; border-left: 3px solid #38a169; }
+  .role-col.new { background: #fffbeb; border-left: 3px solid #ed8936; }
+  .role-col .col-title {
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    margin-bottom: 0.4rem;
+  }
+  .role-col.existing .col-title { color: #276749; }
+  .role-col.new .col-title { color: #9c4221; }
+  .role-col ul { margin: 0.2rem 0 0.3rem 1.1rem; padding: 0; font-size: 0.8rem; line-height: 1.5; }
+  .role-col code { background: rgba(0,0,0,0.06); padding: 0.05rem 0.3rem; border-radius: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
+  .role-col .why { font-style: italic; color: #4a5568; font-size: 0.78rem; margin-top: 0.4rem; line-height: 1.5; }
+
+  .matrix-section { margin-top: 1.6rem; }
+  .matrix-section h2 { font-size: 1.05rem; margin: 0 0 0.6rem; }
+  table.matrix {
+    width: 100%; background: #fff; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px;
+    font-size: 0.83rem; overflow: hidden;
+  }
+  table.matrix th, table.matrix td { padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; border-bottom: 1px solid #edf2f7; }
+  table.matrix th { background: #f7fafc; font-weight: 600; color: #4a5568; font-size: 0.78rem; }
+  table.matrix tr:last-child td { border-bottom: none; }
+  table.matrix code { background: #edf2f7; padding: 0.05rem 0.3rem; border-radius: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 0.92em; }
+  table.matrix .status-existing { color: #276749; font-weight: 600; }
+  table.matrix .status-new { color: #9c4221; font-weight: 600; }
+  table.matrix .status-modify { color: #2c5282; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>UNIVA-rhwp SSR Sub-1 — WebSocket 양방향 통신과 코드 레벨</h1>
+<p class="lead">
+  네 객체 — LLM(vLLM/qwen3.5)·노트북·웹서버(rhwp-server)·프론트(rhwp-studio) — 사이의 통신을 단계별로 보여줍니다.
+  브라우저 ↔ 서버는 *WebSocket 양방향*으로 통합되어, *서버 → 클라 push*(LLM 명령 결과)와 *클라 → 서버 미러링*(사용자가 직접 친 편집) 둘 다 같은 채널을 사용합니다.
+  각 박스를 클릭하면 그 객체의 *재사용 기존 코드*와 *Sub-1에서 신규/수정되는 코드*가 두 칸으로 정리됩니다.
+</p>
+
+<div class="controls">
+  <strong>흐름</strong>
+  <button class="step-btn setup" data-step="0">전체 보기</button>
+  <button class="step-btn setup" data-step="1">① 세션 생성 (POST /sessions)</button>
+  <button class="step-btn setup" data-step="2">② URL 수동 전달</button>
+  <button class="step-btn setup" data-step="3">③ 초기 IR 로드 (GET /ir)</button>
+  <button class="step-btn setup" data-step="4">④ WS 양방향 연결</button>
+  <button class="step-btn" data-step="5">⑤ LLM tool call</button>
+  <button class="step-btn" data-step="6">⑥ 노트북 라우팅 (POST /workbench)</button>
+  <button class="step-btn" data-step="7">⑦ 서버 적용 + WS broadcast</button>
+  <button class="step-btn" data-step="8">⑧ 프론트 적용 + 화면 갱신</button>
+  <button class="step-btn" data-step="9">⑨ 사용자 직접 편집 → 서버 미러</button>
+  <button class="reset-btn" id="reset">초기화</button>
+</div>
+
+<div class="stage">
+  <div class="box box-llm" data-role="llm">
+    <div class="box-title">① LLM</div>
+    <div class="box-name">vLLM / qwen3.5 (사내)</div>
+    <div class="box-detail">
+      추론 모델. <code>Bash</code>·<code>finish</code>·<code>google_web_search</code> 도구 호출로 편집 명령 발행.
+    </div>
+    <div class="box-files">
+      <div class="group">
+        <span class="group-label existing">재사용</span>
+        <span class="file-chip">vLLM API (변경 0)</span>
+        <span class="file-chip">SKILL.md</span>
+        <span class="file-chip">SYSTEM_PROMPT</span>
+      </div>
+      <div class="group">
+        <span class="group-label new">신규</span>
+        <span class="file-chip new" style="opacity:0.6">없음</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="box box-notebook" data-role="notebook">
+    <div class="box-title">② 노트북</div>
+    <div class="box-name">hwp_sub_agent_simulation_ssr.ipynb</div>
+    <div class="box-detail">
+      LLM 인프라 + agentic loop + <strong>Bash 실행기 HTTP 라우터</strong>. WS와 무관 — HTTP만 사용.
+    </div>
+    <div class="box-files">
+      <div class="group">
+        <span class="group-label existing">재사용</span>
+        <span class="file-chip">cell6 LLM 인프라</span>
+        <span class="file-chip">cell10 sub_agent_run</span>
+        <span class="file-chip">cell6 SYSTEM_PROMPT</span>
+      </div>
+      <div class="group">
+        <span class="group-label new">신규</span>
+        <span class="file-chip new">cell2 create_session</span>
+        <span class="file-chip new">cell4 run_bash_command (HTTP 라우팅)</span>
+        <span class="file-chip new">cell5 self-test</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="box box-frontend" data-role="frontend">
+    <div class="box-title">④ 프론트</div>
+    <div class="box-name">rhwp-studio (브라우저, 127.0.0.1:7710)</div>
+    <div class="box-detail">
+      <strong>WebSocket 양방향</strong>으로 서버와 통신. SessionClient가 송수신 다 담당.
+    </div>
+    <div class="box-files">
+      <div class="group">
+        <span class="group-label existing">재사용</span>
+        <span class="file-chip">hwpctl/action-registry.ts</span>
+        <span class="file-chip">core/wasm-bridge.ts</span>
+        <span class="file-chip">hwpctl/actions/*.ts (7개)</span>
+      </div>
+      <div class="group">
+        <span class="group-label modify">수정</span>
+        <span class="file-chip modify">core/session-client.ts (내부 HTTP→WS 갈아엎기)</span>
+        <span class="file-chip modify">main.ts (onServerEvent 콜백)</span>
+      </div>
+      <div class="group">
+        <span class="group-label new">신규</span>
+        <span class="file-chip new">e2e/ws-bridge.test.mjs</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="box box-server" data-role="server">
+    <div class="box-title">③ 웹서버</div>
+    <div class="box-name">rhwp-server (axum, 127.0.0.1:7710)</div>
+    <div class="box-detail">
+      세션 영속(sqlite) + WS 양방향 + 워크벤치 HTTP. <strong>SoT — 진실 원천</strong>.
+    </div>
+    <div class="box-files">
+      <div class="group">
+        <span class="group-label existing">재사용</span>
+        <span class="file-chip">main.rs (라우터·DTO)</span>
+        <span class="file-chip">store.rs (sqlite)</span>
+        <span class="file-chip">document_core::apply_edit_ops_json</span>
+        <span class="file-chip">EditOperation</span>
+      </div>
+      <div class="group">
+        <span class="group-label new">신규</span>
+        <span class="file-chip new">events.rs (ServerEvent·ClientMessage·EventsHub)</span>
+        <span class="file-chip new">ws.rs (WebSocket handler)</span>
+        <span class="file-chip new">main.rs::workbench 핸들러</span>
+        <span class="file-chip new">Cargo.toml: tokio-stream·futures·axum ws</span>
+      </div>
+    </div>
+  </div>
+
+  <svg class="connections" viewBox="0 0 1000 600" preserveAspectRatio="none">
+    <defs>
+      <marker id="ah-default" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="arrowhead" />
+      </marker>
+      <marker id="ah-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="arrowhead active" />
+      </marker>
+      <marker id="ah-active-setup" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="arrowhead active setup" />
+      </marker>
+      <marker id="ah-active-ws" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="arrowhead active ws" />
+      </marker>
+    </defs>
+
+    <g data-arrow="1" class="arrow-group">
+      <path class="arrow setup" d="M 730,220 Q 860,300 730,380" marker-end="url(#ah-default)"/>
+      <text class="arrow-label" x="780" y="300">① POST /sessions</text>
+    </g>
+    <g data-arrow="2" class="arrow-group">
+      <path class="arrow setup" d="M 500,220 Q 380,300 270,380" marker-end="url(#ah-default)"/>
+      <text class="arrow-label" x="320" y="295">② fileId URL 수동 전달</text>
+    </g>
+    <g data-arrow="3" class="arrow-group">
+      <path class="arrow setup" d="M 380,440 L 620,440" marker-end="url(#ah-default)"/>
+      <text class="arrow-label" x="430" y="432">③ GET /ir</text>
+    </g>
+    <g data-arrow="4" class="arrow-group">
+      <path class="arrow setup" d="M 380,475 L 620,475" marker-end="url(#ah-default)" marker-start="url(#ah-default)"/>
+      <text class="arrow-label" x="400" y="495">④ WS upgrade — GET /sessions/:id/ws (양방향)</text>
+    </g>
+    <g data-arrow="5" class="arrow-group">
+      <path class="arrow" d="M 380,140 L 620,140" marker-end="url(#ah-default)"/>
+      <text class="arrow-label" x="410" y="132">⑤ tool: Bash("hwp-doc-patch ...")</text>
+    </g>
+    <g data-arrow="6" class="arrow-group">
+      <path class="arrow" d="M 740,220 L 740,380" marker-end="url(#ah-default)"/>
+      <text class="arrow-label" x="755" y="300">⑥ POST /workbench (HTTP)</text>
+    </g>
+    <g data-arrow="7" class="arrow-group">
+      <path class="arrow" d="M 620,510 L 380,510" marker-end="url(#ah-default)"/>
+      <text class="arrow-label" x="395" y="528">⑦ WS frame: {"kind":"ops"|"workbench",...}</text>
+    </g>
+    <g data-arrow="8" class="arrow-group">
+      <path class="arrow" d="M 270,440 L 270,220" marker-end="url(#ah-default)"/>
+      <text class="arrow-label" x="280" y="330">⑧ 프론트 hwpctl·WASM 적용</text>
+    </g>
+    <g data-arrow="9" class="arrow-group">
+      <path class="arrow" d="M 380,545 L 620,545" marker-end="url(#ah-default)"/>
+      <text class="arrow-label" x="395" y="563">⑨ WS frame: {"kind":"ops",...} (클라→서버 미러)</text>
+    </g>
+  </svg>
+</div>
+
+<div class="narration" id="narration">
+  <h3>시작하기 — 단계 버튼이나 박스를 클릭하세요</h3>
+  <p>
+    Setup 흐름(① ~ ④, 보라 점선)은 *한 번만*. Edit Loop(⑤ ~ ⑨, 파랑/분홍 실선)는 LLM 명령이나 사용자 직접 편집이 일어날 때마다 반복.
+    화살표 ④·⑦·⑨는 *같은 WebSocket 채널*의 다른 방향·다른 시점입니다.
+    각 단계에서 *어떤 기존 코드*가 재사용되고 *어떤 신규 코드*가 추가되는지가 함께 표시됩니다.
+  </p>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-line setup"></div><span>Setup 단계 (1회)</span></div>
+  <div class="legend-item"><div class="legend-line"></div><span>Edit Loop (반복)</span></div>
+  <div class="legend-item"><div class="legend-line ws"></div><span>WebSocket 채널 (양방향)</span></div>
+  <div class="legend-item"><span class="legend-swatch existing"></span><span>기존 코드 재사용</span></div>
+  <div class="legend-item"><span class="legend-swatch new"></span><span>Sub-1에서 신규/수정</span></div>
+  <div class="legend-item" style="margin-left:auto"><span>설계서: <code>task_m200_zephy_bridge.md</code> · 구현 계획서: <code>task_m200_zephy_bridge_impl.md</code></span></div>
+</div>
+
+<div class="panel-grid">
+  <div class="role-panel" data-role-panel="llm">
+    <h3>LLM의 역할</h3>
+    <div class="role-cols">
+      <div class="role-col existing">
+        <div class="col-title">기존 — 재사용</div>
+        <ul>
+          <li>vLLM (사내 <code>serve-dev.rest.univa-internal.com</code>) — qwen3.5 모델</li>
+          <li>도구 호출 패턴 — <code>Bash("hwp-doc-patch &lt;action&gt; --payload '...'")</code> 형태 그대로</li>
+          <li><code>SYSTEM_PROMPT</code>·<code>SKILL.md</code> 변경 0</li>
+        </ul>
+        <div class="why">왜? LLM 입장의 외양을 바꾸지 않기로 brainstorming에서 결정. 모든 변화는 *노트북 내부 라우팅*에서 흡수.</div>
+      </div>
+      <div class="role-col new">
+        <div class="col-title">신규 — 추가</div>
+        <ul>
+          <li>없음. LLM은 완전히 동일한 입력·출력만 본다.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="role-panel" data-role-panel="notebook">
+    <h3>노트북의 역할</h3>
+    <div class="role-cols">
+      <div class="role-col existing">
+        <div class="col-title">기존 — 복사·재사용</div>
+        <ul>
+          <li><strong>cell 3 (기존 cell 6)</strong>: <code>_qwen35_inference_params</code>·<code>call_llm_stream</code>·<code>consume_stream</code>·<code>BASH_TOOL</code>·<code>FINISH_TOOL</code>·<code>GOOGLE_WEB_SEARCH_TOOL</code>. 그대로 복사.</li>
+          <li><strong>cell 6 (기존 cell 10)</strong>: <code>SYSTEM_PROMPT</code>·<code>sub_agent_run</code> agentic loop. 그대로 복사.</li>
+        </ul>
+        <div class="why">왜 복사? 기존 노트북을 손대지 않기 위해 (회귀 0). 두 노트북이 별도로 살아있다.</div>
+      </div>
+      <div class="role-col new">
+        <div class="col-title">신규 — Sub-1 추가</div>
+        <ul>
+          <li><strong>cell 2 — 세션 시작</strong>: <code>create_session()</code> helper로 <code>POST /sessions</code> 호출. 사용자에게 URL 출력.</li>
+          <li><strong>cell 4 — Bash 실행기 HTTP 라우터</strong>: <code>parse_hwp_doc_patch_call()</code> + <code>run_bash_command()</code>. <code>hwp-doc-patch </code> 명령을 가로채 <code>POST /workbench</code>로 HTTP 호출.</li>
+          <li><strong>cell 5 — self-test</strong>: 라우터 단위 검증.</li>
+        </ul>
+        <div class="why">왜 추가? 기존 노트북은 bridge(8765) 경로였음. SoT를 서버로 옮기려면 *서버 직통 HTTP 호출*로 갈아엎어야. 노트북은 WebSocket을 *사용하지 않음* — 요청-응답 패턴이라 HTTP가 자연스러움.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="role-panel" data-role-panel="server">
+    <h3>웹서버의 역할 — SoT(진실 원천)</h3>
+    <div class="role-cols">
+      <div class="role-col existing">
+        <div class="col-title">기존 — 재사용</div>
+        <ul>
+          <li><code>server/src/main.rs</code> — axum 서버 부트, 9개 기존 라우트(<code>/sessions</code>, <code>/ops</code>, <code>/ir</code>, <code>/export</code> …).</li>
+          <li><code>server/src/store.rs</code> — sqlite 영속. 세션·op·snapshot 모두 여기로 기록.</li>
+          <li><code>server/src/storage.rs</code> — minio 프록시(Sub-1에서는 비활성).</li>
+          <li><code>src/document_core/commands/edit_op.rs</code> — <code>EditOperation</code> 4 variants + <code>apply_edit_ops_json</code>. *Sub-1의 insert_text 진짜 적용이 이 함수를 그대로 호출*.</li>
+        </ul>
+        <div class="why">기존 axum 라우터·DocumentCore·sqlite 영속을 모두 활용. Sub-1은 그 위에 *WebSocket 핸들러*와 *새 진입점 두 개*만 얹는다.</div>
+      </div>
+      <div class="role-col new">
+        <div class="col-title">신규 — Sub-1 추가</div>
+        <ul>
+          <li><code>server/src/events.rs</code> — <code>ServerEvent</code> + <code>ClientMessage</code> enum + <code>EventsHub</code>(fileId별 broadcast 채널).</li>
+          <li><code>server/src/ws.rs</code> — <code>ws_upgrade</code> 핸들러. WS handshake 후 `handle_socket`에서 양방향 frame loop. 클라 메시지를 받아 <code>apply_edit_ops_json</code> + broadcast 발행.</li>
+          <li><code>main.rs::workbench</code> — <code>POST /workbench</code>. action 분기: <code>insert_text</code>는 진짜 적용 + Ops broadcast, 그 외는 Workbench broadcast.</li>
+          <li><code>main.rs::apply_ops</code> 수정 — 기존 op 적용 후 broadcast 한 줄 추가.</li>
+          <li><code>Cargo.toml</code> — axum <code>ws</code> feature + <code>tokio-stream</code> + <code>futures</code>.</li>
+        </ul>
+        <div class="why">왜 추가? 기존 서버는 *요청-응답 단방향* HTTP만 가지고 있었음. *서버 push*도, *영속 양방향 채널*도 없었음. WebSocket이 둘을 한 채널로 통합.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="role-panel" data-role-panel="frontend">
+    <h3>프론트의 역할</h3>
+    <div class="role-cols">
+      <div class="role-col existing">
+        <div class="col-title">기존 — 재사용</div>
+        <ul>
+          <li><code>core/wasm-bridge.ts</code> — WASM 인스턴스 핸들. <code>insertText·splitParagraph</code> 등 노출.</li>
+          <li><code>hwpctl/action-registry.ts</code> — <code>getActionDef(id)</code>로 액션 핸들러 조회.</li>
+          <li><code>hwpctl/actions/*.ts</code> — 12+2 액션 클라이언트 구현. workbench 패스스루의 종착지.</li>
+          <li><code>MirrorSink</code> 인터페이스 (session-client.ts의 외부 API) — InputHandler가 호출하는 시그니처. *Sub-1에서 유지*.</li>
+        </ul>
+        <div class="why">main.ts·InputHandler·hwpctl 흐름이 이미 잘 짜여 있음. 우리는 *SessionClient 내부만 갈아엎고* 외부 API는 손대지 않음 — 호출자 무변경.</div>
+      </div>
+      <div class="role-col new">
+        <div class="col-title">신규/수정 — Sub-1</div>
+        <ul>
+          <li><strong>수정 — <code>core/session-client.ts</code></strong>: 내부를 HTTP fetch → WebSocket으로 갈아엎음. <code>queueOp</code>·<code>requestSnapshot</code>·<code>attach</code>·<code>createSession</code>은 외부 API 그대로. 내부에서 WS open·재연결 백오프·sendBuffer·onmessage 처리. <code>onServerEvent</code> 콜백 옵션 추가.</li>
+          <li><strong>수정 — <code>main.ts</code></strong>: 기존 <code>new SessionClient({...})</code> 호출 옵션에 <code>onServerEvent</code> 추가 — <code>ev.kind</code>로 분기해 ops는 WASM 직접, workbench는 hwpctl.</li>
+          <li><strong>신규 — <code>e2e/ws-bridge.test.mjs</code></strong>: Puppeteer로 양방향 종단 검증.</li>
+        </ul>
+        <div class="why">왜 갈아엎음? 기존엔 클라→서버 미러링이 HTTP POST <code>/ops</code>·<code>PUT /snapshot</code>. SoT가 서버로 옮겨가면서 *서버→클라 push*도 필요. *같은 WS 채널로 통합*하는 게 깨끗 — 별도 SSE 채널이 따로 살지 않음. 외부 API 유지로 호출자 회귀 0.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="matrix-section">
+  <h2>전체 파일 매트릭스 — 한눈에</h2>
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th>객체</th>
+        <th>경로</th>
+        <th>상태</th>
+        <th>책임</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td rowspan="3">노트북</td><td><code>hwp_sub_agent_simulation_ssr.ipynb</code></td><td class="status-new">신규</td><td>HTTP 라우터(WS 무관) · LLM agentic loop(cell 6/10 복사)</td></tr>
+      <tr><td><code>hwp_sub_agent_simulation.ipynb</code></td><td class="status-existing">손대지 않음</td><td>기존 시뮬(bridge 8765 경로). 회귀 방지로 유지.</td></tr>
+      <tr><td><code>26ZEPHY-skills/.../hwp-doc-edit/SKILL.md</code></td><td class="status-existing">손대지 않음</td><td>LLM에게 가르치는 명령 카탈로그. 새 노트북도 그대로 재사용.</td></tr>
+
+      <tr><td rowspan="7">웹서버</td><td><code>server/src/events.rs</code></td><td class="status-new">신규</td><td><code>ServerEvent</code>·<code>ClientMessage</code> enum + <code>EventsHub</code> broadcast 채널 관리</td></tr>
+      <tr><td><code>server/src/ws.rs</code></td><td class="status-new">신규</td><td>WebSocket upgrade + 양방향 frame loop + ClientMessage dispatch</td></tr>
+      <tr><td><code>server/src/main.rs</code></td><td class="status-modify">수정</td><td><code>mod events; mod ws;</code> · <code>AppState.events</code> · <code>workbench</code> 핸들러 · <code>apply_ops</code>에 broadcast 발행 · <code>/ws</code>·<code>/workbench</code> 라우트</td></tr>
+      <tr><td><code>server/Cargo.toml</code></td><td class="status-modify">수정</td><td>axum <code>ws</code> feature · <code>tokio-stream</code> · <code>futures</code> 의존성</td></tr>
+      <tr><td><code>server/src/store.rs</code></td><td class="status-existing">손대지 않음</td><td>sqlite 영속. 그대로 활용.</td></tr>
+      <tr><td><code>server/src/storage.rs</code></td><td class="status-existing">손대지 않음</td><td>minio 프록시(Sub-1에서는 비활성).</td></tr>
+      <tr><td><code>src/document_core/commands/edit_op.rs</code></td><td class="status-existing">손대지 않음</td><td><code>EditOperation</code> + <code>apply_edit_ops_json</code>. workbench·ws 둘 다 호출.</td></tr>
+
+      <tr><td rowspan="6">프론트</td><td><code>rhwp-studio/src/core/session-client.ts</code></td><td class="status-modify">수정 — 내부 갈아엎기</td><td>HTTP fetch → WebSocket. 외부 API(MirrorSink, queueOp, requestSnapshot, attach, createSession) 유지. <code>onServerEvent</code> 콜백 추가.</td></tr>
+      <tr><td><code>rhwp-studio/src/main.ts</code></td><td class="status-modify">수정</td><td>SessionClient 옵션에 <code>onServerEvent</code> 콜백 주입. ops/workbench 분기.</td></tr>
+      <tr><td><code>rhwp-studio/e2e/ws-bridge.test.mjs</code></td><td class="status-new">신규</td><td>Puppeteer 양방향 종단 검증.</td></tr>
+      <tr><td><code>rhwp-studio/src/core/wasm-bridge.ts</code></td><td class="status-existing">손대지 않음</td><td>WASM 인스턴스. SessionClient·onServerEvent가 호출.</td></tr>
+      <tr><td><code>rhwp-studio/src/hwpctl/action-registry.ts</code></td><td class="status-existing">손대지 않음</td><td>액션 레지스트리. workbench passthrough에서 호출.</td></tr>
+      <tr><td><code>rhwp-studio/src/hwpctl/actions/*.ts</code> (7개)</td><td class="status-existing">손대지 않음</td><td>12+2 액션 클라이언트 구현. Sub-1 passthrough 종착지.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  const steps = {
+    1: {
+      tag: 'Setup ①', setup: true,
+      title: '세션 생성 — POST /sessions',
+      arrows: [1], highlight: ['notebook', 'server'],
+      body: `<p>노트북 <code>cell 2</code>가 빈 hwpx 바이트를 base64로 인코딩해서 웹서버에 보냅니다. HTTP 요청-응답.</p>`,
+      existing: {
+        title: '기존 코드 재사용',
+        items: [
+          '<code>server/src/main.rs::create_session</code> (line 245-271) — 기존 세션 생성 핸들러. base64 디코드 → DocumentCore 생성 → sqlite 등록.',
+          '<code>server/src/store.rs::Store::create_session</code> — 영속 기록.',
+        ],
+        why: '기존 axum 핸들러가 이미 fileId+bytes 받아 세션 등록까지 다 함. 변경 없이 그대로 활용.',
+      },
+      new: {
+        title: 'Sub-1 추가',
+        items: [
+          '<code>notebook cell 2</code> — Python helper <code>create_session(file_id, path)</code>. <code>requests.post(...)</code>으로 HTTP 호출.',
+        ],
+        why: '기존 노트북에는 세션 생성 자체가 없었음. SSR 모드에서는 *서버에 파일을 올리고 fileId를 받는* 단계가 첫 작업.',
+      },
+    },
+    2: {
+      tag: 'Setup ②', setup: true,
+      title: 'fileId URL 수동 전달',
+      arrows: [2], highlight: ['notebook', 'frontend'],
+      body: `<p>노트북이 출력한 URL을 사용자가 직접 브라우저 주소창에 입력. PoC scope이라 자동화하지 않습니다.</p>`,
+      existing: { title: '기존 코드 재사용', items: ['해당 없음 — 사람이 직접 수행.'], why: '브라우저 ↔ 노트북 직접 채널을 두지 않아 PoC 단순성 확보.' },
+      new: { title: 'Sub-1 추가', items: ['코드 없음. 사람 한 번 복붙.'], why: 'PoC 단순성. 향후 자동화 여지.' },
+    },
+    3: {
+      tag: 'Setup ③', setup: true,
+      title: '초기 IR 로드 — GET /ir',
+      arrows: [3], highlight: ['frontend', 'server'],
+      body: `<p>프론트가 SSE/WS 구독 *직전* 현재 문서 상태를 받아옵니다. SessionClient 내부에서 호출.</p>`,
+      existing: {
+        title: '기존 코드 재사용',
+        items: ['<code>server/src/main.rs::get_ir</code> — 기존 IR 조회 핸들러. 변경 없음.'],
+        why: 'WS는 *이벤트 스트림*이라 *현재 상태 스냅샷*은 별도 메커니즘이 필요. <code>/ir</code>를 WS 연결 직전·후에 호출하는 게 자연스러운 패턴.',
+      },
+      new: {
+        title: 'Sub-1 추가',
+        items: ['<code>core/session-client.ts</code> 내부에서 <code>createSession</code> 호출 후 또는 <code>attach</code> 시점에 <code>/ir</code> fetch.'],
+        why: 'WS 연결 자체는 *현재 상태를 모름*. 별도 HTTP 호출로 초기 IR을 받아 화면을 그린 뒤 *변경 이벤트만* WS로 따라잡음.',
+      },
+    },
+    4: {
+      tag: 'Setup ④', setup: true,
+      title: 'WebSocket 양방향 연결 — GET /sessions/:id/ws',
+      arrows: [4], highlight: ['frontend', 'server'],
+      body: `<p>프론트의 SessionClient가 <code>new WebSocket(ws://.../sessions/:id/ws)</code>로 양방향 채널 개통.</p>`,
+      existing: {
+        title: '기존 코드 재사용',
+        items: ['브라우저 표준 <code>WebSocket</code> API.'],
+        why: 'WS는 HTTP upgrade 후 양방향 텍스트/바이너리 프레임. 브라우저 표준이라 별도 라이브러리 불필요.',
+      },
+      new: {
+        title: 'Sub-1 추가',
+        items: [
+          '<code>server/src/events.rs::EventsHub</code> — fileId별 <code>tokio::sync::broadcast</code> 채널 관리.',
+          '<code>server/src/ws.rs::ws_upgrade</code> — axum <code>WebSocketUpgrade</code>로 HTTP→WS. <code>handle_socket</code> 안에서 <code>(sender, receiver)</code>로 분리해 양방향 처리.',
+          '<code>main.rs::router</code>에 <code>route("/sessions/:id/ws", get(ws::ws_upgrade))</code> 라우트 추가.',
+          '<code>core/session-client.ts::openWs</code> — <code>new WebSocket(url)</code> + open/message/error/close 핸들러. 재연결 백오프 [500,1000,2000,5000,10000]ms.',
+        ],
+        why: '기존엔 *서버 → 클라 push*도, *클라 → 서버 영속 채널*도 없었음. WebSocket 한 채널이 *둘 다 통합*. broadcast 채널은 *fan-out*(같은 fileId의 여러 클라에게 같은 이벤트) 처리.',
+      },
+    },
+    5: {
+      tag: 'Edit ⑤',
+      title: 'LLM tool call',
+      arrows: [5], highlight: ['llm', 'notebook'],
+      body: `<p>사용자가 노트북에서 자연어 요청을 주면 LLM이 <code>Bash</code> 도구를 호출.</p>`,
+      existing: {
+        title: '기존 코드 재사용',
+        items: [
+          '<code>notebook cell 3</code> (기존 cell 6) — <code>BASH_TOOL</code>·<code>FINISH_TOOL</code> spec, LLM 스트리밍.',
+          '<code>notebook cell 6</code> (기존 cell 10) — <code>SYSTEM_PROMPT</code>·<code>sub_agent_run</code> agentic loop.',
+          '<code>SKILL.md</code> — LLM 명령 카탈로그. 변경 없음.',
+        ],
+        why: '*LLM 입장은 완전히 동일*. 모든 변화는 노트북 내부 라우팅에서 흡수.',
+      },
+      new: {
+        title: 'Sub-1 추가',
+        items: ['해당 없음 — LLM ↔ 노트북 내부 인터페이스.'],
+        why: 'LLM의 호출 형태를 SSR용으로 별도 정의하지 않은 게 결정적 단순화.',
+      },
+    },
+    6: {
+      tag: 'Edit ⑥',
+      title: '노트북 Bash 라우터 — POST /workbench (HTTP)',
+      arrows: [6], highlight: ['notebook', 'server'],
+      body: `<p>노트북 cell 4의 <code>run_bash_command</code>가 명령을 가로채 SSR 서버로 *HTTP POST*. WebSocket 아님.</p>`,
+      existing: {
+        title: '기존 코드 재사용',
+        items: ['<code>run_bash_command</code> 시그니처 패턴 — Bash 명령 → dict 결과.', '<code>format_as_sentinel_json</code> — LLM이 익숙한 sentinel 응답 형식.'],
+        why: '기존 cell 8 인터페이스를 그대로 유지. sub_agent_run loop의 다른 부분 손대지 않음.',
+      },
+      new: {
+        title: 'Sub-1 추가',
+        items: [
+          '<code>notebook cell 4::parse_hwp_doc_patch_call</code> — argparse로 action·--file-id·--payload 추출.',
+          '<code>notebook cell 4::run_bash_command</code> — <code>hwp-doc-patch </code>로 시작하면 <code>requests.post(\'/sessions/{fid}/workbench\')</code>, 그 외는 subprocess.run.',
+          '<code>server/src/main.rs::workbench</code> 핸들러 — POST /workbench 라우트. WorkbenchReq/Resp DTO.',
+        ],
+        why: '노트북-서버 통신은 *요청-응답*이라 HTTP가 자연스럽고 WebSocket 불필요. WS는 *영속 연결*이 필요한 브라우저용.',
+      },
+    },
+    7: {
+      tag: 'Edit ⑦', ws: true,
+      title: '서버 적용 + WS broadcast 발행',
+      arrows: [7], highlight: ['server'],
+      body: `<p>서버가 받은 워크벤치 요청을 action별로 분기하고, sqlite 기록 후 broadcast 채널에 발행 → 구독자(브라우저 WS)들에게 fan-out.</p>`,
+      existing: {
+        title: '기존 코드 재사용',
+        items: [
+          '<code>src/document_core/commands/edit_op.rs::apply_edit_ops_json</code> — JSON op 적용 함수.',
+          '<code>EditOperation::InsertText</code> variant.',
+          '<code>server/src/store.rs::Store::append_op</code> — sqlite 기록.',
+          '<code>get_or_restore</code> — 세션 메모리·sqlite 복원.',
+        ],
+        why: 'rhwp 본체의 *편집 엔진*은 이미 완성. Sub-1은 *진입점·broadcast*만 추가.',
+      },
+      new: {
+        title: 'Sub-1 추가',
+        items: [
+          '<code>main.rs::workbench</code> 본체 — action 분기. <code>insert_text</code>: payload → JSON op 변환 → <code>apply_edit_ops_json</code> + <code>store.append_op</code> + <code>events.publish(ServerEvent::Ops)</code>. 그 외: <code>events.publish(ServerEvent::Workbench)</code>만.',
+          '<code>EventsHub::publish</code> → <code>broadcast::Sender::send</code> → WS handler의 <code>send_task</code>가 frame으로 변환 송신.',
+          '<code>ServerEvent</code> enum — <code>serde(tag="kind", rename_all="lowercase")</code>로 <code>{"kind":"ops",...}</code> JSON.',
+          '<code>apply_ops</code> 수정 — 기존 op 루프에 <code>events.publish</code> 한 줄 추가(클라→서버 미러링과 호환).',
+        ],
+        why: '분기 dispatcher가 핵심. Sub-1은 insert_text만 진짜 적용, 나머지는 broadcast pass-through. Sub-2에서 분기를 채워 가는 식으로 확장.',
+      },
+    },
+    8: {
+      tag: 'Edit ⑧', ws: true,
+      title: '프론트 적용 + 화면 갱신',
+      arrows: [8], highlight: ['frontend'],
+      body: `<p>프론트의 SessionClient WS <code>onmessage</code>에서 <code>onServerEvent</code> 콜백 호출.</p>`,
+      existing: {
+        title: '기존 코드 재사용',
+        items: [
+          '<code>core/wasm-bridge.ts</code> — WASM 인스턴스. <code>insertText·splitParagraph</code> 등.',
+          '<code>hwpctl/action-registry.ts::getActionDef(id)</code>.',
+          '<code>hwpctl/actions/*.ts</code> — 12+2 액션 종착지.',
+          'studio 자동 재렌더링 — WASM 상태 변경 시 CanvasView가 다시 그림.',
+        ],
+        why: '클라이언트의 *편집 적용·렌더링 메커니즘*은 이미 완성. Sub-1 신규는 *WS 이벤트를 그쪽으로 흘려보내는 어댑터*.',
+      },
+      new: {
+        title: 'Sub-1 추가',
+        items: [
+          '<code>core/session-client.ts</code> 내부 — WS <code>onmessage</code>에서 JSON.parse → <code>onServerEvent(ev)</code> 콜백 호출.',
+          '<code>main.ts</code>에서 SessionClient 생성 시 <code>onServerEvent</code> 옵션 주입 — <code>ev.kind</code> 분기: <code>"ops"</code>면 op.op별 WASM 직접 호출(<code>insertText</code>·<code>splitParagraph</code>), <code>"workbench"</code>면 <code>getActionDef(action).executor(payload)</code>.',
+        ],
+        why: '기존엔 *클라→서버 단방향 미러링*(session-client.ts)만 있었음. 반대 방향 처리를 *같은 SessionClient*에 통합 — 별도 ssr-listener.ts 신설 불필요.',
+      },
+    },
+    9: {
+      tag: 'Edit ⑨', ws: true,
+      title: '사용자 직접 편집 → WS로 서버 미러',
+      arrows: [9], highlight: ['frontend', 'server'],
+      body: `<p>사용자가 브라우저에서 직접 키 입력 → InputHandler가 <code>sessionClient.queueOp(op)</code> 호출 → 디바운스 후 WS 메시지로 서버에 보냄.</p>`,
+      existing: {
+        title: '기존 코드 재사용',
+        items: [
+          'InputHandler 흐름 (rhwp-studio 내부) — 키 입력·디바운스·MirrorSink 호출.',
+          '<code>MirrorSink</code> 인터페이스 (queueOp, requestSnapshot) — *외부 API 유지*라 호출자는 그대로.',
+          '서버 측 <code>apply_edit_ops_json</code> — 클라 ops도 같은 함수로 적용.',
+        ],
+        why: '사용자 직접 편집 흐름이 이미 정상 동작. *내부 전송 방식만 HTTP → WS로 바뀜*.',
+      },
+      new: {
+        title: 'Sub-1 추가',
+        items: [
+          '<code>core/session-client.ts</code> 내부 — 기존 HTTP POST /ops를 *WS send {"kind":"ops","ops":[...]}*로 갈아엎음. 디바운스·sendBuffer·beforeunload flush 유지.',
+          '<code>server/src/ws.rs::handle_client_text</code> — <code>ClientMessage::Ops</code> 수신 → <code>apply_edit_ops_json</code> + <code>store.append_op</code> + <code>events.publish(ServerEvent::Ops)</code>. 즉 *클라가 보낸 op도 다시 broadcast*되어 같은 fileId의 다른 클라에게 전달.',
+        ],
+        why: 'WS 채널을 *양방향*으로 활용하는 의도. 사용자 편집과 LLM 편집이 *같은 채널·같은 sqlite·같은 broadcast*로 흐르면 일관성과 디버깅이 깔끔.',
+      },
+    },
+    0: {
+      tag: '전체',
+      title: '모든 통신 경로 한눈에',
+      arrows: [1,2,3,4,5,6,7,8,9],
+      highlight: ['llm', 'notebook', 'server', 'frontend'],
+      body: `<p>Setup 4개(보라 점선)와 Edit Loop 5개. ④·⑦·⑨가 *같은 WebSocket 채널*의 다른 방향·시점. 신규 코드는 *접합부 4곳*에 집중: 노트북 라우터(cell 4) · 서버 events.rs · 서버 ws.rs + workbench 핸들러 · 프론트 session-client.ts 내부.</p>`,
+      existing: {
+        title: '기존 코드 재사용 — 큰 비중',
+        items: ['편집 엔진(<code>apply_edit_ops_json</code>·<code>EditOperation</code>) · sqlite · 9개 기존 axum 라우트 · WASM bridge · hwpctl actions 7개 · 기존 LLM 인프라 cell 6/10 · SKILL.md · SYSTEM_PROMPT · MirrorSink 외부 API'],
+        why: '본 작업의 대부분이 기존 자산 재사용. 신규는 접합 인프라에 집중.',
+      },
+      new: {
+        title: '신규/수정 — 접합 인프라 4곳',
+        items: [
+          '서버: <code>events.rs</code>(타입+broadcast) + <code>ws.rs</code>(WS handler) + <code>main.rs</code>(workbench 핸들러·라우트·apply_ops 보강)',
+          '프론트: <code>session-client.ts</code> 내부 갈아엎기 + <code>main.ts</code> 콜백 주입 + e2e 테스트',
+          '노트북: 새 ipynb (cell 2/4/5 신규, cell 3/6은 기존 cell 6/10 복사)',
+        ],
+        why: 'Sub-1 신규 코드 총량 ~700줄. 가장 큰 단일 파일은 <code>session-client.ts</code>(~200줄, 갈아엎기) · <code>ws.rs</code>(~150줄) · <code>events.rs</code>(~120줄).',
+      },
+    },
+  };
+
+  const stepButtons = document.querySelectorAll('.step-btn');
+  const boxes = document.querySelectorAll('.box');
+  const rolePanels = document.querySelectorAll('.role-panel');
+  const arrowGroups = document.querySelectorAll('[data-arrow]');
+  const narration = document.getElementById('narration');
+
+  function renderCodeCards(step) {
+    let html = `<div class="code-cards">`;
+    if (step.existing) {
+      html += `<div class="code-card existing"><div class="card-title">${step.existing.title}</div><ul>`;
+      step.existing.items.forEach((it) => (html += `<li>${it}</li>`));
+      html += `</ul>`;
+      if (step.existing.why) html += `<div class="why">${step.existing.why}</div>`;
+      html += `</div>`;
+    }
+    if (step.new) {
+      html += `<div class="code-card new"><div class="card-title">${step.new.title}</div><ul>`;
+      step.new.items.forEach((it) => (html += `<li>${it}</li>`));
+      html += `</ul>`;
+      if (step.new.why) html += `<div class="why">${step.new.why}</div>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+    return html;
+  }
+
+  function applyStep(stepKey) {
+    const step = steps[stepKey];
+    if (!step) return;
+
+    stepButtons.forEach(b => b.classList.toggle('active', b.dataset.step === String(stepKey)));
+    boxes.forEach(b => b.classList.toggle('highlight', step.highlight.includes(b.dataset.role)));
+
+    arrowGroups.forEach(g => {
+      const a = g.dataset.arrow;
+      const path = g.querySelector('path');
+      const label = g.querySelector('text');
+      const aNum = parseInt(a, 10);
+      const isActive = step.arrows.includes(aNum);
+      const isSetup = aNum <= 4;
+      const isWs = aNum === 4 || aNum === 7 || aNum === 9;
+      path.classList.toggle('active', isActive);
+      path.classList.toggle('setup', isSetup);
+      path.classList.toggle('ws', isWs && isActive);
+      label.classList.toggle('active', isActive);
+      label.classList.toggle('setup', isSetup);
+      label.classList.toggle('ws', isWs && isActive);
+      if (isActive) {
+        if (isWs) {
+          path.setAttribute('marker-end', 'url(#ah-active-ws)');
+        } else if (isSetup) {
+          path.setAttribute('marker-end', 'url(#ah-active-setup)');
+        } else {
+          path.setAttribute('marker-end', 'url(#ah-active)');
+        }
+      } else {
+        path.setAttribute('marker-end', 'url(#ah-default)');
+      }
+    });
+
+    let tagClass = 'step-tag';
+    if (step.ws) tagClass = 'step-tag ws';
+    else if (step.setup) tagClass = 'step-tag setup';
+
+    if (step.ws) narration.style.borderLeftColor = '#d53f8c';
+    else if (step.setup) narration.style.borderLeftColor = '#805ad5';
+    else narration.style.borderLeftColor = '#3182ce';
+
+    narration.innerHTML = `<h3><span class="${tagClass}">${step.tag}</span>${step.title}</h3>${step.body}${renderCodeCards(step)}`;
+  }
+
+  stepButtons.forEach(b => b.addEventListener('click', () => applyStep(b.dataset.step)));
+  document.getElementById('reset').addEventListener('click', () => {
+    stepButtons.forEach(b => b.classList.remove('active'));
+    boxes.forEach(b => b.classList.remove('highlight', 'active'));
+    arrowGroups.forEach(g => {
+      g.querySelector('path').classList.remove('active', 'ws');
+      g.querySelector('path').setAttribute('marker-end', 'url(#ah-default)');
+      g.querySelector('text').classList.remove('active', 'ws');
+    });
+    rolePanels.forEach(p => p.classList.remove('show'));
+    narration.style.borderLeftColor = '#3182ce';
+    narration.innerHTML = `<h3>시작하기 — 단계 버튼이나 박스를 클릭하세요</h3>
+      <p>Setup 흐름(① ~ ④, 보라 점선)은 <em>한 번만</em>. Edit Loop(⑤ ~ ⑨, 파랑/분홍 실선)는 LLM 명령이나 사용자 직접 편집이 일어날 때마다 반복.
+      화살표 ④·⑦·⑨는 <em>같은 WebSocket 채널</em>의 다른 방향·다른 시점입니다.
+      각 단계에서 <em>어떤 기존 코드</em>가 재사용되고 <em>어떤 신규 코드</em>가 추가되는지가 함께 표시됩니다.</p>`;
+  });
+
+  boxes.forEach(b => {
+    b.addEventListener('click', () => {
+      const role = b.dataset.role;
+      const wasActive = b.classList.contains('active');
+      boxes.forEach(x => x.classList.remove('active'));
+      rolePanels.forEach(p => p.classList.remove('show'));
+      if (!wasActive) {
+        b.classList.add('active');
+        document.querySelector(`[data-role-panel="${role}"]`).classList.add('show');
+      }
+    });
+  });
+</script>
+
+</body>
+</html>
