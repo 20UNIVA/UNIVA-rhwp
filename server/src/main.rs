@@ -100,6 +100,22 @@ struct IrQuery {
     page: Option<u32>,
 }
 
+#[derive(Deserialize)]
+struct WorkbenchReq {
+    action: String,
+    payload: serde_json::Value,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchResp {
+    seq: i64,
+    /// "ops" — 서버가 자기 DocumentCore에 진짜 적용.
+    /// "passthrough" — 서버는 broadcast만, 실제 적용은 클라가 함.
+    applied: String,
+    info: Option<SessionInfo>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionInfo {
@@ -336,6 +352,13 @@ async fn apply_ops(
         let seq = s.next_seq;
         state.store.append_op(&file_id, seq, &op.to_string())?;
         s.next_seq += 1;
+        state.events.publish(
+            &file_id,
+            events::ServerEvent::Ops {
+                seq,
+                ops: vec![op.clone()],
+            },
+        );
     }
     Ok(Json(session_info(&file_id, &s)))
 }
@@ -443,6 +466,91 @@ async fn save_document(
     })))
 }
 
+async fn workbench(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+    Json(req): Json<WorkbenchReq>,
+) -> Result<Json<WorkbenchResp>, AppError> {
+    let session = get_or_restore(&state, &file_id).await?;
+
+    match req.action.as_str() {
+        "insert_text" => {
+            let section = req
+                .payload
+                .get("section")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| AppError::bad_request("payload.section 누락"))?;
+            let para = req
+                .payload
+                .get("para")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| AppError::bad_request("payload.para 누락"))?;
+            let offset = req
+                .payload
+                .get("offset")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| AppError::bad_request("payload.offset 누락"))?;
+            let text = req
+                .payload
+                .get("text")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| AppError::bad_request("payload.text 누락"))?;
+
+            let op = serde_json::json!({
+                "op": "insert_text",
+                "section": section,
+                "para": para,
+                "offset": offset,
+                "text": text,
+            });
+
+            let mut s = session.lock().unwrap();
+            let ops_json = format!("[{}]", op);
+            s.core
+                .apply_edit_ops_json(&ops_json)
+                .map_err(|e| AppError::unprocessable(format!("op 적용 실패: {e}")))?;
+            let seq = s.next_seq;
+            state.store.append_op(&file_id, seq, &op.to_string())?;
+            s.next_seq += 1;
+            let info = session_info(&file_id, &s);
+            drop(s);
+
+            state.events.publish(
+                &file_id,
+                events::ServerEvent::Ops {
+                    seq,
+                    ops: vec![op],
+                },
+            );
+
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: Some(info),
+            }))
+        }
+        _ => {
+            let mut s = session.lock().unwrap();
+            let seq = s.next_seq;
+            s.next_seq += 1;
+            drop(s);
+            state.events.publish(
+                &file_id,
+                events::ServerEvent::Workbench {
+                    seq,
+                    action: req.action.clone(),
+                    payload: req.payload.clone(),
+                },
+            );
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "passthrough".to_string(),
+                info: None,
+            }))
+        }
+    }
+}
+
 async fn delete_session(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
@@ -461,6 +569,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/ir", get(get_ir))
         .route("/sessions/:id/export", get(export))
         .route("/sessions/:id/save", post(save_document))
+        .route("/sessions/:id/workbench", post(workbench))
         .route("/sessions/:id/ws", get(ws::ws_upgrade))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
