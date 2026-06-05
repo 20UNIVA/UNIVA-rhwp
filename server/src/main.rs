@@ -15,6 +15,8 @@
 //! - `DELETE /sessions/{id}`         메모리 세션 해제 (영속 유지)
 //! - `GET    /health`                헬스 체크
 
+mod events;
+mod ws;
 mod storage;
 mod store;
 
@@ -41,20 +43,21 @@ use store::{PersistedSession, Store};
 
 /// 서버 공유 상태.
 #[derive(Clone)]
-struct AppState {
-    sessions: Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>,
-    store: Arc<Store>,
-    storage: Arc<Storage>,
+pub(crate) struct AppState {
+    pub(crate) sessions: Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>,
+    pub(crate) store: Arc<Store>,
+    pub(crate) storage: Arc<Storage>,
+    pub(crate) events: events::EventsHub,
 }
 
 /// 메모리에 보유되는 단일 세션.
-struct Session {
-    core: DocumentCore,
-    format: String,
+pub(crate) struct Session {
+    pub(crate) core: DocumentCore,
+    pub(crate) format: String,
     /// 저장(덮어쓰기) 시 사용할 파일명.
-    filename: String,
+    pub(crate) filename: String,
     /// 다음에 부여할 op/snapshot seq.
-    next_seq: i64,
+    pub(crate) next_seq: i64,
 }
 
 /// format 기반 기본 파일명.
@@ -108,28 +111,28 @@ struct SessionInfo {
 
 // ─── 에러 ────────────────────────────────────────────
 
-struct AppError {
-    status: StatusCode,
-    msg: String,
+pub(crate) struct AppError {
+    pub(crate) status: StatusCode,
+    pub(crate) msg: String,
 }
 
 impl AppError {
-    fn new(status: StatusCode, msg: impl Into<String>) -> Self {
+    pub(crate) fn new(status: StatusCode, msg: impl Into<String>) -> Self {
         AppError {
             status,
             msg: msg.into(),
         }
     }
-    fn bad_request(msg: impl Into<String>) -> Self {
+    pub(crate) fn bad_request(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, msg)
     }
-    fn unprocessable(msg: impl Into<String>) -> Self {
+    pub(crate) fn unprocessable(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, msg)
     }
-    fn not_found(msg: impl Into<String>) -> Self {
+    pub(crate) fn not_found(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::NOT_FOUND, msg)
     }
-    fn internal(msg: impl Into<String>) -> Self {
+    pub(crate) fn internal(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, msg)
     }
 }
@@ -174,7 +177,7 @@ fn restore_core(p: &PersistedSession) -> Result<DocumentCore, AppError> {
 }
 
 /// 메모리 세션을 얻거나, 없으면 sqlite → (그래도 없으면) minio download 순으로 복원하여 등록한다.
-async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Session>>, AppError> {
+pub(crate) async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Session>>, AppError> {
     // 1) 메모리
     {
         let guard = state.sessions.lock().unwrap();
@@ -225,7 +228,7 @@ async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Ses
 }
 
 /// 세션 정보 요약(문단 합계 포함)을 만든다.
-fn session_info(file_id: &str, session: &Session) -> SessionInfo {
+pub(crate) fn session_info(file_id: &str, session: &Session) -> SessionInfo {
     let doc = session.core.document();
     let paragraph_count = doc.sections.iter().map(|s| s.paragraphs.len()).sum();
     SessionInfo {
@@ -458,6 +461,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/ir", get(get_ir))
         .route("/sessions/:id/export", get(export))
         .route("/sessions/:id/save", post(save_document))
+        .route("/sessions/:id/ws", get(ws::ws_upgrade))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -492,6 +496,7 @@ async fn main() {
         sessions: Arc::new(Mutex::new(HashMap::new())),
         store: Arc::new(store),
         storage: Arc::new(storage),
+        events: events::EventsHub::new(),
     };
 
     let addr = std::env::var("RHWP_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:7710".to_string());
