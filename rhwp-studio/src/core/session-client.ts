@@ -66,6 +66,8 @@ export class SessionClient implements MirrorSink {
   private readonly reconnectDelaysMs: number[];
 
   private ws: WebSocket | null = null;
+  private disposed = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectIdx = 0;
   private connected = false;
   private sendBuffer: string[] = []; // WS 닫혀 있을 때 큐
@@ -150,6 +152,7 @@ export class SessionClient implements MirrorSink {
   }
 
   private openWs(): void {
+    if (this.disposed) return;
     if (this.ws) return;
     const url = `${this.baseUrlWs}/sessions/${encodeURIComponent(this.fileId)}/ws`;
     this.ws = new WebSocket(url);
@@ -198,12 +201,16 @@ export class SessionClient implements MirrorSink {
   }
 
   private scheduleReconnect(): void {
+    if (this.disposed) return;
     const delay =
       this.reconnectDelaysMs[
         Math.min(this.reconnectIdx, this.reconnectDelaysMs.length - 1)
       ];
     this.reconnectIdx += 1;
-    setTimeout(() => this.openWs(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.openWs();
+    }, delay);
   }
 
   private installUnloadFlush(): void {
@@ -217,6 +224,11 @@ export class SessionClient implements MirrorSink {
 
   /** WS 연결 해제 + beforeunload 리스너 제거 + 잔여 큐 flush. */
   dispose(): void {
+    this.disposed = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.unloadHandler) {
       window.removeEventListener('beforeunload', this.unloadHandler);
       this.unloadHandler = null;
