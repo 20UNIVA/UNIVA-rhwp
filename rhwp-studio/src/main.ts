@@ -119,6 +119,7 @@ function buildSessionClient(fileId: string): SessionClient {
           console.warn('[main] ops 필드 누락 — 무시');
           return;
         }
+        let appliedCount = 0;
         for (const op of ev.ops) {
           try {
             switch (op.op) {
@@ -131,6 +132,7 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 wasm.insertText(op.section, op.para, op.offset, op.text);
+                appliedCount += 1;
                 break;
               case 'split_paragraph':
                 if (typeof op.section !== 'number' ||
@@ -140,6 +142,7 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 wasm.splitParagraph(op.section, op.para, op.offset);
+                appliedCount += 1;
                 break;
               default:
                 console.warn(`[main] Sub-1 미지원 ops op: ${op.op}`);
@@ -147,6 +150,11 @@ function buildSessionClient(fileId: string): SessionClient {
           } catch (e) {
             console.error('[main] WASM op 적용 실패:', op, e);
           }
+        }
+        // CanvasView 가 'document-changed' 만 듣고 refreshPages 한다 — IR 만 바꾸고 emit 안 하면
+        // 화면이 새로고침 전까지 옛 그림 그대로. InputHandler 도 wasm 편집 직후 같은 이벤트 발행.
+        if (appliedCount > 0) {
+          eventBus.emit('document-changed');
         }
       } else if (ev.kind === 'workbench') {
         if (typeof ev.action !== 'string') {
@@ -168,6 +176,8 @@ function buildSessionClient(fileId: string): SessionClient {
             }
           }
           def.executor(ctrl, set);
+          // ops 분기와 동일 이유 — wasm 변경 후 CanvasView refresh 트리거 필요.
+          eventBus.emit('document-changed');
         } catch (e) {
           console.error(`[main] hwpctl executor 예외: ${ev.action}`, e);
         }
