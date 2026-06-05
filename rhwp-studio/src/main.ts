@@ -160,7 +160,13 @@ function buildSessionClient(fileId: string): SessionClient {
         }
         try {
           const ctrl = new HwpCtrl(wasm as any);
-          const set = ev.payload != null ? Object.assign(new ParameterSet(def.parameterSetId ?? ev.action), ev.payload) : null;
+          let set: ParameterSet | null = null;
+          if (ev.payload && typeof ev.payload === 'object') {
+            set = new ParameterSet(def.parameterSetId ?? ev.action);
+            for (const [k, v] of Object.entries(ev.payload as Record<string, unknown>)) {
+              set.SetItem(k, v);
+            }
+          }
           def.executor(ctrl, set);
         } catch (e) {
           console.error(`[main] hwpctl executor 예외: ${ev.action}`, e);
