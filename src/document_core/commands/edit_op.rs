@@ -194,6 +194,15 @@ pub enum EditOperation {
         row_end: usize,
         col_end: usize,
     },
+    /// 셀 내 문단 runs 통째 교체. replace_cell_runs_native 위임.
+    ReplaceCellRuns {
+        section: usize,
+        table_para: usize,
+        row: usize,
+        col: usize,
+        cell_para: usize,
+        runs: Vec<RunSpec>,
+    },
 }
 
 fn one_count() -> usize { 1 }
@@ -326,6 +335,13 @@ impl DocumentCore {
                     *row_end as u16, *col_end as u16,
                 )?;
             }
+            EditOperation::ReplaceCellRuns { section, table_para, row, col, cell_para, runs } => {
+                let ctrl_idx = 0usize;
+                let cell_idx = self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?;
+                let runs_json = serde_json::to_string(runs)
+                    .map_err(|e| HwpError::RenderError(format!("runs 직렬화: {e}")))?;
+                self.replace_cell_runs_native(*section, *table_para, ctrl_idx, cell_idx, *cell_para, &runs_json)?;
+            }
         }
         Ok(())
     }
@@ -387,6 +403,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::MergeCells { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::ReplaceCellRuns { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -710,6 +729,35 @@ mod tests {
         };
         core.apply_edit_op(&op).unwrap();
         // set_cell_properties_native 가 panic 안 하면 통과 (호출 자체 검증).
+    }
+
+    /// 셀 내부 첫 문단 텍스트를 가져온다.
+    fn cell_text(core: &DocumentCore, section: usize, table_para: usize, ctrl: usize, cell_idx: usize, cell_para: usize) -> String {
+        let para = &core.document.sections[section].paragraphs[table_para];
+        match &para.controls[ctrl] {
+            crate::model::control::Control::Table(t) => t.cells[cell_idx].paragraphs[cell_para].text.clone(),
+            _ => panic!("Table 컨트롤 아님"),
+        }
+    }
+
+    #[test]
+    fn test_replace_cell_runs_op_apply() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 1, 2).unwrap();
+        let ctrl_idx = 0;
+        let cell_idx = 0;
+        core.insert_text_in_cell_native(0, 1, ctrl_idx, cell_idx, 0, 0, "원본").unwrap();
+        let op = EditOperation::ReplaceCellRuns {
+            section: 0,
+            table_para: 1,
+            row: 0,
+            col: 0,
+            cell_para: 0,
+            runs: vec![RunSpec { text: "변경".to_string(), style: None }],
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(cell_text(&core, 0, 1, 0, 0, 0), "변경");
     }
 
     #[test]
