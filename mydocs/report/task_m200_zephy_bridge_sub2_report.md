@@ -210,7 +210,7 @@ f7cdfd19 Task #zephy-bridge Sub-2 [2a.2]: WASM replace_runs export 신설
 
 [stage1 보고서](../working/task_m200_zephy_bridge_sub2_stage1.md) 의 알려진 한계 표 참고. 핵심 항목:
 
-1. ~~**`EditOperation::InsertParagraph` doc-comment ↔ 구현 semantic mismatch**~~ → **결정 2026-06-07: 현재 코드 동작 (Enter 와 동일, after_para 위치에 삽입) 이 의도. doc-comment 만 정정 (commit `[SHA]`). Sub-3 추가 작업 없음.**
+1. ~~**`EditOperation::InsertParagraph` doc-comment ↔ 구현 semantic mismatch**~~ → **결정 2026-06-07: 현재 코드 동작 (Enter 와 동일, after_para 위치에 삽입) 이 의도. doc-comment 만 정정 (commit `44ce5187`). Sub-3 추가 작업 없음.**
 2. **`insert_text` 도 `op_stash` 적재로 통일** — undo 가 `insert_text` 도 되돌리도록.
 3. **`Paragraph` `Serialize` derive** — `ir-slice` `raw` mode 의 완전 직렬화.
 4. **다중 사용자 동시 편집 — 사용자별 undo stack 분리** — 본 spec 의 세션당 전역 undo stack 한계 해소.
