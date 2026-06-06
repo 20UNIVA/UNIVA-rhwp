@@ -164,6 +164,12 @@ pub enum EditOperation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         style: Option<PartialParagraphStyle>,
     },
+    /// 문단(또는 그 자리의 표 컨트롤) 삭제. element_type 으로 분기.
+    DeleteElement {
+        section: usize,
+        para: usize,
+        element_type: ElementType,
+    },
 }
 
 fn one_count() -> usize { 1 }
@@ -222,6 +228,17 @@ impl DocumentCore {
                     }
                 }
             }
+            EditOperation::DeleteElement { section, para, element_type } => {
+                match element_type {
+                    ElementType::Paragraph => {
+                        self.delete_paragraph_native(*section, *para)?;
+                    }
+                    ElementType::Table => {
+                        // delete_table_control_native(section, parent_para, control_idx)
+                        self.delete_table_control_native(*section, *para, 0)?;
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -271,6 +288,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::InsertParagraph { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::DeleteElement { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -529,5 +549,34 @@ mod tests {
         if let EditOperation::InsertParagraph { count, .. } = op {
             assert_eq!(count, 1);
         } else { panic!("Wrong variant"); }
+    }
+
+    #[test]
+    fn test_delete_element_op_apply_paragraph() {
+        let mut core = core_with_text("first");
+        core.apply_edit_op(&EditOperation::SplitParagraph { section: 0, para: 0, offset: 5 }).unwrap();
+        core.insert_text_native(0, 1, 0, "second").unwrap();
+        let op = EditOperation::DeleteElement {
+            section: 0, para: 0, element_type: ElementType::Paragraph,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 1);
+        assert_eq!(para_text(&core, 0, 0), "second");
+    }
+
+    #[test]
+    fn test_delete_element_op_apply_table() {
+        let mut core = core_with_text("");
+        core.create_table_native(0, 0, 0, 2, 3).unwrap();
+        // create_table_native 가 빈 문서에서 paragraphs[1] 에 table 배치 (Task 2a.3 발견)
+        let op = EditOperation::DeleteElement {
+            section: 0, para: 1, element_type: ElementType::Table,
+        };
+        core.apply_edit_op(&op).unwrap();
+        // table 컨트롤 사라짐 확인
+        let has_table = core.document.sections[0].paragraphs.iter().any(|p| {
+            p.controls.iter().any(|c| matches!(c, crate::model::control::Control::Table(_)))
+        });
+        assert!(!has_table, "Table 컨트롤이 모두 삭제되어야 함");
     }
 }
