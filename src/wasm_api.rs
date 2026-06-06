@@ -4883,6 +4883,28 @@ impl HwpDocument {
             .map_err(|e| e.into())
     }
 
+    /// JS: replaceCellRuns(secIdx, tableParaIdx, ctrlIdx, cellIdx, cellParaIdx, runsJson)
+    #[wasm_bindgen(js_name = replaceCellRuns)]
+    pub fn replace_cell_runs(
+        &mut self,
+        section_idx: u32,
+        table_para_idx: u32,
+        control_idx: u32,
+        cell_idx: u32,
+        cell_para_idx: u32,
+        runs_json: &str,
+    ) -> Result<String, JsValue> {
+        self.replace_cell_runs_native(
+            section_idx as usize,
+            table_para_idx as usize,
+            control_idx as usize,
+            cell_idx as usize,
+            cell_para_idx as usize,
+            runs_json,
+        )
+        .map_err(|e| e.into())
+    }
+
     /// 문단 서식을 적용한다 (셀 내 문단).
     #[wasm_bindgen(js_name = applyParaFormatInCell)]
     pub fn apply_para_format_in_cell(
