@@ -167,6 +167,9 @@ pub enum EditOperation {
         style: Option<PartialParagraphStyle>,
     },
     /// 문단(또는 그 자리의 표 컨트롤) 삭제. element_type 으로 분기.
+    /// *한계: `element_type=table` 분기는 `delete_table_control_native(sec, para, control_idx=0)` 호출 —
+    /// 즉 해당 paragraph 의 *첫 표 control* 만 삭제. 한 paragraph 에 여러 표 control 이 있는 경우
+    /// 두번째 이후는 별도 호출 필요 (Sub-3 에서 control_idx 옵셔널 필드 추가 검토).*
     DeleteElement {
         section: usize,
         para: usize,
