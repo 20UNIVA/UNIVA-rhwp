@@ -1067,9 +1067,17 @@ async function loadBytes(
     // 외부가 fileId 명시(loadFile({fileId})): 그 fileId로 세션 생성
     await createSsrSession(data, fileId);
     currentIsBlank = false;
+  } else if (SSR_MODE && currentSsrFileId && !prevBlankUnedited) {
+    // [post-Sub-2 fix] 로컬 "열기" — 기존 세션 fileId 유지 + 서버 core 만 교체.
+    // URL 의 fileId 가 보존되므로 노트북·외부 호출자도 동일 fileId 로 새 문서 IR 조회 가능.
+    // sessionClient.requestSnapshot() 는 현재 wasm 의 export bytes 를 ClientMessage::Snapshot 으로
+    // WS 전송 → 서버 ws.rs::handle_client_text 의 Snapshot 분기가 session.core 를
+    // DocumentCore::from_bytes(...) 로 통째 교체.
+    sessionClient?.requestSnapshot();
+    currentIsBlank = false;
   } else if (SSR_MODE) {
-    // 로컬 "열기": minio 업로드로 새 fileId 발급 후 미러링.
-    // 직전 세션이 빈 문서 + 미편집이면 닫고(닫지 않으면 유지), 새 문서 세션으로 전환.
+    // 직전 세션이 빈 문서 + 미편집이거나 기존 세션 없음 → 새 fileId 발급 경로.
+    // minio 업로드로 새 fileId 발급 후 미러링.
     if (prevBlankUnedited && prevFileId) await ssrDeleteSession(prevFileId);
     const fid = await ssrUploadNewDocument(data, fileName);
     if (fid) {
