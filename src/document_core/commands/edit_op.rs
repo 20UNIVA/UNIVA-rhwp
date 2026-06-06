@@ -16,6 +16,85 @@ use serde::{Deserialize, Serialize};
 use crate::document_core::DocumentCore;
 use crate::error::HwpError;
 
+// ─── Sub-2: Partial 타입 (옵셔널 필드만 직렬화) ─────────────────
+
+/// 본문 문단의 부분 스타일. None 인 필드는 *현재 값 유지* 의미.
+/// JSON 직렬화 시 None 은 제외 (`skip_serializing_if`).
+/// 직접 `apply_para_format_native(props_json)` 의 입력으로 사용 가능.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialParagraphStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<String>,   // "left"|"right"|"center"|"justify"|...
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_spacing: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin_left: Option<i16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin_right: Option<i16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indent: Option<i16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing_before: Option<i16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing_after: Option<i16>,
+}
+
+/// 셀의 부분 스타일. None 인 필드는 *현재 값 유지*.
+/// `set_cell_properties_native(json)` 의 입력으로 사용 가능.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialCellStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertical_align: Option<String>,   // "top"|"middle"|"bottom"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_fill_id: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_header: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_protect: Option<bool>,
+    // padding/text_direction 은 Sub-3 에서 추가
+}
+
+/// run 의 부분 char 스타일. None 인 필드 유지.
+/// `apply_char_format_native(props_json)` 입력으로 사용 가능.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialRunStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub underline: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_color: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_size: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strikethrough: Option<bool>,
+}
+
+/// run = 텍스트 한 조각 + (선택) 부분 스타일.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunSpec {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<PartialRunStyle>,
+}
+
+/// delete-element 의 element_type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ElementType {
+    Paragraph,
+    Table,
+}
+
 /// 양방향 편집 연산.
 ///
 /// `op` 태그로 구분되는 외부 JSON 프로토콜이다.
@@ -259,5 +338,34 @@ mod tests {
         ]"#;
         core.apply_edit_ops_json(json).unwrap();
         assert_eq!(para_text(&core, 0, 0), "가나");
+    }
+
+    #[test]
+    fn test_partial_paragraph_style_serialize_skip_none() {
+        let partial = PartialParagraphStyle {
+            alignment: Some("right".to_string()),
+            line_spacing: None,
+            margin_left: None,
+            margin_right: None,
+            indent: None,
+            spacing_before: None,
+            spacing_after: None,
+        };
+        let json = serde_json::to_string(&partial).unwrap();
+        assert_eq!(json, r#"{"alignment":"right"}"#);
+    }
+
+    #[test]
+    fn test_run_spec_deserialize() {
+        let json = r#"{"text":"안녕","style":{"bold":true}}"#;
+        let run: RunSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(run.text, "안녕");
+        assert!(run.style.is_some());
+    }
+
+    #[test]
+    fn test_element_type_serialize() {
+        assert_eq!(serde_json::to_string(&ElementType::Paragraph).unwrap(), r#""paragraph""#);
+        assert_eq!(serde_json::to_string(&ElementType::Table).unwrap(), r#""table""#);
     }
 }
