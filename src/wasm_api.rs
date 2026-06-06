@@ -737,6 +737,39 @@ impl HwpDocument {
         .map_err(|e| e.into())
     }
 
+    /// (row, col) 좌표를 `Table.cells` 의 선형 인덱스로 변환한다.
+    ///
+    /// JS: `wasm.findCellIdx(secIdx, tableParaIdx, ctrlIdx, row, col)` → `cell_idx` (u32) 또는 throw.
+    ///
+    /// broadcast 받은 셀 편집 op (set_cell_style / replace_cell_runs /
+    /// insert_text_in_cell / delete_range_in_cell) 가 native 호출 전 cell_idx 를
+    /// 얻기 위해 사용한다. 함수 본체는 `DocumentCore::find_cell_idx` 위임.
+    ///
+    /// 함수 이름이 `find_cell_idx_js` 인 이유: HwpDocument 의 Deref 대상이
+    /// DocumentCore 이므로 같은 이름을 쓰면 wrapper 가 자기 자신을 재귀 호출하여
+    /// stack overflow 가 난다. `#[wasm_bindgen(js_name = findCellIdx)]` 어트리뷰트로
+    /// JS 측 이름은 유지한다.
+    #[wasm_bindgen(js_name = findCellIdx)]
+    pub fn find_cell_idx_js(
+        &self,
+        section_idx: u32,
+        table_para_idx: u32,
+        control_idx: u32,
+        row: u32,
+        col: u32,
+    ) -> Result<u32, JsValue> {
+        self.core
+            .find_cell_idx(
+                section_idx as usize,
+                table_para_idx as usize,
+                control_idx as usize,
+                row as u16,
+                col as u16,
+            )
+            .map(|idx| idx as u32)
+            .map_err(|e| e.into())
+    }
+
     // ─── 중첩 표 path 기반 편집 API ──────────────────────────
 
     #[wasm_bindgen(js_name = insertTextInCellByPath)]

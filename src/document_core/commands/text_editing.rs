@@ -2803,6 +2803,21 @@ mod tests {
             "최소 2개의 char_shape 구간이 있어야 함"
         );
     }
+
+    /// `DocumentCore::find_cell_idx` 가 pub fn 으로 노출되어 외부에서 호출 가능한지 검증.
+    /// WASM export (`HwpDocument::find_cell_idx_js`) 의 underlying native 동등 확인.
+    #[test]
+    fn test_find_cell_idx_via_pub() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 2, 3).unwrap();
+        // 2x3 = 6 cells. 빈 문서 인라인 표 → table_para = 1 (Task 2a.3 발견).
+        // 셀 순서는 row-major: (0,0)→0, (0,1)→1, (0,2)→2, (1,0)→3, (1,1)→4, (1,2)→5
+        let idx_0_0 = core.find_cell_idx(0, 1, 0, 0, 0).unwrap();
+        assert_eq!(idx_0_0, 0, "(0,0) → cell_idx 0");
+        let idx_1_2 = core.find_cell_idx(0, 1, 0, 1, 2).unwrap();
+        assert_eq!(idx_1_2, 5, "(1,2) → cell_idx 5");
+    }
 }
 
 fn find_text_y(node: &crate::renderer::render_tree::RenderNode, text: &str) -> Option<f64> {
