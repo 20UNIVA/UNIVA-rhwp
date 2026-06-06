@@ -859,6 +859,32 @@ async fn workbench(
                 info: None,
             }))
         }
+        "complete" => {
+            let blob = {
+                let s = session.lock().unwrap();
+                s.core
+                    .export_hwpx_native()
+                    .map_err(|e| AppError::internal(format!("export_hwpx: {e}")))?
+            };
+            let seq = {
+                let mut s = session.lock().unwrap();
+                let cur = s.next_seq;
+                s.next_seq += 1;
+                cur
+            };
+            state
+                .store
+                .save_final_snapshot(&file_id, seq, &blob)
+                .map_err(|e| AppError::internal(format!("save_final_snapshot: {e}")))?;
+            state
+                .events
+                .publish(&file_id, events::ServerEvent::Complete { seq });
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "complete".to_string(),
+                info: None,
+            }))
+        }
         _ => {
             let mut s = session.lock().unwrap();
             let seq = s.next_seq;
