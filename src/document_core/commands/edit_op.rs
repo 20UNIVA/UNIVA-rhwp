@@ -141,6 +141,12 @@ pub enum EditOperation {
         para: usize,
         runs: Vec<RunSpec>,
     },
+    /// 문단 부분 스타일 적용. None 필드는 현재 값 유지.
+    SetParagraphStyle {
+        section: usize,
+        para: usize,
+        style: PartialParagraphStyle,
+    },
 }
 
 impl DocumentCore {
@@ -178,6 +184,11 @@ impl DocumentCore {
                 let runs_json = serde_json::to_string(runs)
                     .map_err(|e| HwpError::RenderError(format!("runs 직렬화: {e}")))?;
                 self.replace_runs_native(*section, *para, &runs_json)?;
+            }
+            EditOperation::SetParagraphStyle { section, para, style } => {
+                let props_json = serde_json::to_string(style)
+                    .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
+                self.apply_para_format_native(*section, *para, &props_json)?;
             }
         }
         Ok(())
@@ -219,6 +230,9 @@ impl DocumentCore {
                 self.split_paragraph_native(*section, *para - 1, *prev_len)?;
             }
             EditOperation::ReplaceRuns { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::SetParagraphStyle { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -409,5 +423,28 @@ mod tests {
         let back = serde_json::to_string(&op).unwrap();
         let op2: EditOperation = serde_json::from_str(&back).unwrap();
         assert_eq!(op, op2);
+    }
+
+    #[test]
+    fn test_set_paragraph_style_op_apply_partial() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::SetParagraphStyle {
+            section: 0,
+            para: 0,
+            style: PartialParagraphStyle {
+                alignment: Some("right".to_string()),
+                ..Default::default()
+            },
+        };
+        core.apply_edit_op(&op).unwrap();
+        let result = core.get_para_properties_at_native(0, 0).unwrap();
+        assert!(result.contains(r#""alignment":"right""#));
+    }
+
+    #[test]
+    fn test_set_paragraph_style_op_json() {
+        let json = r#"{"op":"set_paragraph_style","section":0,"para":0,"style":{"alignment":"center"}}"#;
+        let op: EditOperation = serde_json::from_str(json).unwrap();
+        assert!(matches!(op, EditOperation::SetParagraphStyle { section: 0, para: 0, .. }));
     }
 }
