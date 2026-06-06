@@ -14,8 +14,8 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use futures::{SinkExt, StreamExt};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::events::{ClientMessage, ServerEvent};
-use crate::{get_or_restore, session_info, AppState, Session};
+use crate::events::ClientMessage;
+use crate::{apply_op_with_stash, get_or_restore, session_info, AppState, Session};
 
 /// HTTP GET → WebSocket upgrade. 같은 URL에 axum 자동 upgrade.
 pub async fn ws_upgrade(
@@ -103,28 +103,16 @@ async fn handle_client_text(
         serde_json::from_str(text).map_err(|e| format!("ClientMessage JSON 파싱 실패: {e}"))?;
     match msg {
         ClientMessage::Ops { ops } => {
-            let mut s = session.lock().unwrap();
-            let ops_json = serde_json::to_string(&ops)
-                .map_err(|e| format!("ops 직렬화 실패: {e}"))?;
-            s.core
-                .apply_edit_ops_json(&ops_json)
-                .map_err(|e| format!("op 적용 실패: {e}"))?;
-            for op in &ops {
-                let seq = s.next_seq;
-                state
-                    .store
-                    .append_op(file_id, seq, &op.to_string())
-                    .map_err(|e| format!("sqlite append_op 실패: {e}"))?;
-                s.next_seq += 1;
-                state.events.publish(
-                    file_id,
-                    ServerEvent::Ops {
-                        seq,
-                        ops: vec![op.clone()],
-                    },
-                );
+            // [4-2 fix] 각 op 를 EditOperation 으로 파싱 후 apply_op_with_stash 호출.
+            // 모든 ops 가 op_stash 영속 + broadcast 통일 — 사용자 키 입력도 undo 대상.
+            use rhwp::document_core::EditOperation;
+            for op_value in ops {
+                let op: EditOperation = serde_json::from_value(op_value)
+                    .map_err(|e| format!("EditOperation 파싱 실패: {e}"))?;
+                apply_op_with_stash(state, file_id, session.clone(), op)
+                    .await
+                    .map_err(|e| format!("apply_op_with_stash: {}", e.msg))?;
             }
-            drop(s);
             Ok(())
         }
         ClientMessage::Snapshot { file_base64 } => {

@@ -474,7 +474,7 @@ async fn save_document(
 /// 2. core.apply_edit_op(&op)
 /// 3. store.append_op_stash(file_id, seq, op_json, before_blob)
 /// 4. events.publish(ServerEvent::Ops { seq, ops: [op] })
-async fn apply_op_with_stash(
+pub(crate) async fn apply_op_with_stash(
     state: &AppState,
     file_id: &str,
     session: Arc<Mutex<Session>>,
@@ -530,50 +530,36 @@ async fn workbench(
                 .payload
                 .get("section")
                 .and_then(|v| v.as_u64())
-                .ok_or_else(|| AppError::bad_request("payload.section 누락"))?;
+                .ok_or_else(|| AppError::bad_request("payload.section 누락"))? as usize;
             let para = req
                 .payload
                 .get("para")
                 .and_then(|v| v.as_u64())
-                .ok_or_else(|| AppError::bad_request("payload.para 누락"))?;
+                .ok_or_else(|| AppError::bad_request("payload.para 누락"))? as usize;
             let offset = req
                 .payload
                 .get("offset")
                 .and_then(|v| v.as_u64())
-                .ok_or_else(|| AppError::bad_request("payload.offset 누락"))?;
+                .ok_or_else(|| AppError::bad_request("payload.offset 누락"))? as usize;
             let text = req
                 .payload
                 .get("text")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| AppError::bad_request("payload.text 누락"))?;
+                .ok_or_else(|| AppError::bad_request("payload.text 누락"))?
+                .to_string();
 
-            let op = serde_json::json!({
-                "op": "insert_text",
-                "section": section,
-                "para": para,
-                "offset": offset,
-                "text": text,
-            });
-
-            let mut s = session.lock().unwrap();
-            let ops_json = format!("[{}]", op);
-            s.core
-                .apply_edit_ops_json(&ops_json)
-                .map_err(|e| AppError::unprocessable(format!("op 적용 실패: {e}")))?;
-            let seq = s.next_seq;
-            state.store.append_op(&file_id, seq, &op.to_string())?;
-            s.next_seq += 1;
-            let info = session_info(&file_id, &s);
-            drop(s);
-
-            state.events.publish(
-                &file_id,
-                events::ServerEvent::Ops {
-                    seq,
-                    ops: vec![op],
-                },
-            );
-
+            // [4-2 fix] insert_text 도 op_stash 적재 — POST /undo 가 사용자 키 입력도 되돌림.
+            let op = rhwp::document_core::EditOperation::InsertText {
+                section,
+                para,
+                offset,
+                text,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let info = {
+                let s = session.lock().unwrap();
+                session_info(&file_id, &s)
+            };
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
