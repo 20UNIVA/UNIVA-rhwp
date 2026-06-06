@@ -170,6 +170,13 @@ pub enum EditOperation {
         para: usize,
         element_type: ElementType,
     },
+    /// 표 삽입. insert_after_para 의 끝(char_offset = para 길이)에 create_table_native 호출.
+    InsertTable {
+        section: usize,
+        insert_after_para: usize,
+        rows: u16,
+        cols: u16,
+    },
 }
 
 fn one_count() -> usize { 1 }
@@ -239,6 +246,14 @@ impl DocumentCore {
                     }
                 }
             }
+            EditOperation::InsertTable { section, insert_after_para, rows, cols } => {
+                let para_len = self.document.sections[*section]
+                    .paragraphs[*insert_after_para]
+                    .text
+                    .chars()
+                    .count();
+                self.create_table_native(*section, *insert_after_para, para_len, *rows, *cols)?;
+            }
         }
         Ok(())
     }
@@ -291,6 +306,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::DeleteElement { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::InsertTable { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -578,5 +596,21 @@ mod tests {
             p.controls.iter().any(|c| matches!(c, crate::model::control::Control::Table(_)))
         });
         assert!(!has_table, "Table 컨트롤이 모두 삭제되어야 함");
+    }
+
+    #[test]
+    fn test_insert_table_op_apply() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::InsertTable {
+            section: 0,
+            insert_after_para: 0,
+            rows: 2,
+            cols: 3,
+        };
+        core.apply_edit_op(&op).unwrap();
+        let has_table = core.document.sections[0].paragraphs.iter().any(|p| {
+            p.controls.iter().any(|c| matches!(c, crate::model::control::Control::Table(_)))
+        });
+        assert!(has_table, "Table 컨트롤이 삽입되어야 함");
     }
 }
