@@ -346,6 +346,26 @@ function buildSessionClient(fileId: string): SessionClient {
         } catch (e) {
           console.error(`[main] hwpctl executor 예외: ${ev.action}`, e);
         }
+      } else if (ev.kind === 'snapshot_restored') {
+        if (typeof ev.snapshot_base64 !== 'string') {
+          console.warn('[main] snapshot_restored snapshot_base64 누락');
+          return;
+        }
+        try {
+          // base64 → Uint8Array
+          const binStr = atob(ev.snapshot_base64);
+          const bin = new Uint8Array(binStr.length);
+          for (let i = 0; i < binStr.length; i++) bin[i] = binStr.charCodeAt(i);
+          // wasm-bridge.loadDocument 가 기존 인스턴스 release 후 새 HwpDocument 로 교체.
+          wasm.loadDocument(bin);
+          eventBus.emit('document-changed');
+          console.log(`[main] snapshot 복구 적용 — seq ${ev.seq}`);
+        } catch (e) {
+          console.error('[main] snapshot_restored 적용 실패 — 새로고침 필요:', e);
+        }
+      } else if (ev.kind === 'complete') {
+        // 워크벤치 종료 시그널. UI 통합은 Sub-3.
+        console.log(`[main] 워크벤치 종료 시그널 — seq ${ev.seq}`);
       } else {
         console.warn(`[main] 알 수 없는 ServerEvent kind:`, (ev as { kind?: string }).kind);
       }
