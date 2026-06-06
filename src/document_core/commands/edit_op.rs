@@ -185,6 +185,15 @@ pub enum EditOperation {
         col: usize,
         style: PartialCellStyle,
     },
+    /// 표 셀 범위 병합. merge_table_cells_native 위임.
+    MergeCells {
+        section: usize,
+        table_para: usize,
+        row_start: usize,
+        col_start: usize,
+        row_end: usize,
+        col_end: usize,
+    },
 }
 
 fn one_count() -> usize { 1 }
@@ -309,6 +318,14 @@ impl DocumentCore {
                     .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
                 self.set_cell_properties_native(*section, *table_para, ctrl_idx, cell_idx, &json)?;
             }
+            EditOperation::MergeCells { section, table_para, row_start, col_start, row_end, col_end } => {
+                let ctrl_idx = 0usize;
+                self.merge_table_cells_native(
+                    *section, *table_para, ctrl_idx,
+                    *row_start as u16, *col_start as u16,
+                    *row_end as u16, *col_end as u16,
+                )?;
+            }
         }
         Ok(())
     }
@@ -367,6 +384,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::SetCellStyle { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::MergeCells { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -690,5 +710,36 @@ mod tests {
         };
         core.apply_edit_op(&op).unwrap();
         // set_cell_properties_native 가 panic 안 하면 통과 (호출 자체 검증).
+    }
+
+    #[test]
+    fn test_merge_cells_op_apply() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 3, 3).unwrap();
+        let cells_before = {
+            let para = &core.document.sections[0].paragraphs[1];
+            match &para.controls[0] {
+                crate::model::control::Control::Table(t) => t.cells.len(),
+                _ => panic!("Table 컨트롤 없음"),
+            }
+        };
+        let op = EditOperation::MergeCells {
+            section: 0,
+            table_para: 1,
+            row_start: 0,
+            col_start: 0,
+            row_end: 0,
+            col_end: 1,
+        };
+        core.apply_edit_op(&op).unwrap();
+        let cells_after = {
+            let para = &core.document.sections[0].paragraphs[1];
+            match &para.controls[0] {
+                crate::model::control::Control::Table(t) => t.cells.len(),
+                _ => panic!("Table 컨트롤 없음"),
+            }
+        };
+        assert!(cells_after < cells_before, "병합 후 cells 수 감소해야 함 (before={}, after={})", cells_before, cells_after);
     }
 }
