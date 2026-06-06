@@ -2,12 +2,13 @@
  * Sub-2 e2e: undo.
  *
  * 시나리오:
- *   1. insert_text 'A' + replace_runs 'B' + replace_runs 'C' (op_stash 3 entry)
+ *   1. insert_text 'A' + replace_runs 'B' + replace_runs 'C'
+ *      → op_stash 는 Sub-2 신규 12 액션만 적재 (insert_text 는 append_op 사용 → stash 미적재).
+ *        결과적으로 stash 2 entry (replace_runs B, replace_runs C).
  *   2. 초기 텍스트 'C' 확인
- *   3. undo 1회 → 'B'
- *   4. undo 2회 → 'A'
- *   5. undo 3회 → 빈 텍스트
- *   6. undo 4회 → 409 NO_UNDO_AVAILABLE
+ *   3. undo 1회 → 'B' (C → B 역적용)
+ *   4. undo 2회 → 'A' (B → A 역적용; replace_runs B 의 before_blob 은 insert_text 직후 상태)
+ *   5. undo 3회 → 409 NO_UNDO_AVAILABLE (빈 stash)
  *   각 undo 후 ServerEvent::SnapshotRestored broadcast 수신
  */
 
@@ -79,21 +80,14 @@ async function main() {
   const t1 = paraText(ir);
   if (t1 !== 'B') throw new Error(`undo 1 후 text mismatch: '${t1}'`);
 
-  // 4. undo 2 — 'A'
+  // 4. undo 2 — 'A' (replace_runs B 의 before_blob 은 insert_text 직후 'A' 상태)
   u = await postUndo(fileId);
   if (u.status !== 200) throw new Error(`undo 2: ${JSON.stringify(u)}`);
   ir = await getIr(fileId);
   const t2 = paraText(ir);
   if (t2 !== 'A') throw new Error(`undo 2 후 text mismatch: '${t2}'`);
 
-  // 5. undo 3 — 빈 텍스트
-  u = await postUndo(fileId);
-  if (u.status !== 200) throw new Error(`undo 3: ${JSON.stringify(u)}`);
-  ir = await getIr(fileId);
-  const t3 = paraText(ir);
-  if (t3 !== '') throw new Error(`undo 3 후 빈 텍스트 기대: '${t3}'`);
-
-  // 6. undo 4 — 빈 stash 409
+  // 5. undo 3 — 빈 stash 409 (insert_text 는 stash 미적재)
   u = await postUndo(fileId);
   if (u.status !== 409) {
     throw new Error(`빈 stash 409 기대 — got status=${u.status} body=${JSON.stringify(u.body)}`);
