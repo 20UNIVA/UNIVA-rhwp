@@ -147,6 +147,14 @@ pub enum EditOperation {
         para: usize,
         style: PartialParagraphStyle,
     },
+    /// 본문 범위 텍스트 삭제 (동문단/다문단 모두). `delete_range_native(cell_ctx=None)` 위임.
+    DeleteRange {
+        section: usize,
+        para_start: usize,
+        char_start: usize,
+        para_end: usize,
+        char_end: usize,
+    },
 }
 
 impl DocumentCore {
@@ -189,6 +197,9 @@ impl DocumentCore {
                 let props_json = serde_json::to_string(style)
                     .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
                 self.apply_para_format_native(*section, *para, &props_json)?;
+            }
+            EditOperation::DeleteRange { section, para_start, char_start, para_end, char_end } => {
+                self.delete_range_native(*section, *para_start, *char_start, *para_end, *char_end, None)?;
             }
         }
         Ok(())
@@ -233,6 +244,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::SetParagraphStyle { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::DeleteRange { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -446,5 +460,28 @@ mod tests {
         let json = r#"{"op":"set_paragraph_style","section":0,"para":0,"style":{"alignment":"center"}}"#;
         let op: EditOperation = serde_json::from_str(json).unwrap();
         assert!(matches!(op, EditOperation::SetParagraphStyle { section: 0, para: 0, .. }));
+    }
+
+    #[test]
+    fn test_delete_range_op_apply_same_para() {
+        let mut core = core_with_text("ABCDE");
+        let op = EditOperation::DeleteRange {
+            section: 0, para_start: 0, char_start: 1, para_end: 0, char_end: 3,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "ADE");
+    }
+
+    #[test]
+    fn test_delete_range_op_apply_multi_para() {
+        let mut core = core_with_text("AAA");
+        core.apply_edit_op(&EditOperation::SplitParagraph { section: 0, para: 0, offset: 3 }).unwrap();
+        core.insert_text_native(0, 1, 0, "BBB").unwrap();
+        let op = EditOperation::DeleteRange {
+            section: 0, para_start: 0, char_start: 2, para_end: 1, char_end: 2,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 1);
+        assert_eq!(para_text(&core, 0, 0), "AAB");
     }
 }
