@@ -27,6 +27,8 @@ async function main() {
   await s1.opened;
   console.log(`WS 연결 OK — ${fileId1}`);
 
+  // insert_paragraph 의 after_para 는 *삽입 위치 인덱스* 로 동작한다.
+  // [first, second] 배치를 만들려면 paragraph_count(=1) 를 지정해 끝에 붙인다.
   await postWorkbench(fileId1, 'insert_text', {
     section: 0,
     para: 0,
@@ -35,7 +37,7 @@ async function main() {
   });
   await postWorkbench(fileId1, 'insert_paragraph', {
     section: 0,
-    after_para: 0,
+    after_para: 1,
     count: 1,
   });
   await postWorkbench(fileId1, 'insert_text', {

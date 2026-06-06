@@ -15,7 +15,13 @@ import {
 } from './sub2-helpers.mjs';
 
 function paraCount(ir) {
-  return ir.paragraphs?.length ?? ir.sections?.[0]?.paragraphs?.length;
+  // getIr(page=0) 는 *현재 페이지만* paragraphs 에 담는다. 전체 개수는
+  // sections[0].paragraph_count 로 봐야 한다. fallback 으로 paragraphs.length.
+  return (
+    ir.sections?.[0]?.paragraph_count
+      ?? ir.paragraphs?.length
+      ?? ir.sections?.[0]?.paragraphs?.length
+  );
 }
 
 async function main() {

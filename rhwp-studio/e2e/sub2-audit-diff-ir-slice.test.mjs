@@ -2,8 +2,10 @@
  * Sub-2 e2e: audit + diff + ir-slice 세 엔드포인트 한꺼번에.
  *
  * 시나리오:
- *   1. insert_text 'foo' + replace_runs 'bar' + replace_runs 'baz' (3 op_stash)
- *   2. GET /audit?seq_from=1&seq_to=100 — 최소 3개 row
+ *   1. insert_text 'foo' + replace_runs 'bar' + replace_runs 'baz'
+ *      — insert_text 는 op_stash 미적재 (Sub-2 [2f.17a fix] 확정 사실),
+ *      replace_runs 두 번만 op_stash 에 들어간다.
+ *   2. GET /audit?seq_from=1&seq_to=100 — replace_runs row 최소 2개
  *   3. GET /diff?seq=<last> — before_paragraphs / after_paragraphs 존재
  *   4. GET /ir-slice?sec=0&para_start=0&para_end=1&mode=auto — paragraphs 1개
  */
@@ -42,9 +44,9 @@ async function main() {
     runs: [{ text: 'baz' }],
   });
 
-  // audit
+  // audit — insert_text 는 op_stash 미적재이므로 replace_runs 2 row 만 기대
   const audit = await getAudit(fileId, 1, 100);
-  if (!Array.isArray(audit) || audit.length < 3) {
+  if (!Array.isArray(audit) || audit.length < 2) {
     throw new Error(`audit 결과 부족: ${JSON.stringify(audit)}`);
   }
 

@@ -54,6 +54,9 @@ async function main() {
   console.log(`WS 연결 OK — ${fileId2}`);
 
   // 문단 0 'ABCDE', 문단 1 'FGHIJ'
+  // 주의: insert_paragraph 는 after_para 값을 *삽입 위치 인덱스* 로 사용한다
+  // (insert_paragraph_native 의 para_idx 로 그대로 전달). 기존 문단 다음에
+  // 새 문단을 두려면 *paragraph_count* 위치(= 1)를 지정해야 한다.
   await postWorkbench(fileId2, 'insert_text', {
     section: 0,
     para: 0,
@@ -62,7 +65,7 @@ async function main() {
   });
   await postWorkbench(fileId2, 'insert_paragraph', {
     section: 0,
-    after_para: 0,
+    after_para: 1,
     count: 1,
   });
   await postWorkbench(fileId2, 'insert_text', {
