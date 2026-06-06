@@ -919,6 +919,90 @@ async fn audit_handler(
     Ok(Json(result))
 }
 
+#[derive(Deserialize)]
+struct DiffQuery {
+    seq: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiffResponse {
+    seq: i64,
+    op: serde_json::Value,
+    before_paragraphs: Vec<String>,
+    after_paragraphs: Vec<String>,
+    chars_added: i64,
+    chars_removed: i64,
+}
+
+/// 지정한 seq 의 before/after blob 두 개를 임시 코어로 비교한다.
+/// after blob 은 다음 seq 의 before_blob 또는 (다음이 없으면) 현재 세션 상태.
+async fn diff_handler(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+    Query(q): Query<DiffQuery>,
+) -> Result<Json<DiffResponse>, AppError> {
+    let target = state
+        .store
+        .get_op_stash_by_seq(&file_id, q.seq)
+        .map_err(|e| AppError::internal(format!("get_op_stash_by_seq: {e}")))?
+        .ok_or_else(|| AppError::not_found(format!("seq {} op_stash 없음", q.seq)))?;
+
+    let before_core = rhwp::document_core::DocumentCore::from_bytes(&target.before_blob)
+        .map_err(|e| AppError::internal(format!("before from_bytes: {e}")))?;
+
+    let after_blob = match state
+        .store
+        .get_op_stash_by_seq(&file_id, q.seq + 1)
+        .map_err(|e| AppError::internal(format!("get next: {e}")))?
+    {
+        Some(next) => next.before_blob,
+        None => {
+            let session = {
+                let sessions = state.sessions.lock().unwrap();
+                sessions
+                    .get(&file_id)
+                    .ok_or_else(|| AppError::not_found(format!("세션 없음: {file_id}")))?
+                    .clone()
+            };
+            let s = session.lock().unwrap();
+            s.core
+                .export_hwpx_native()
+                .map_err(|e| AppError::internal(format!("export after: {e}")))?
+        }
+    };
+    let after_core = rhwp::document_core::DocumentCore::from_bytes(&after_blob)
+        .map_err(|e| AppError::internal(format!("after from_bytes: {e}")))?;
+
+    let before_paragraphs: Vec<String> = before_core.document().sections[0]
+        .paragraphs
+        .iter()
+        .map(|p| p.text.clone())
+        .collect();
+    let after_paragraphs: Vec<String> = after_core.document().sections[0]
+        .paragraphs
+        .iter()
+        .map(|p| p.text.clone())
+        .collect();
+
+    let before_total: usize = before_paragraphs.iter().map(|s| s.chars().count()).sum();
+    let after_total: usize = after_paragraphs.iter().map(|s| s.chars().count()).sum();
+    let chars_added = (after_total as i64 - before_total as i64).max(0);
+    let chars_removed = (before_total as i64 - after_total as i64).max(0);
+
+    let op_value: serde_json::Value =
+        serde_json::from_str(&target.op_json).unwrap_or(serde_json::Value::Null);
+
+    Ok(Json(DiffResponse {
+        seq: q.seq,
+        op: op_value,
+        before_paragraphs,
+        after_paragraphs,
+        chars_added,
+        chars_removed,
+    }))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UndoResponse {
@@ -993,6 +1077,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/workbench", post(workbench))
         .route("/sessions/:id/undo", post(undo_handler))
         .route("/sessions/:id/audit", get(audit_handler))
+        .route("/sessions/:id/diff", get(diff_handler))
         .route("/sessions/:id/ws", get(ws::ws_upgrade))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
