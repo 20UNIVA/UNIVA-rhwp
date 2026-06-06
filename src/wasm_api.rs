@@ -4869,6 +4869,21 @@ impl HwpDocument {
             .map_err(|e| e.into())
     }
 
+    /// JS: replaceRuns(secIdx, paraIdx, runsJson) → ok JSON
+    ///
+    /// runs_json 형식: `[{"text": "...", "style": {bold?, italic?, ...}}, ...]`.
+    #[wasm_bindgen(js_name = replaceRuns)]
+    pub fn replace_runs(
+        &mut self,
+        section_idx: u32,
+        para_idx: u32,
+        runs_json: &str,
+    ) -> Result<String, JsValue> {
+        self.core
+            .replace_runs_native(section_idx as usize, para_idx as usize, runs_json)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
     /// 문단 서식을 적용한다 (셀 내 문단).
     #[wasm_bindgen(js_name = applyParaFormatInCell)]
     pub fn apply_para_format_in_cell(

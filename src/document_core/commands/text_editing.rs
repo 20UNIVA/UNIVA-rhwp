@@ -2659,6 +2659,27 @@ mod tests {
 
         assert_eq!(core.document.sections[0].paragraphs[0].text, "Hi there");
     }
+
+    #[test]
+    fn test_replace_runs_with_styled_runs() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.insert_text_native(0, 0, 0, "원본").unwrap();
+
+        let runs_json = r#"[
+            {"text": "굵게", "style": {"bold": true}},
+            {"text": " 보통", "style": {}}
+        ]"#;
+        core.replace_runs_native(0, 0, runs_json).unwrap();
+
+        let para = &core.document.sections[0].paragraphs[0];
+        assert_eq!(para.text, "굵게 보통");
+        // char_shapes 가 *2개 이상* 의 charShapeId 를 가져야 — 첫 번째 굵게 + 두 번째 보통
+        assert!(
+            para.char_shapes.len() >= 2,
+            "최소 2개의 char_shape 구간이 있어야 함"
+        );
+    }
 }
 
 fn find_text_y(node: &crate::renderer::render_tree::RenderNode, text: &str) -> Option<f64> {
