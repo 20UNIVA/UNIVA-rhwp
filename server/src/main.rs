@@ -1023,18 +1023,20 @@ async fn ir_slice_handler(
         .map(|p| {
             let para = &s.core.document().sections[sec].paragraphs[p];
             if resolved_mode == "raw" {
-                // Paragraph 가 Serialize 미구현 — 핵심 필드만 수동 직렬화 (compact + 상세 필드).
-                serde_json::json!({
-                    "para": p,
-                    "text": para.text,
-                    "para_shape_id": para.para_shape_id,
-                    "style_id": para.style_id,
-                    "char_count": para.char_count,
-                    "control_mask": para.control_mask,
-                    "char_shapes_len": para.char_shapes.len(),
-                    "line_segs_len": para.line_segs.len(),
-                    "controls_len": para.controls.len(),
-                })
+                // Paragraph 의 Serialize derive 로 직접 직렬화. `controls`,
+                // `ctrl_data_records` 는 #[serde(skip)] 되어 제외 — Control enum
+                // 이 Serialize 미구현이라 raw 에서 빠진다. 컨트롤 목록은 별도로
+                // /sessions/{id}/ir 의 ParagraphView::controls 로 조회.
+                let mut v = serde_json::to_value(para).unwrap_or(serde_json::Value::Null);
+                if let serde_json::Value::Object(ref mut map) = v {
+                    map.insert("para".into(), serde_json::Value::from(p));
+                    // 컨트롤은 raw 직렬화에서 빠지므로 길이만 보강.
+                    map.insert(
+                        "controls_len".into(),
+                        serde_json::Value::from(para.controls.len()),
+                    );
+                }
+                v
             } else {
                 serde_json::json!({
                     "para": p,

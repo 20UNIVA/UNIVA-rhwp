@@ -1,9 +1,16 @@
 //! 문단 (Paragraph, CharRun, LineSeg, RangeTag)
 
+use serde::Serialize;
+
 use super::control::Control;
 
 /// 문단 (HWPTAG_PARA_HEADER + 하위 레코드)
-#[derive(Debug, Default, Clone)]
+///
+/// `Serialize` 는 ir-slice raw mode 응답용. `controls` 와 `ctrl_data_records`
+/// 는 `Control` enum 이 `Serialize` 미구현 (다양한 variant + 외부 객체 의존)
+/// 이라 `#[serde(skip)]`. 컨트롤 요약은 `ir_view::ParagraphView::controls` 로
+/// 별도 노출.
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct Paragraph {
     /// 문자 수 (제어 문자 포함)
     pub char_count: u32,
@@ -31,9 +38,16 @@ pub struct Paragraph {
     /// 필드 텍스트 범위 (0x03~0x04 사이 텍스트 인덱스 + 컨트롤 인덱스)
     pub field_ranges: Vec<FieldRange>,
     /// 컨트롤 목록 (표, 그림, 각주 등)
+    ///
+    /// `Control` enum 이 `Serialize` 미구현 — raw 직렬화에서 제외.
+    /// 컨트롤 요약은 `Document::to_ir_view` 의 `ControlView` 로 별도 노출.
+    #[serde(skip)]
     pub controls: Vec<Control>,
     /// 각 컨트롤에 대응하는 CTRL_DATA 레코드 (라운드트립 보존용)
     /// controls[i]에 대응하는 CTRL_DATA가 있으면 ctrl_data_records[i] = Some(data)
+    ///
+    /// 라운드트립용 raw 바이트 — JSON 직렬화 제외.
+    #[serde(skip)]
     pub ctrl_data_records: Vec<Option<Vec<u8>>>,
     /// char_count의 최상위 비트 (bit 31) 보존 (라운드트립용)
     pub char_count_msb: bool,
@@ -52,7 +66,7 @@ pub struct Paragraph {
 }
 
 /// 문단 번호 시작 방식
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum NumberingRestart {
     /// 이전 번호 목록에 이어 (다른 번호 체계 후 복귀 시 이전 카운터 복원)
     ContinuePrevious,
@@ -102,7 +116,7 @@ pub enum CtrlChar {
 }
 
 /// 단 나누기 종류
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
 pub enum ColumnBreakType {
     #[default]
     None,
@@ -117,7 +131,7 @@ pub enum ColumnBreakType {
 }
 
 /// 글자 모양 참조 (문단 내 위치별 글자 모양)
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct CharShapeRef {
     /// 글자 모양이 바뀌는 시작 위치
     pub start_pos: u32,
@@ -129,7 +143,7 @@ pub struct CharShapeRef {
 ///
 /// **표준**: `mydocs/tech/document_ir_lineseg_standard.md` (Task #604)
 /// 모든 i32 필드는 HWPUNIT (1 inch = 7200 HWPUNIT).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct LineSeg {
     /// 본 줄이 차지하는 텍스트 시작 위치 (UTF-16 code unit, 문단 시작 기준)
     pub text_start: u32,
@@ -179,7 +193,7 @@ impl LineSeg {
 }
 
 /// 영역 태그 (HWPTAG_PARA_RANGE_TAG)
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct RangeTag {
     /// 영역 시작
     pub start: u32,
@@ -190,7 +204,7 @@ pub struct RangeTag {
 }
 
 /// 필드 텍스트 범위 (0x03 FIELD_BEGIN ~ 0x04 FIELD_END 사이 텍스트)
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct FieldRange {
     /// text 문자열 내 시작 인덱스 (포함)
     pub start_char_idx: usize,
