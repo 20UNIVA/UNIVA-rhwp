@@ -805,6 +805,97 @@ impl DocumentCore {
         )))
     }
 
+    /// 셀 내 문단의 runs 를 통째 교체. (sec, table_para, ctrl, cell, cell_para) 좌표.
+    pub fn replace_cell_runs_native(
+        &mut self,
+        section_idx: usize,
+        table_para_idx: usize,
+        control_idx: usize,
+        cell_idx: usize,
+        cell_para_idx: usize,
+        runs_json: &str,
+    ) -> Result<String, HwpError> {
+        // 1. 기존 셀 문단 텍스트 길이 측정 (immutable ref helper 활용)
+        let para_len = self
+            .get_cell_paragraph_ref(
+                section_idx,
+                table_para_idx,
+                control_idx,
+                cell_idx,
+                cell_para_idx,
+            )
+            .ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "셀 문단 접근 실패 (sec={}, para={}, ctrl={}, cell={}, cell_para={})",
+                    section_idx, table_para_idx, control_idx, cell_idx, cell_para_idx
+                ))
+            })?
+            .text
+            .chars()
+            .count();
+
+        // 2. 기존 텍스트 통째 삭제
+        if para_len > 0 {
+            self.delete_text_in_cell_native(
+                section_idx,
+                table_para_idx,
+                control_idx,
+                cell_idx,
+                cell_para_idx,
+                0,
+                para_len,
+            )?;
+        }
+
+        // 3. runs_json 파싱
+        let runs: Vec<serde_json::Value> = serde_json::from_str(runs_json)
+            .map_err(|e| HwpError::InvalidFile(format!("runs_json 파싱 실패: {e}")))?;
+
+        // 4. 각 run 순회 — 셀 내 텍스트 삽입 후 char_format 적용
+        let mut cursor = 0usize;
+        for run in runs {
+            let text = run.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            if text.is_empty() {
+                continue;
+            }
+            let len = text.chars().count();
+            self.insert_text_in_cell_native(
+                section_idx,
+                table_para_idx,
+                control_idx,
+                cell_idx,
+                cell_para_idx,
+                cursor,
+                text,
+            )?;
+
+            // style 이 있고 빈 객체가 아닐 때만 char_format 적용
+            if let Some(style) = run.get("style") {
+                if style.is_object() && !style.as_object().unwrap().is_empty() {
+                    let style_json = serde_json::to_string(style)
+                        .map_err(|e| HwpError::InvalidFile(format!("style 직렬화: {e}")))?;
+                    self.apply_char_format_in_cell_native(
+                        section_idx,
+                        table_para_idx,
+                        control_idx,
+                        cell_idx,
+                        cell_para_idx,
+                        cursor,
+                        cursor + len,
+                        &style_json,
+                    )?;
+                }
+            }
+
+            cursor += len;
+        }
+
+        Ok(super::super::helpers::json_ok_with(&format!(
+            "\"cellParaIdx\":{},\"runsCount\":{}",
+            cell_para_idx, cursor
+        )))
+    }
+
     /// 표 셀에 대한 가변 참조를 얻는다.
     pub(crate) fn get_cell_mut(
         &mut self,
@@ -2658,6 +2749,38 @@ mod tests {
         core.replace_runs_native(0, 0, runs_json).unwrap();
 
         assert_eq!(core.document.sections[0].paragraphs[0].text, "Hi there");
+    }
+
+    #[test]
+    fn test_replace_cell_runs_native_basic() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        // 1행 2열 표 생성 — 섹션 0, 문단 0, char_offset 0 에 인라인 삽입.
+        // create_table_native 은 빈 문서 첫 문단에 부속 컨트롤을 두고, 표 본체는
+        // 분리된 다음 문단(para_idx=1)에 Control::Table 으로 배치한다.
+        core.create_table_native(0, 0, 0, 1, 2).unwrap();
+
+        // table_para = 1, ctrl_idx = 0, cell (0,0) 의 cell_para_idx = 0 에 텍스트 삽입
+        let table_para_idx = 1usize;
+        let ctrl_idx = 0usize;
+        let cell_idx = 0usize;
+        core.insert_text_in_cell_native(0, table_para_idx, ctrl_idx, cell_idx, 0, 0, "원본")
+            .unwrap();
+
+        let runs_json = r#"[
+            {"text": "변경", "style": {"bold": true}}
+        ]"#;
+        core.replace_cell_runs_native(0, table_para_idx, ctrl_idx, cell_idx, 0, runs_json)
+            .unwrap();
+
+        // get_cell helper 부재 — 직접 접근으로 검증
+        let para = &core.document.sections[0].paragraphs[table_para_idx];
+        let table = match &para.controls[ctrl_idx] {
+            Control::Table(t) => t,
+            _ => panic!("ctrl_idx={} 가 표 컨트롤이 아님", ctrl_idx),
+        };
+        let cell = &table.cells[cell_idx];
+        assert_eq!(cell.paragraphs[0].text, "변경");
     }
 
     #[test]
