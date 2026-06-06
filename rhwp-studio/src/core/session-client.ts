@@ -18,7 +18,9 @@ export interface MirrorSink {
 /** WS 텍스트 프레임 본문 — 서버 → 클라 */
 export type ServerEvent =
   | { kind: 'ops'; seq: number; ops: EditOpJson[] }
-  | { kind: 'workbench'; seq: number; action: string; payload: unknown };
+  | { kind: 'workbench'; seq: number; action: string; payload: unknown }
+  | { kind: 'snapshot_restored'; seq: number; snapshot_base64: string }
+  | { kind: 'complete'; seq: number };
 
 interface EditOpJson {
   op: string;
@@ -29,6 +31,28 @@ interface EditOpJson {
   count?: number;
   deleted_text?: string;
   prev_len?: number;
+  // 2f.2 신규 ops payload — 정방향 EditOp 전체 broadcast.
+  runs?: unknown[];
+  style?: Record<string, unknown> | null;
+  para_start?: number;
+  char_start?: number;
+  para_end?: number;
+  char_end?: number;
+  after_para?: number;
+  element_type?: string;
+  insert_after_para?: number;
+  rows?: number;
+  cols?: number;
+  table_para?: number;
+  row?: number;
+  col?: number;
+  row_start?: number;
+  col_start?: number;
+  row_end?: number;
+  col_end?: number;
+  cell_para?: number;
+  cell_para_start?: number;
+  cell_para_end?: number;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

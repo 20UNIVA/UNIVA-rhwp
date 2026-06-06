@@ -144,8 +144,173 @@ function buildSessionClient(fileId: string): SessionClient {
                 wasm.splitParagraph(op.section, op.para, op.offset);
                 appliedCount += 1;
                 break;
+              case 'replace_runs':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para !== 'number' ||
+                    !Array.isArray(op.runs)) {
+                  console.warn('[main] replace_runs payload 미일치 — 무시', op);
+                  break;
+                }
+                wasm.replaceRuns(op.section, op.para, JSON.stringify(op.runs));
+                appliedCount += 1;
+                break;
+              case 'set_paragraph_style':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para !== 'number' ||
+                    typeof op.style !== 'object' || op.style === null) {
+                  console.warn('[main] set_paragraph_style payload 미일치 — 무시', op);
+                  break;
+                }
+                wasm.applyParaFormat(op.section, op.para, JSON.stringify(op.style));
+                appliedCount += 1;
+                break;
+              case 'delete_range':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para_start !== 'number' ||
+                    typeof op.char_start !== 'number' ||
+                    typeof op.para_end !== 'number' ||
+                    typeof op.char_end !== 'number') {
+                  console.warn('[main] delete_range payload 미일치 — 무시', op);
+                  break;
+                }
+                wasm.deleteRange(op.section, op.para_start, op.char_start, op.para_end, op.char_end);
+                appliedCount += 1;
+                break;
+              case 'insert_paragraph':
+                if (typeof op.section !== 'number' || typeof op.after_para !== 'number') {
+                  console.warn('[main] insert_paragraph payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  const cnt = typeof op.count === 'number' ? op.count : 1;
+                  for (let i = 0; i < cnt; i++) {
+                    wasm.insertParagraph(op.section, op.after_para + i);
+                    if (op.style && typeof op.style === 'object') {
+                      wasm.applyParaFormat(op.section, op.after_para + i + 1, JSON.stringify(op.style));
+                    }
+                  }
+                  appliedCount += 1;
+                }
+                break;
+              case 'delete_element':
+                if (typeof op.section !== 'number' || typeof op.para !== 'number' ||
+                    typeof op.element_type !== 'string') {
+                  console.warn('[main] delete_element payload 미일치 — 무시', op);
+                  break;
+                }
+                if (op.element_type === 'paragraph') {
+                  wasm.deleteParagraph(op.section, op.para);
+                } else if (op.element_type === 'table') {
+                  // controlIdx 는 broadcast 페이로드에 없음 — 0 가정 (한 문단에 한 표).
+                  wasm.deleteTableControl(op.section, op.para, 0);
+                } else {
+                  console.warn(`[main] 알 수 없는 element_type: ${op.element_type}`);
+                  break;
+                }
+                appliedCount += 1;
+                break;
+              case 'insert_table':
+                if (typeof op.section !== 'number' ||
+                    typeof op.insert_after_para !== 'number' ||
+                    typeof op.rows !== 'number' ||
+                    typeof op.cols !== 'number') {
+                  console.warn('[main] insert_table payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  // 서버는 char_offset = 문단 길이로 호출. 클라도 동일하게 — 문단 끝에 삽입.
+                  const paraLen = wasm.getParagraphLength(op.section, op.insert_after_para);
+                  wasm.createTable(op.section, op.insert_after_para, paraLen, op.rows, op.cols);
+                  appliedCount += 1;
+                }
+                break;
+              case 'set_cell_style':
+                if (typeof op.section !== 'number' ||
+                    typeof op.table_para !== 'number' ||
+                    typeof op.row !== 'number' ||
+                    typeof op.col !== 'number' ||
+                    typeof op.style !== 'object' || op.style === null) {
+                  console.warn('[main] set_cell_style payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  // (row, col) → cell_idx 변환에 WASM 측 findCellIdx export 가 없음.
+                  // 알려진 한계 — fallback (row * 100 + col) 은 부정확. Phase 2f.5+ e2e 단계에서
+                  // 별도 helper 추가 필요.
+                  const ctrlIdx = 0;
+                  const cellIdx = (wasm as any).findCellIdx
+                    ? (wasm as any).findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col)
+                    : op.row * 100 + op.col;
+                  // setCellProperties wrapper 가 자체적으로 JSON.stringify 함 — object 그대로 전달.
+                  wasm.setCellProperties(op.section, op.table_para, ctrlIdx, cellIdx, op.style as any);
+                  appliedCount += 1;
+                }
+                break;
+              case 'merge_cells':
+                if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
+                    typeof op.row_start !== 'number' || typeof op.col_start !== 'number' ||
+                    typeof op.row_end !== 'number' || typeof op.col_end !== 'number') {
+                  console.warn('[main] merge_cells payload 미일치 — 무시', op);
+                  break;
+                }
+                wasm.mergeTableCells(op.section, op.table_para, 0, op.row_start, op.col_start, op.row_end, op.col_end);
+                appliedCount += 1;
+                break;
+              case 'replace_cell_runs':
+                if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
+                    typeof op.row !== 'number' || typeof op.col !== 'number' ||
+                    typeof op.cell_para !== 'number' || !Array.isArray(op.runs)) {
+                  console.warn('[main] replace_cell_runs payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  const ctrlIdx = 0;
+                  const cellIdx = (wasm as any).findCellIdx
+                    ? (wasm as any).findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col)
+                    : op.row * 100 + op.col;
+                  wasm.replaceCellRuns(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, JSON.stringify(op.runs));
+                  appliedCount += 1;
+                }
+                break;
+              case 'insert_text_in_cell':
+                if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
+                    typeof op.row !== 'number' || typeof op.col !== 'number' ||
+                    typeof op.cell_para !== 'number' || typeof op.offset !== 'number' ||
+                    typeof op.text !== 'string') {
+                  console.warn('[main] insert_text_in_cell payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  const ctrlIdx = 0;
+                  const cellIdx = (wasm as any).findCellIdx
+                    ? (wasm as any).findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col)
+                    : op.row * 100 + op.col;
+                  wasm.insertTextInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, op.offset, op.text);
+                  if (op.style && typeof op.style === 'object') {
+                    wasm.applyCharFormatInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, op.offset, op.offset + op.text.length, JSON.stringify(op.style));
+                  }
+                  appliedCount += 1;
+                }
+                break;
+              case 'delete_range_in_cell':
+                if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
+                    typeof op.row !== 'number' || typeof op.col !== 'number' ||
+                    typeof op.cell_para_start !== 'number' || typeof op.char_start !== 'number' ||
+                    typeof op.cell_para_end !== 'number' || typeof op.char_end !== 'number') {
+                  console.warn('[main] delete_range_in_cell payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  const ctrlIdx = 0;
+                  const cellIdx = (wasm as any).findCellIdx
+                    ? (wasm as any).findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col)
+                    : op.row * 100 + op.col;
+                  wasm.deleteRangeInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para_start, op.char_start, op.cell_para_end, op.char_end);
+                  appliedCount += 1;
+                }
+                break;
               default:
-                console.warn(`[main] Sub-1 미지원 ops op: ${op.op}`);
+                console.warn(`[main] Sub-2 미지원 ops op: ${op.op}`);
             }
           } catch (e) {
             console.error('[main] WASM op 적용 실패:', op, e);
