@@ -1413,7 +1413,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `cargo test -p rhwp-server events::tests::server_event_snapshot_restored_serializes_with_snake_case`
+Run: `cd server && cargo test events::tests::server_event_snapshot_restored_serializes_with_snake_case`
 Expected: 컴파일 실패 — variant 없음.
 
 - [ ] **Step 3: events.rs 수정** — 라인 16: `lowercase` → `snake_case`. enum 본문에 variants 추가:
@@ -1435,7 +1435,7 @@ ClientMessage 도 동일하게 `snake_case` 로 변경 (라인 33). 기존 `Ops`
 
 - [ ] **Step 4: 테스트 통과**
 
-Run: `cargo test -p rhwp-server events::tests`
+Run: `cd server && cargo test events::tests`
 Expected: 4 PASS (기존 4 + 신규 3 = 7).
 
 - [ ] **Step 5: 커밋**
@@ -1510,7 +1510,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `cargo test -p rhwp-server store::tests::test_op_stash_append_and_pop`
+Run: `cd server && cargo test store::tests::test_op_stash_append_and_pop`
 Expected: 컴파일 실패.
 
 - [ ] **Step 3: store.rs 수정** — CREATE TABLE 블록 (라인 52 닫기 `)?;` 직전) 에 추가:
@@ -1665,7 +1665,7 @@ pub struct OpStashRow {
 
 - [ ] **Step 4: 테스트 통과**
 
-Run: `cargo test -p rhwp-server store::tests::test_op_stash`
+Run: `cd server && cargo test store::tests::test_op_stash`
 Expected: 3 PASS.
 
 - [ ] **Step 5: 커밋**
@@ -1738,7 +1738,7 @@ async fn apply_op_with_stash(
 
 - [ ] **Step 2: 컴파일 확인** — 호출자 없으니 미사용 경고만 (`#[allow(dead_code)]` 추가).
 
-Run: `cargo build -p rhwp-server 2>&1 | tail -10`
+Run: `cd server && cargo build 2>&1 | tail -10`
 Expected: 컴파일 성공.
 
 - [ ] **Step 3: 커밋**
@@ -1794,7 +1794,7 @@ setup_test_server / create_test_session_with_content / post_workbench / get_ir �
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `cargo test -p rhwp-server --test workbench_actions test_workbench_replace_runs_persists_and_broadcasts`
+Run: `cd server && cargo test --test workbench_actions test_workbench_replace_runs_persists_and_broadcasts`
 Expected: FAIL — handler 가 "replace_runs" 액션 인식 안 함 (현재 passthrough).
 
 - [ ] **Step 3: workbench handler 의 `match req.action.as_str()` 에 새 arm 추가** — 현 코드 (라인 476) `"insert_text" => { ... }` 직후:
@@ -1823,7 +1823,7 @@ Expected: FAIL — handler 가 "replace_runs" 액션 인식 안 함 (현재 pass
 
 - [ ] **Step 4: 테스트 통과**
 
-Run: `cargo test -p rhwp-server --test workbench_actions test_workbench_replace_runs_persists_and_broadcasts`
+Run: `cd server && cargo test --test workbench_actions test_workbench_replace_runs_persists_and_broadcasts`
 Expected: PASS.
 
 - [ ] **Step 5: 커밋**
@@ -1993,7 +1993,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: server cargo test**
 
-Run: `cargo test -p rhwp-server 2>&1 | tail -30`
+Run: `cd server && cargo test 2>&1 | tail -30`
 Expected: 모든 통과 — events tests (7) + store tests (3 + 3 신규) + workbench actions (12 신규).
 
 - [ ] **Step 2: clippy 통과 확인**
@@ -2050,7 +2050,7 @@ async fn test_undo_pops_stash_and_restores_blob() {
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `cargo test -p rhwp-server --test workbench_actions test_undo`
+Run: `cd server && cargo test --test workbench_actions test_undo`
 Expected: FAIL — endpoint 404.
 
 - [ ] **Step 3: undo handler + 라우트**
@@ -2113,7 +2113,7 @@ struct UndoResponse {
 
 - [ ] **Step 4: 테스트 통과**
 
-Run: `cargo test -p rhwp-server --test workbench_actions test_undo_pops_stash_and_restores_blob`
+Run: `cd server && cargo test --test workbench_actions test_undo_pops_stash_and_restores_blob`
 Expected: PASS.
 
 - [ ] **Step 5: 커밋**
@@ -2414,7 +2414,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ### Task 2e.6: Phase 2e 회귀
 
-- [ ] cargo test -p rhwp-server + clippy 통과.
+- [ ] cd server && cargo test + clippy 통과.
 
 ---
 
@@ -2900,7 +2900,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ## 자체 점검 게이트 — Definition of Done
 
-- [ ] 12 액션 모두 *서버가 적용 + sqlite 영속* — `cargo test -p rhwp-server` 통과
+- [ ] 12 액션 모두 *서버가 적용 + sqlite 영속* — `cd server && cargo test` 통과
 - [ ] 신규 endpoint 4개 — `/undo`, `/audit`, `/diff`, `/ir-slice` integration test 통과
 - [ ] `complete` workbench arm — `ServerEvent::Complete` 브로드캐스트 + sqlite `final_snapshots` 영속
 - [ ] 부분 업데이트 — `set_paragraph_style {alignment 만}` → 다른 필드 *현재 값 유지* e2e 통과
