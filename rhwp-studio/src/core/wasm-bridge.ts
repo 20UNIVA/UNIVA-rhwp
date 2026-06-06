@@ -727,6 +727,20 @@ export class WasmBridge {
     return JSON.parse(this.doc.setCellProperties(sec, parentPara, controlIdx, cellIdx, JSON.stringify(props)));
   }
 
+  /**
+   * (row, col) 좌표를 `Table.cells` 의 선형 인덱스로 변환한다.
+   *
+   * broadcast 받은 셀 편집 op (set_cell_style / replace_cell_runs /
+   * insert_text_in_cell / delete_range_in_cell) 가 native 호출 전 cell_idx 를
+   * 얻기 위해 사용한다. WASM 측 `DocumentCore::find_cell_idx` 위임.
+   *
+   * 좌표가 부적합하거나 control 이 Table 이 아니면 throw.
+   */
+  findCellIdx(sec: number, tableParaIdx: number, ctrlIdx: number, row: number, col: number): number {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return this.doc.findCellIdx(sec, tableParaIdx, ctrlIdx, row, col);
+  }
+
   resizeTableCells(
     sec: number, parentPara: number, controlIdx: number,
     updates: Array<{ cellIdx: number; widthDelta?: number; heightDelta?: number }>,

@@ -234,13 +234,10 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
-                  // (row, col) → cell_idx 변환에 WASM 측 findCellIdx export 가 없음.
-                  // 알려진 한계 — fallback (row * 100 + col) 은 부정확. Phase 2f.5+ e2e 단계에서
-                  // 별도 helper 추가 필요.
+                  // (row, col) → cell_idx 변환은 wasm-bridge 의 findCellIdx 위임
+                  // (Phase 2f.0b 에서 WASM export 신설). 좌표 부적합 시 throw.
                   const ctrlIdx = 0;
-                  const cellIdx = (wasm as any).findCellIdx
-                    ? (wasm as any).findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col)
-                    : op.row * 100 + op.col;
+                  const cellIdx = wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
                   // setCellProperties wrapper 가 자체적으로 JSON.stringify 함 — object 그대로 전달.
                   wasm.setCellProperties(op.section, op.table_para, ctrlIdx, cellIdx, op.style as any);
                   appliedCount += 1;
@@ -265,9 +262,7 @@ function buildSessionClient(fileId: string): SessionClient {
                 }
                 {
                   const ctrlIdx = 0;
-                  const cellIdx = (wasm as any).findCellIdx
-                    ? (wasm as any).findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col)
-                    : op.row * 100 + op.col;
+                  const cellIdx = wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
                   wasm.replaceCellRuns(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, JSON.stringify(op.runs));
                   appliedCount += 1;
                 }
@@ -282,9 +277,7 @@ function buildSessionClient(fileId: string): SessionClient {
                 }
                 {
                   const ctrlIdx = 0;
-                  const cellIdx = (wasm as any).findCellIdx
-                    ? (wasm as any).findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col)
-                    : op.row * 100 + op.col;
+                  const cellIdx = wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
                   wasm.insertTextInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, op.offset, op.text);
                   if (op.style && typeof op.style === 'object') {
                     wasm.applyCharFormatInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, op.offset, op.offset + op.text.length, JSON.stringify(op.style));
@@ -302,9 +295,7 @@ function buildSessionClient(fileId: string): SessionClient {
                 }
                 {
                   const ctrlIdx = 0;
-                  const cellIdx = (wasm as any).findCellIdx
-                    ? (wasm as any).findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col)
-                    : op.row * 100 + op.col;
+                  const cellIdx = wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
                   wasm.deleteRangeInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para_start, op.char_start, op.cell_para_end, op.char_end);
                   appliedCount += 1;
                 }
