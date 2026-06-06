@@ -136,11 +136,15 @@ files generated
 2. **부분 업데이트 시연** — cell 7 에서 `set_paragraph_style {alignment: 'right'}` 만 보내고 다른 서식 (line_spacing 등) 이 *현재 값 유지* 됨을 시각 확인.
 3. **Undo 시연** — `POST /sessions/<id>/undo` 호출 (curl 또는 fetch) → `ServerEvent::SnapshotRestored` broadcast → 클라가 `wasm.loadDocument(snapshot_base64)` 로 통째 교체 → 화면 원복.
 
+### 노트북 라우터 분기 — `get-ir-slice`
+
+cell 3 의 `run_bash_command` 가 *모든 액션을 POST /workbench 로 일괄 라우팅* 했으나, 서버는 `get_ir_slice` arm 이 없어 passthrough 만 동작 — *IR 슬라이스 결과를 응답 body 로 반환하지 않음*. 2026-06-07 노트북 cell 3 정정으로 `action == 'get_ir_slice'` 만 `GET /sessions/<id>/ir-slice?<sec/para_start/para_end/mode>` 로 분기. 나머지 11 액션은 기존 POST /workbench 그대로. LLM 이 sentinel JSON 형태로 슬라이스 결과를 수신한다. *노트북 파일은 작업 공간 루트 (git 외부) 에 위치 — 코드 변경 자체는 본 보고서에만 기록.*
+
 ## 알려진 한계 (Sub-3 으로 미룸)
 
 | 항목 | 위치 | 처리 |
 |---|---|---|
-| ~~`EditOperation::InsertParagraph` 의 *doc-comment ↔ 구현 semantic mismatch*~~ → **결정 2026-06-07: 현재 코드 동작 (Enter 와 동일, after_para 위치에 삽입) 이 의도. doc-comment 만 정정 (commit `[SHA]`). Sub-3 추가 작업 없음.** | edit_op.rs:158 docstring | 해결 |
+| ~~`EditOperation::InsertParagraph` 의 *doc-comment ↔ 구현 semantic mismatch*~~ → **결정 2026-06-07: 현재 코드 동작 (Enter 와 동일, after_para 위치에 삽입) 이 의도. doc-comment 만 정정 (commit `44ce5187`). Sub-3 추가 작업 없음.** | edit_op.rs:158 docstring | 해결 |
 | `insert_text` 가 `op_stash` 에 적재 안 됨 — Sub-1 의 `ws.rs::handle_client_text` 가 `append_op` 만 호출. Sub-2 신규 12 액션만 `apply_op_with_stash` 로 적재. 따라서 *undo 가 insert_text 를 되돌리지 못함*. | `server/src/ws.rs` (Sub-1 유산) | Sub-3 에서 `insert_text` 도 `op_stash` 적재로 통일 또는 undo 정책 별도 |
 | `InsertParagraph::style` 의 *부분 적용 위치* — 옵셔널 style 이 신규 문단 *각각*에 동일하게 적용. count > 1 일 때 *모든 신규 문단에 같은 style*. 의도된 동작인지 사용자 확인 권고. | `edit_op.rs::InsertParagraph::apply` | doc 명확화 |
 | `delete_table_control_native` 의 `control_idx` — Sub-2 는 *한 paragraph 에 한 table* 가정 (control_idx=0 고정). 한 paragraph 에 *여러 table* 있는 경우 첫 table 만 삭제. | `edit_op.rs::DeleteElement`, `main.ts::case 'delete_element'` | Sub-3 에서 `ElementType` 에 `control_idx` 추가 또는 자동 검색 정교화 |
