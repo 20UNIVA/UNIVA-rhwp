@@ -177,11 +177,59 @@ pub enum EditOperation {
         rows: u16,
         cols: u16,
     },
+    /// 셀 부분 스타일 적용. (row, col) → cell_idx 변환 후 set_cell_properties_native.
+    SetCellStyle {
+        section: usize,
+        table_para: usize,
+        row: usize,
+        col: usize,
+        style: PartialCellStyle,
+    },
 }
 
 fn one_count() -> usize { 1 }
 
 impl DocumentCore {
+    /// (row, col) 좌표를 `Table.cells` 의 선형 인덱스로 변환한다.
+    /// 셀 단위 편집 variant (SetCellStyle, ReplaceCellRuns, InsertTextInCell, DeleteRangeInCell)
+    /// 가 native 호출 전에 사용한다.
+    fn find_cell_idx(
+        &self,
+        section_idx: usize,
+        table_para_idx: usize,
+        control_idx: usize,
+        row: u16,
+        col: u16,
+    ) -> Result<usize, HwpError> {
+        let para = self
+            .document
+            .sections
+            .get(section_idx)
+            .and_then(|s| s.paragraphs.get(table_para_idx))
+            .ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "find_cell_idx: 좌표 부적합 (sec={}, table_para={})",
+                    section_idx, table_para_idx
+                ))
+            })?;
+        let table = match para.controls.get(control_idx) {
+            Some(crate::model::control::Control::Table(t)) => t,
+            _ => {
+                return Err(HwpError::RenderError(format!(
+                    "find_cell_idx: control_idx={} 가 Table 아님",
+                    control_idx
+                )))
+            }
+        };
+        table
+            .cells
+            .iter()
+            .position(|c| c.row == row && c.col == col)
+            .ok_or_else(|| {
+                HwpError::RenderError(format!("find_cell_idx: ({}, {}) 셀 없음", row, col))
+            })
+    }
+
     /// 편집 연산을 정방향 적용한다.
     pub fn apply_edit_op(&mut self, op: &EditOperation) -> Result<(), HwpError> {
         match op {
@@ -254,6 +302,13 @@ impl DocumentCore {
                     .count();
                 self.create_table_native(*section, *insert_after_para, para_len, *rows, *cols)?;
             }
+            EditOperation::SetCellStyle { section, table_para, row, col, style } => {
+                let ctrl_idx = 0usize;
+                let cell_idx = self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?;
+                let json = serde_json::to_string(style)
+                    .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
+                self.set_cell_properties_native(*section, *table_para, ctrl_idx, cell_idx, &json)?;
+            }
         }
         Ok(())
     }
@@ -309,6 +364,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::InsertTable { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::SetCellStyle { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -612,5 +670,25 @@ mod tests {
             p.controls.iter().any(|c| matches!(c, crate::model::control::Control::Table(_)))
         });
         assert!(has_table, "Table 컨트롤이 삽입되어야 함");
+    }
+
+    #[test]
+    fn test_set_cell_style_op_apply() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+        // 빈 문서 인라인 표 → table_para = 1 (Task 2a.3 발견)
+        let op = EditOperation::SetCellStyle {
+            section: 0,
+            table_para: 1,
+            row: 0,
+            col: 0,
+            style: PartialCellStyle {
+                vertical_align: Some("middle".to_string()),
+                ..Default::default()
+            },
+        };
+        core.apply_edit_op(&op).unwrap();
+        // set_cell_properties_native 가 panic 안 하면 통과 (호출 자체 검증).
     }
 }
