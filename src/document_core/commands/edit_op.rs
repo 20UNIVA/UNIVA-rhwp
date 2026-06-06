@@ -155,7 +155,18 @@ pub enum EditOperation {
         para_end: usize,
         char_end: usize,
     },
+    /// `after_para` 다음 위치에 빈 문단 `count` 개 삽입. 옵셔널 style 은 각 신규 문단에 적용.
+    InsertParagraph {
+        section: usize,
+        after_para: usize,
+        #[serde(default = "one_count")]
+        count: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<PartialParagraphStyle>,
+    },
 }
+
+fn one_count() -> usize { 1 }
 
 impl DocumentCore {
     /// 편집 연산을 정방향 적용한다.
@@ -200,6 +211,16 @@ impl DocumentCore {
             }
             EditOperation::DeleteRange { section, para_start, char_start, para_end, char_end } => {
                 self.delete_range_native(*section, *para_start, *char_start, *para_end, *char_end, None)?;
+            }
+            EditOperation::InsertParagraph { section, after_para, count, style } => {
+                for i in 0..*count {
+                    self.insert_paragraph_native(*section, *after_para + i)?;
+                    if let Some(s) = style {
+                        let props_json = serde_json::to_string(s)
+                            .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
+                        self.apply_para_format_native(*section, *after_para + i + 1, &props_json)?;
+                    }
+                }
             }
         }
         Ok(())
@@ -247,6 +268,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::DeleteRange { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::InsertParagraph { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -483,5 +507,27 @@ mod tests {
         core.apply_edit_op(&op).unwrap();
         assert_eq!(core.document.sections[0].paragraphs.len(), 1);
         assert_eq!(para_text(&core, 0, 0), "AAB");
+    }
+
+    #[test]
+    fn test_insert_paragraph_op_apply() {
+        let mut core = core_with_text("first");
+        let op = EditOperation::InsertParagraph {
+            section: 0,
+            after_para: 0,
+            count: 1,
+            style: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 2);
+    }
+
+    #[test]
+    fn test_insert_paragraph_op_default_count() {
+        let json = r#"{"op":"insert_paragraph","section":0,"after_para":0}"#;
+        let op: EditOperation = serde_json::from_str(json).unwrap();
+        if let EditOperation::InsertParagraph { count, .. } = op {
+            assert_eq!(count, 1);
+        } else { panic!("Wrong variant"); }
     }
 }
