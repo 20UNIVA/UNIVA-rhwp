@@ -234,10 +234,12 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
-                  // (row, col) → cell_idx 변환은 wasm-bridge 의 findCellIdx 위임
-                  // (Phase 2f.0b 에서 WASM export 신설). 좌표 부적합 시 throw.
+                  // [4-4 fix] 서버가 변환해 보낸 cell_idx 우선 사용 — 다중 사용자 race 회피.
+                  // 없으면 wasm.findCellIdx fallback (구 서버 호환).
                   const ctrlIdx = 0;
-                  const cellIdx = wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
+                  const cellIdx = typeof op.cell_idx === 'number'
+                    ? op.cell_idx
+                    : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
                   // setCellProperties wrapper 가 자체적으로 JSON.stringify 함 — object 그대로 전달.
                   wasm.setCellProperties(op.section, op.table_para, ctrlIdx, cellIdx, op.style as any);
                   appliedCount += 1;
@@ -261,8 +263,11 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
+                  // [4-4 fix] cell_idx 우선 + fallback.
                   const ctrlIdx = 0;
-                  const cellIdx = wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
+                  const cellIdx = typeof op.cell_idx === 'number'
+                    ? op.cell_idx
+                    : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
                   wasm.replaceCellRuns(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, JSON.stringify(op.runs));
                   appliedCount += 1;
                 }
@@ -276,8 +281,11 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
+                  // [4-4 fix] cell_idx 우선 + fallback.
                   const ctrlIdx = 0;
-                  const cellIdx = wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
+                  const cellIdx = typeof op.cell_idx === 'number'
+                    ? op.cell_idx
+                    : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
                   wasm.insertTextInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, op.offset, op.text);
                   if (op.style && typeof op.style === 'object') {
                     wasm.applyCharFormatInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, op.offset, op.offset + op.text.length, JSON.stringify(op.style));
@@ -294,8 +302,11 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
+                  // [4-4 fix] cell_idx 우선 + fallback.
                   const ctrlIdx = 0;
-                  const cellIdx = wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
+                  const cellIdx = typeof op.cell_idx === 'number'
+                    ? op.cell_idx
+                    : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
                   wasm.deleteRangeInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para_start, op.char_start, op.cell_para_end, op.char_end);
                   appliedCount += 1;
                 }

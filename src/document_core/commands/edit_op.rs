@@ -183,11 +183,15 @@ pub enum EditOperation {
         cols: u16,
     },
     /// 셀 부분 스타일 적용. (row, col) → cell_idx 변환 후 set_cell_properties_native.
+    /// `cell_idx` 가 채워져 있으면 변환 생략하고 그대로 사용 — 서버가 broadcast 전에 미리
+    /// 채워서 다중 사용자 race (셀 추가/삭제) 시 클라 재계산과 결과 어긋남 방지.
     SetCellStyle {
         section: usize,
         table_para: usize,
         row: usize,
         col: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_idx: Option<usize>,
         style: PartialCellStyle,
     },
     /// 표 셀 범위 병합. merge_table_cells_native 위임.
@@ -200,20 +204,26 @@ pub enum EditOperation {
         col_end: usize,
     },
     /// 셀 내 문단 runs 통째 교체. replace_cell_runs_native 위임.
+    /// `cell_idx` 가 채워져 있으면 변환 생략하고 그대로 사용.
     ReplaceCellRuns {
         section: usize,
         table_para: usize,
         row: usize,
         col: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_idx: Option<usize>,
         cell_para: usize,
         runs: Vec<RunSpec>,
     },
     /// 셀 내 텍스트 삽입 (옵셔널 style). insert_text_in_cell_native + 옵셔널 apply_char_format_in_cell_native.
+    /// `cell_idx` 가 채워져 있으면 변환 생략하고 그대로 사용.
     InsertTextInCell {
         section: usize,
         table_para: usize,
         row: usize,
         col: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_idx: Option<usize>,
         cell_para: usize,
         offset: usize,
         text: String,
@@ -221,11 +231,14 @@ pub enum EditOperation {
         style: Option<PartialRunStyle>,
     },
     /// 셀 내 범위 텍스트 삭제 (동·다문단). delete_range_native(cell_ctx=Some(...)) 위임.
+    /// `cell_idx` 가 채워져 있으면 변환 생략하고 그대로 사용.
     DeleteRangeInCell {
         section: usize,
         table_para: usize,
         row: usize,
         col: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_idx: Option<usize>,
         cell_para_start: usize,
         char_start: usize,
         cell_para_end: usize,
@@ -348,12 +361,15 @@ impl DocumentCore {
                     .count();
                 self.create_table_native(*section, *insert_after_para, para_len, *rows, *cols)?;
             }
-            EditOperation::SetCellStyle { section, table_para, row, col, style } => {
+            EditOperation::SetCellStyle { section, table_para, row, col, cell_idx, style } => {
                 let ctrl_idx = 0usize;
-                let cell_idx = self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?;
+                let resolved_cell_idx = match cell_idx {
+                    Some(idx) => *idx,
+                    None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
+                };
                 let json = serde_json::to_string(style)
                     .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
-                self.set_cell_properties_native(*section, *table_para, ctrl_idx, cell_idx, &json)?;
+                self.set_cell_properties_native(*section, *table_para, ctrl_idx, resolved_cell_idx, &json)?;
             }
             EditOperation::MergeCells { section, table_para, row_start, col_start, row_end, col_end } => {
                 let ctrl_idx = 0usize;
@@ -363,35 +379,44 @@ impl DocumentCore {
                     *row_end as u16, *col_end as u16,
                 )?;
             }
-            EditOperation::ReplaceCellRuns { section, table_para, row, col, cell_para, runs } => {
+            EditOperation::ReplaceCellRuns { section, table_para, row, col, cell_idx, cell_para, runs } => {
                 let ctrl_idx = 0usize;
-                let cell_idx = self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?;
+                let resolved_cell_idx = match cell_idx {
+                    Some(idx) => *idx,
+                    None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
+                };
                 let runs_json = serde_json::to_string(runs)
                     .map_err(|e| HwpError::RenderError(format!("runs 직렬화: {e}")))?;
-                self.replace_cell_runs_native(*section, *table_para, ctrl_idx, cell_idx, *cell_para, &runs_json)?;
+                self.replace_cell_runs_native(*section, *table_para, ctrl_idx, resolved_cell_idx, *cell_para, &runs_json)?;
             }
-            EditOperation::InsertTextInCell { section, table_para, row, col, cell_para, offset, text, style } => {
+            EditOperation::InsertTextInCell { section, table_para, row, col, cell_idx, cell_para, offset, text, style } => {
                 let ctrl_idx = 0usize;
-                let cell_idx = self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?;
+                let resolved_cell_idx = match cell_idx {
+                    Some(idx) => *idx,
+                    None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
+                };
                 let text_len = text.chars().count();
                 self.insert_text_in_cell_native(
-                    *section, *table_para, ctrl_idx, cell_idx, *cell_para, *offset, text,
+                    *section, *table_para, ctrl_idx, resolved_cell_idx, *cell_para, *offset, text,
                 )?;
                 if let Some(s) = style {
                     let json = serde_json::to_string(s)
                         .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
                     self.apply_char_format_in_cell_native(
-                        *section, *table_para, ctrl_idx, cell_idx, *cell_para,
+                        *section, *table_para, ctrl_idx, resolved_cell_idx, *cell_para,
                         *offset, *offset + text_len, &json,
                     )?;
                 }
             }
-            EditOperation::DeleteRangeInCell { section, table_para, row, col, cell_para_start, char_start, cell_para_end, char_end } => {
+            EditOperation::DeleteRangeInCell { section, table_para, row, col, cell_idx, cell_para_start, char_start, cell_para_end, char_end } => {
                 let ctrl_idx = 0usize;
-                let cell_idx = self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?;
+                let resolved_cell_idx = match cell_idx {
+                    Some(idx) => *idx,
+                    None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
+                };
                 self.delete_range_native(
                     *section, *cell_para_start, *char_start, *cell_para_end, *char_end,
-                    Some((*table_para, ctrl_idx, cell_idx)),
+                    Some((*table_para, ctrl_idx, resolved_cell_idx)),
                 )?;
             }
         }
@@ -780,6 +805,7 @@ mod tests {
             table_para: 1,
             row: 0,
             col: 0,
+            cell_idx: None,
             style: PartialCellStyle {
                 vertical_align: Some("middle".to_string()),
                 ..Default::default()
@@ -809,6 +835,7 @@ mod tests {
             table_para: 1,
             row: 0,
             col: 0,
+            cell_idx: None,
             cell_para_start: 0,
             char_start: 1,
             cell_para_end: 0,
@@ -828,6 +855,7 @@ mod tests {
             table_para: 1,
             row: 0,
             col: 0,
+            cell_idx: None,
             cell_para: 0,
             offset: 0,
             text: "셀텍스트".to_string(),
@@ -850,6 +878,7 @@ mod tests {
             table_para: 1,
             row: 0,
             col: 0,
+            cell_idx: None,
             cell_para: 0,
             runs: vec![RunSpec { text: "변경".to_string(), style: None }],
         };
