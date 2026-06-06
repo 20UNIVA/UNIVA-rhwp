@@ -234,7 +234,7 @@ impl DocumentCore {
     /// (row, col) 좌표를 `Table.cells` 의 선형 인덱스로 변환한다.
     /// 셀 단위 편집 variant (SetCellStyle, ReplaceCellRuns, InsertTextInCell, DeleteRangeInCell)
     /// 가 native 호출 전에 사용한다.
-    fn find_cell_idx(
+    pub fn find_cell_idx(
         &self,
         section_idx: usize,
         table_para_idx: usize,
