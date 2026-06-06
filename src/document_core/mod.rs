@@ -8,7 +8,9 @@ pub(crate) use helpers::*;
 
 pub mod builders;
 mod commands;
-pub use commands::edit_op::EditOperation;
+pub use commands::edit_op::{
+    EditOperation, ElementType, PartialCellStyle, PartialParagraphStyle, PartialRunStyle, RunSpec,
+};
 pub mod converters;
 pub(crate) mod html_table_import;
 pub mod queries;

@@ -466,6 +466,55 @@ async fn save_document(
     })))
 }
 
+/// 단일 EditOperation 을 적용하면서 sqlite op_stash 영속 + broadcast 한 묶음.
+/// 1. core.export_hwpx_native() → before_blob
+/// 2. core.apply_edit_op(&op)
+/// 3. store.append_op_stash(file_id, seq, op_json, before_blob)
+/// 4. events.publish(ServerEvent::Ops { seq, ops: [op] })
+#[allow(dead_code)]
+async fn apply_op_with_stash(
+    state: &AppState,
+    file_id: &str,
+    session: Arc<Mutex<Session>>,
+    op: rhwp::document_core::EditOperation,
+) -> Result<i64, AppError> {
+    let before_blob = {
+        let s = session.lock().unwrap();
+        s.core
+            .export_hwpx_native()
+            .map_err(|e| AppError::internal(format!("export_hwpx_native: {e}")))?
+    };
+
+    let op_json = serde_json::to_value(&op)
+        .map_err(|e| AppError::internal(format!("op 직렬화: {e}")))?;
+    let op_json_str = op_json.to_string();
+
+    let seq = {
+        let mut s = session.lock().unwrap();
+        s.core
+            .apply_edit_op(&op)
+            .map_err(|e| AppError::unprocessable(format!("apply_edit_op: {e}")))?;
+        let seq = s.next_seq;
+        s.next_seq += 1;
+        seq
+    };
+
+    state
+        .store
+        .append_op_stash(file_id, seq, &op_json_str, &before_blob)
+        .map_err(|e| AppError::internal(format!("op_stash 영속: {e}")))?;
+
+    state.events.publish(
+        file_id,
+        events::ServerEvent::Ops {
+            seq,
+            ops: vec![op_json],
+        },
+    );
+
+    Ok(seq)
+}
+
 async fn workbench(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
