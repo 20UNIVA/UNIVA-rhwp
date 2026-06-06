@@ -471,7 +471,6 @@ async fn save_document(
 /// 2. core.apply_edit_op(&op)
 /// 3. store.append_op_stash(file_id, seq, op_json, before_blob)
 /// 4. events.publish(ServerEvent::Ops { seq, ops: [op] })
-#[allow(dead_code)]
 async fn apply_op_with_stash(
     state: &AppState,
     file_id: &str,
@@ -577,6 +576,27 @@ async fn workbench(
                 applied: "ops".to_string(),
                 info: Some(info),
             }))
+        }
+        "replace_runs" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                para: usize,
+                runs: Vec<rhwp::document_core::RunSpec>,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::ReplaceRuns {
+                section: payload.section,
+                para: payload.para,
+                runs: payload.runs,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            return Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }));
         }
         _ => {
             let mut s = session.lock().unwrap();
