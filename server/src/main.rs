@@ -592,11 +592,11 @@ async fn workbench(
                 runs: payload.runs,
             };
             let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
-            return Ok(Json(WorkbenchResp {
+            Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
                 info: None,
-            }));
+            }))
         }
         "set_paragraph_style" => {
             #[derive(serde::Deserialize)]
@@ -613,11 +613,11 @@ async fn workbench(
                 style: payload.style,
             };
             let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
-            return Ok(Json(WorkbenchResp {
+            Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
                 info: None,
-            }));
+            }))
         }
         "delete_range" => {
             #[derive(serde::Deserialize)]
@@ -638,11 +638,11 @@ async fn workbench(
                 char_end: payload.char_end,
             };
             let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
-            return Ok(Json(WorkbenchResp {
+            Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
                 info: None,
-            }));
+            }))
         }
         "insert_paragraph" => {
             fn one() -> usize { 1 }
@@ -664,11 +664,11 @@ async fn workbench(
                 style: payload.style,
             };
             let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
-            return Ok(Json(WorkbenchResp {
+            Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
                 info: None,
-            }));
+            }))
         }
         "delete_element" => {
             #[derive(serde::Deserialize)]
@@ -685,11 +685,11 @@ async fn workbench(
                 element_type: payload.element_type,
             };
             let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
-            return Ok(Json(WorkbenchResp {
+            Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
                 info: None,
-            }));
+            }))
         }
         "insert_table" => {
             #[derive(serde::Deserialize)]
@@ -708,11 +708,153 @@ async fn workbench(
                 cols: payload.cols,
             };
             let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
-            return Ok(Json(WorkbenchResp {
+            Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
                 info: None,
-            }));
+            }))
+        }
+        "set_cell_style" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                table_para: usize,
+                row: usize,
+                col: usize,
+                style: rhwp::document_core::PartialCellStyle,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::SetCellStyle {
+                section: payload.section,
+                table_para: payload.table_para,
+                row: payload.row,
+                col: payload.col,
+                style: payload.style,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }))
+        }
+        "merge_cells" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                table_para: usize,
+                row_start: usize,
+                col_start: usize,
+                row_end: usize,
+                col_end: usize,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::MergeCells {
+                section: payload.section,
+                table_para: payload.table_para,
+                row_start: payload.row_start,
+                col_start: payload.col_start,
+                row_end: payload.row_end,
+                col_end: payload.col_end,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }))
+        }
+        "replace_cell_runs" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                table_para: usize,
+                row: usize,
+                col: usize,
+                cell_para: usize,
+                runs: Vec<rhwp::document_core::RunSpec>,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::ReplaceCellRuns {
+                section: payload.section,
+                table_para: payload.table_para,
+                row: payload.row,
+                col: payload.col,
+                cell_para: payload.cell_para,
+                runs: payload.runs,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }))
+        }
+        "insert_text_in_cell" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                table_para: usize,
+                row: usize,
+                col: usize,
+                cell_para: usize,
+                offset: usize,
+                text: String,
+                #[serde(default)]
+                style: Option<rhwp::document_core::PartialRunStyle>,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::InsertTextInCell {
+                section: payload.section,
+                table_para: payload.table_para,
+                row: payload.row,
+                col: payload.col,
+                cell_para: payload.cell_para,
+                offset: payload.offset,
+                text: payload.text,
+                style: payload.style,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }))
+        }
+        "delete_range_in_cell" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                table_para: usize,
+                row: usize,
+                col: usize,
+                cell_para_start: usize,
+                char_start: usize,
+                cell_para_end: usize,
+                char_end: usize,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::DeleteRangeInCell {
+                section: payload.section,
+                table_para: payload.table_para,
+                row: payload.row,
+                col: payload.col,
+                cell_para_start: payload.cell_para_start,
+                char_start: payload.char_start,
+                cell_para_end: payload.cell_para_end,
+                char_end: payload.char_end,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }))
         }
         _ => {
             let mut s = session.lock().unwrap();

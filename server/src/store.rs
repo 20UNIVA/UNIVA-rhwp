@@ -27,6 +27,7 @@ pub struct Store {
     conn: Mutex<Connection>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct OpStashRow {
     pub seq: i64,
@@ -146,6 +147,7 @@ impl Store {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn pop_op_stash(&self, file_id: &str) -> rusqlite::Result<Option<OpStashRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -170,6 +172,7 @@ impl Store {
         Ok(row_opt)
     }
 
+    #[allow(dead_code)]
     pub fn count_op_stash(&self, file_id: &str) -> rusqlite::Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
@@ -179,6 +182,7 @@ impl Store {
         )
     }
 
+    #[allow(dead_code)]
     pub fn list_op_stash_range(
         &self,
         file_id: &str,
@@ -199,6 +203,7 @@ impl Store {
         rows.collect()
     }
 
+    #[allow(dead_code)]
     pub fn get_op_stash_by_seq(
         &self,
         file_id: &str,
@@ -218,6 +223,7 @@ impl Store {
         .optional()
     }
 
+    #[allow(dead_code)]
     pub fn save_final_snapshot(
         &self,
         file_id: &str,
@@ -237,6 +243,7 @@ impl Store {
     }
 
     /// 세션 존재 여부.
+    #[allow(dead_code)]
     pub fn exists(&self, file_id: &str) -> rusqlite::Result<bool> {
         let conn = self.conn.lock().unwrap();
         let n: i64 = conn.query_row(
