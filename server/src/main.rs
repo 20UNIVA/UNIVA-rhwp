@@ -919,6 +919,97 @@ async fn audit_handler(
     Ok(Json(result))
 }
 
+fn default_ir_slice_mode() -> String {
+    "auto".to_string()
+}
+
+#[derive(Deserialize)]
+struct IrSliceQuery {
+    #[serde(default)]
+    sec: Option<usize>,
+    #[serde(default)]
+    para_start: Option<usize>,
+    #[serde(default)]
+    para_end: Option<usize>,
+    #[serde(default = "default_ir_slice_mode")]
+    mode: String,
+}
+
+/// 섹션 일부 paragraph 만 IR JSON 으로 반환.
+/// mode: "raw" — paragraph 의 상세 필드, "compact" — 텍스트+모양 id, "auto" — 5000자 미만 raw, 이상 compact.
+async fn ir_slice_handler(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+    Query(q): Query<IrSliceQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let session = {
+        let sessions = state.sessions.lock().unwrap();
+        sessions
+            .get(&file_id)
+            .ok_or_else(|| AppError::not_found(format!("세션 없음: {file_id}")))?
+            .clone()
+    };
+    let s = session.lock().unwrap();
+
+    let sec = q.sec.unwrap_or(0);
+    let total = s
+        .core
+        .document()
+        .sections
+        .get(sec)
+        .ok_or_else(|| AppError::bad_request(format!("section {} 없음", sec)))?
+        .paragraphs
+        .len();
+    let para_start = q.para_start.unwrap_or(0);
+    let para_end = q.para_end.unwrap_or(total).min(total);
+
+    let total_chars: usize = (para_start..para_end)
+        .filter_map(|i| s.core.document().sections[sec].paragraphs.get(i))
+        .map(|p| p.text.chars().count())
+        .sum();
+
+    let resolved_mode = match q.mode.as_str() {
+        "raw" => "raw",
+        "compact" => "compact",
+        _ if total_chars < 5000 => "raw",
+        _ => "compact",
+    };
+
+    let paragraphs: Vec<serde_json::Value> = (para_start..para_end)
+        .map(|p| {
+            let para = &s.core.document().sections[sec].paragraphs[p];
+            if resolved_mode == "raw" {
+                // Paragraph 가 Serialize 미구현 — 핵심 필드만 수동 직렬화 (compact + 상세 필드).
+                serde_json::json!({
+                    "para": p,
+                    "text": para.text,
+                    "para_shape_id": para.para_shape_id,
+                    "style_id": para.style_id,
+                    "char_count": para.char_count,
+                    "control_mask": para.control_mask,
+                    "char_shapes_len": para.char_shapes.len(),
+                    "line_segs_len": para.line_segs.len(),
+                    "controls_len": para.controls.len(),
+                })
+            } else {
+                serde_json::json!({
+                    "para": p,
+                    "text": para.text,
+                    "para_shape_id": para.para_shape_id,
+                })
+            }
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "section": sec,
+        "para_start": para_start,
+        "para_end": para_end,
+        "mode": resolved_mode,
+        "paragraphs": paragraphs,
+    })))
+}
+
 #[derive(Deserialize)]
 struct DiffQuery {
     seq: i64,
@@ -1078,6 +1169,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/undo", post(undo_handler))
         .route("/sessions/:id/audit", get(audit_handler))
         .route("/sessions/:id/diff", get(diff_handler))
+        .route("/sessions/:id/ir-slice", get(ir_slice_handler))
         .route("/sessions/:id/ws", get(ws::ws_upgrade))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
