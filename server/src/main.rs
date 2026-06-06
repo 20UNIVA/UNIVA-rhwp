@@ -881,6 +881,44 @@ async fn workbench(
     }
 }
 
+#[derive(Deserialize)]
+struct AuditQuery {
+    seq_from: i64,
+    seq_to: i64,
+}
+
+#[derive(Serialize)]
+struct AuditRow {
+    seq: i64,
+    op: serde_json::Value,
+}
+
+/// op_stash 범위 조회. seq_from..=seq_to 사이 op 들을 op_json 파싱하여 반환.
+async fn audit_handler(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+    Query(q): Query<AuditQuery>,
+) -> Result<Json<Vec<AuditRow>>, AppError> {
+    let rows = state
+        .store
+        .list_op_stash_range(&file_id, q.seq_from, q.seq_to)
+        .map_err(|e| AppError::internal(format!("list_op_stash_range: {e}")))?;
+
+    let result: Vec<AuditRow> = rows
+        .into_iter()
+        .map(|r| {
+            let op_value: serde_json::Value = serde_json::from_str(&r.op_json)
+                .unwrap_or_else(|_| serde_json::Value::String(r.op_json.clone()));
+            AuditRow {
+                seq: r.seq,
+                op: op_value,
+            }
+        })
+        .collect();
+
+    Ok(Json(result))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UndoResponse {
@@ -954,6 +992,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/save", post(save_document))
         .route("/sessions/:id/workbench", post(workbench))
         .route("/sessions/:id/undo", post(undo_handler))
+        .route("/sessions/:id/audit", get(audit_handler))
         .route("/sessions/:id/ws", get(ws::ws_upgrade))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
