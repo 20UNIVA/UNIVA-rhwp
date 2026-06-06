@@ -203,6 +203,18 @@ pub enum EditOperation {
         cell_para: usize,
         runs: Vec<RunSpec>,
     },
+    /// 셀 내 텍스트 삽입 (옵셔널 style). insert_text_in_cell_native + 옵셔널 apply_char_format_in_cell_native.
+    InsertTextInCell {
+        section: usize,
+        table_para: usize,
+        row: usize,
+        col: usize,
+        cell_para: usize,
+        offset: usize,
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<PartialRunStyle>,
+    },
 }
 
 fn one_count() -> usize { 1 }
@@ -342,6 +354,22 @@ impl DocumentCore {
                     .map_err(|e| HwpError::RenderError(format!("runs 직렬화: {e}")))?;
                 self.replace_cell_runs_native(*section, *table_para, ctrl_idx, cell_idx, *cell_para, &runs_json)?;
             }
+            EditOperation::InsertTextInCell { section, table_para, row, col, cell_para, offset, text, style } => {
+                let ctrl_idx = 0usize;
+                let cell_idx = self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?;
+                let text_len = text.chars().count();
+                self.insert_text_in_cell_native(
+                    *section, *table_para, ctrl_idx, cell_idx, *cell_para, *offset, text,
+                )?;
+                if let Some(s) = style {
+                    let json = serde_json::to_string(s)
+                        .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
+                    self.apply_char_format_in_cell_native(
+                        *section, *table_para, ctrl_idx, cell_idx, *cell_para,
+                        *offset, *offset + text_len, &json,
+                    )?;
+                }
+            }
         }
         Ok(())
     }
@@ -406,6 +434,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::ReplaceCellRuns { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::InsertTextInCell { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -738,6 +769,25 @@ mod tests {
             crate::model::control::Control::Table(t) => t.cells[cell_idx].paragraphs[cell_para].text.clone(),
             _ => panic!("Table 컨트롤 아님"),
         }
+    }
+
+    #[test]
+    fn test_insert_text_in_cell_op_apply() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 1, 1).unwrap();
+        let op = EditOperation::InsertTextInCell {
+            section: 0,
+            table_para: 1,
+            row: 0,
+            col: 0,
+            cell_para: 0,
+            offset: 0,
+            text: "셀텍스트".to_string(),
+            style: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(cell_text(&core, 0, 1, 0, 0, 0), "셀텍스트");
     }
 
     #[test]
