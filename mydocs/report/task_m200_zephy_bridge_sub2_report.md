@@ -20,6 +20,7 @@ SKILL.md 의 12 명령 중 Sub-1 에서 passthrough 로 흘려보낸 11+1 액션
 | 6. 양방향 e2e — 14 신규 모두 통과 | ✅ |
 | 7. broadcast 페이로드에 정방향 `EditOperation` 본문 포함 | ✅ `audit` endpoint 으로 사후 확인 가능 |
 | 8. 본 spec 의 모든 인터페이스가 코드에 구현 + 회귀 0 | ✅ |
+| 9. (post-Sub-2) Canvas 시각 검증 — 증명 시연으로 검증 e2e 자체 정합성 확인 | ✅ `96ccabbf` |
 
 ## 구현된 인터페이스
 
@@ -208,18 +209,18 @@ f7cdfd19 Task #zephy-bridge Sub-2 [2a.2]: WASM replace_runs export 신설
 
 ## Sub-3 으로 미루는 항목
 
-[stage1 보고서](../working/task_m200_zephy_bridge_sub2_stage1.md) 의 알려진 한계 표 참고. 핵심 항목:
+[stage1 보고서](../working/task_m200_zephy_bridge_sub2_stage1.md) 의 *후속 fix 정리 (2026-06-07)* 절에서 7 항목이 *해소* 되었다. 남은 항목은 spec 작성 시점부터 *처음부터 Sub-3 로 미루기로 동의된 항목* + post-fix batch 에서 *doc 만 정리하고 코드 정교화는 미룬 항목* 만 추린다.
 
-1. ~~**`EditOperation::InsertParagraph` doc-comment ↔ 구현 semantic mismatch**~~ → **결정 2026-06-07: 현재 코드 동작 (Enter 와 동일, after_para 위치에 삽입) 이 의도. doc-comment 만 정정 (commit `44ce5187`). Sub-3 추가 작업 없음.**
-2. **`insert_text` 도 `op_stash` 적재로 통일** — undo 가 `insert_text` 도 되돌리도록.
-3. **`Paragraph` `Serialize` derive** — `ir-slice` `raw` mode 의 완전 직렬화.
-4. **다중 사용자 동시 편집 — 사용자별 undo stack 분리** — 본 spec 의 세션당 전역 undo stack 한계 해소.
-5. **sqlite write-ahead log** — workbench arm 의 코어-sqlite 자동 회복 (split-brain 방지).
-6. **`rhwp-studio` 워크벤치 UI 패널** — 노트북 호출 외 직접 UI 조작.
-7. **snapshot binary delta 압축 + LRU** — 누적 부담 해소.
-8. **`complete` UI 표시** — 현재 `console.log` 만.
-9. **`delete_table_control_native` 의 `control_idx` 정교화** — 한 paragraph 의 여러 table 지원.
-10. **`Mutex` poisoning 보강** — `parking_lot` 또는 fallback.
+1. **다중 사용자 동시 편집 — 사용자별 undo stack 분리** — 본 spec 의 세션당 전역 undo stack 한계 해소.
+2. **snapshot binary delta 압축 + LRU 정교화** — 누적 부담 해소. 마지막 100 entry 단순 정책 개선.
+3. **sqlite write-ahead log** — workbench arm 의 코어-sqlite 자동 회복 (split-brain 방지).
+4. **옵션 B → 옵션 A 다운그레이드 결정** — spec 명시 잔류 항목.
+5. **`rhwp-studio` 워크벤치 UI 패널** — 노트북 호출 외 직접 UI 조작.
+6. **`apply_inverse_edit_op` 의 EditOperation 기반 역연산** — 신규 12 variant 의 역연산 분리 (현재는 snapshot 통째 교체).
+7. **`Mutex` poisoning 보강** — `parking_lot` 도입 또는 `unwrap_or_else(\|e\| e.into_inner())` fallback.
+8. **`complete` UI 표시 통합** — 현재 `console.log` 만. UI 패널 결합.
+9. **`delete_table_control_native` 의 `control_idx` 옵셔널 필드** — post-fix `cbcb918c` 에서 doc 명확화 완료. 한 paragraph 의 여러 table 지원을 위한 코드 정교화는 Sub-3 잔류.
+10. **WASM `Control` variant Serialize 신설** — post-fix `a3411d60` 에서 `Paragraph` + 부속 타입 Serialize 완료. `Control` 은 `#[serde(skip)]` — `ir-slice` raw mode 의 `controls` 도 raw 직렬화하려면 별도 처리 필요.
 
 ## 결론
 
