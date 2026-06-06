@@ -151,6 +151,9 @@ impl AppError {
     pub(crate) fn internal(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, msg)
     }
+    pub(crate) fn conflict(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, msg)
+    }
 }
 
 impl IntoResponse for AppError {
@@ -878,6 +881,59 @@ async fn workbench(
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UndoResponse {
+    seq_reverted: i64,
+    applied: &'static str,
+}
+
+/// 가장 최근 op_stash 항목을 pop 하여 before_blob 으로 세션 코어를 복원한다.
+/// 빈 stash 면 409 NO_UNDO_AVAILABLE.
+async fn undo_handler(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+) -> Result<Json<UndoResponse>, AppError> {
+    let session = {
+        let sessions = state.sessions.lock().unwrap();
+        sessions
+            .get(&file_id)
+            .ok_or_else(|| AppError::not_found(format!("세션 없음: {file_id}")))?
+            .clone()
+    };
+
+    let row = state
+        .store
+        .pop_op_stash(&file_id)
+        .map_err(|e| AppError::internal(format!("pop_op_stash: {e}")))?
+        .ok_or_else(|| AppError::conflict("NO_UNDO_AVAILABLE"))?;
+
+    let new_core = rhwp::document_core::DocumentCore::from_bytes(&row.before_blob)
+        .map_err(|e| AppError::internal(format!("from_bytes: {e}")))?;
+
+    let seq = {
+        let mut s = session.lock().unwrap();
+        s.core = new_core;
+        let cur = s.next_seq;
+        s.next_seq += 1;
+        cur
+    };
+
+    let snapshot_base64 = STANDARD.encode(&row.before_blob);
+    state.events.publish(
+        &file_id,
+        events::ServerEvent::SnapshotRestored {
+            seq,
+            snapshot_base64,
+        },
+    );
+
+    Ok(Json(UndoResponse {
+        seq_reverted: row.seq,
+        applied: "undo",
+    }))
+}
+
 async fn delete_session(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
@@ -897,6 +953,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/export", get(export))
         .route("/sessions/:id/save", post(save_document))
         .route("/sessions/:id/workbench", post(workbench))
+        .route("/sessions/:id/undo", post(undo_handler))
         .route("/sessions/:id/ws", get(ws::ws_upgrade))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
