@@ -4879,9 +4879,8 @@ impl HwpDocument {
         para_idx: u32,
         runs_json: &str,
     ) -> Result<String, JsValue> {
-        self.core
-            .replace_runs_native(section_idx as usize, para_idx as usize, runs_json)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+        self.replace_runs_native(section_idx as usize, para_idx as usize, runs_json)
+            .map_err(|e| e.into())
     }
 
     /// 문단 서식을 적용한다 (셀 내 문단).
