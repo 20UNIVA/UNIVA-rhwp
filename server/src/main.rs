@@ -670,6 +670,27 @@ async fn workbench(
                 info: None,
             }));
         }
+        "delete_element" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                para: usize,
+                element_type: rhwp::document_core::ElementType,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::DeleteElement {
+                section: payload.section,
+                para: payload.para,
+                element_type: payload.element_type,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            return Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }));
+        }
         _ => {
             let mut s = session.lock().unwrap();
             let seq = s.next_seq;
