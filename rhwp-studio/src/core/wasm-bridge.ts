@@ -487,6 +487,16 @@ export class WasmBridge {
     return this.doc.mergeParagraph(sec, para);
   }
 
+  insertParagraph(sec: number, para: number): { ok: boolean } {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return JSON.parse(this.doc.insertParagraph(sec, para));
+  }
+
+  deleteParagraph(sec: number, para: number): { ok: boolean } {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return JSON.parse(this.doc.deleteParagraph(sec, para));
+  }
+
   splitParagraphInCell(sec: number, parentPara: number, controlIdx: number, cellIdx: number, cellParaIdx: number, charOffset: number): string {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     return this.doc.splitParagraphInCell(sec, parentPara, controlIdx, cellIdx, cellParaIdx, charOffset);
@@ -1220,6 +1230,19 @@ export class WasmBridge {
   applyParaFormatInCell(sec: number, parentPara: number, controlIdx: number, cellIdx: number, cellParaIdx: number, propsJson: string): string {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     return this.doc.applyParaFormatInCell(sec, parentPara, controlIdx, cellIdx, cellParaIdx, propsJson);
+  }
+
+  replaceRuns(sec: number, para: number, runsJson: string): { ok: boolean } {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return JSON.parse((this.doc as any).replaceRuns(sec, para, runsJson));
+  }
+
+  replaceCellRuns(
+    sec: number, tableParaIdx: number, controlIdx: number,
+    cellIdx: number, cellParaIdx: number, runsJson: string,
+  ): { ok: boolean } {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return JSON.parse((this.doc as any).replaceCellRuns(sec, tableParaIdx, controlIdx, cellIdx, cellParaIdx, runsJson));
   }
 
   /** 머리말/꼬리말 문단의 문단 속성을 조회한다 */
