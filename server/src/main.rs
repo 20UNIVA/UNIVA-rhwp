@@ -619,6 +619,31 @@ async fn workbench(
                 info: None,
             }));
         }
+        "delete_range" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                para_start: usize,
+                char_start: usize,
+                para_end: usize,
+                char_end: usize,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::DeleteRange {
+                section: payload.section,
+                para_start: payload.para_start,
+                char_start: payload.char_start,
+                para_end: payload.para_end,
+                char_end: payload.char_end,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            return Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }));
+        }
         _ => {
             let mut s = session.lock().unwrap();
             let seq = s.next_seq;
