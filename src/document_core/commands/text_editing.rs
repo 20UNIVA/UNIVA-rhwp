@@ -747,6 +747,64 @@ impl DocumentCore {
         }
     }
 
+    /// `(sec, para)` 본문 문단의 runs 를 *runs_json* 으로 통째 교체.
+    ///
+    /// runs_json 형식: `[{"text": "...", "style": {bold?, italic?, ...}}, ...]`.
+    /// 기존 문단 내용은 모두 제거 후 새 runs 로 재구성. CharShape 는
+    /// 각 run 의 style 을 [`apply_char_format_native`] 가 받아들이는
+    /// CharShapeMods JSON 형식으로 해석.
+    pub fn replace_runs_native(
+        &mut self,
+        section_idx: usize,
+        para_idx: usize,
+        runs_json: &str,
+    ) -> Result<String, HwpError> {
+        // 1. 기존 문단의 텍스트 길이 측정
+        let para_len = self.document.sections[section_idx]
+            .paragraphs[para_idx]
+            .text
+            .chars()
+            .count();
+
+        // 2. 기존 텍스트 통째 삭제
+        if para_len > 0 {
+            self.delete_text_native(section_idx, para_idx, 0, para_len)?;
+        }
+
+        // 3. runs_json 파싱
+        let runs: Vec<serde_json::Value> = serde_json::from_str(runs_json)
+            .map_err(|e| HwpError::InvalidFile(format!("runs_json 파싱 실패: {e}")))?;
+
+        // 4. 각 run 순회 — 텍스트 삽입 후 char_format 적용
+        let mut cursor = 0usize;
+        for run in runs {
+            let text = run.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            if text.is_empty() {
+                continue;
+            }
+            let len = text.chars().count();
+            self.insert_text_native(section_idx, para_idx, cursor, text)?;
+
+            // style 이 있고 빈 객체가 아닐 때만 char_format 적용
+            if let Some(style) = run.get("style") {
+                if style.is_object() && !style.as_object().unwrap().is_empty() {
+                    let style_json = serde_json::to_string(style)
+                        .map_err(|e| HwpError::InvalidFile(format!("style 직렬화: {e}")))?;
+                    self.apply_char_format_native(
+                        section_idx, para_idx, cursor, cursor + len, &style_json,
+                    )?;
+                }
+            }
+
+            cursor += len;
+        }
+
+        Ok(super::super::helpers::json_ok_with(&format!(
+            "\"paraIdx\":{},\"runsCount\":{}",
+            para_idx, cursor
+        )))
+    }
+
     /// 표 셀에 대한 가변 참조를 얻는다.
     pub(crate) fn get_cell_mut(
         &mut self,
@@ -2585,6 +2643,21 @@ mod tests {
                 tree.err()
             );
         }
+    }
+
+    #[test]
+    fn test_replace_runs_native_basic() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.insert_text_native(0, 0, 0, "Hello World").unwrap();
+
+        let runs_json = r#"[
+            {"text": "Hi", "style": {"bold": true}},
+            {"text": " there", "style": {}}
+        ]"#;
+        core.replace_runs_native(0, 0, runs_json).unwrap();
+
+        assert_eq!(core.document.sections[0].paragraphs[0].text, "Hi there");
     }
 }
 
