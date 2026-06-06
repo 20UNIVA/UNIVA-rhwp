@@ -691,6 +691,29 @@ async fn workbench(
                 info: None,
             }));
         }
+        "insert_table" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                insert_after_para: usize,
+                rows: u16,
+                cols: u16,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::InsertTable {
+                section: payload.section,
+                insert_after_para: payload.insert_after_para,
+                rows: payload.rows,
+                cols: payload.cols,
+            };
+            let seq = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            return Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+            }));
+        }
         _ => {
             let mut s = session.lock().unwrap();
             let seq = s.next_seq;
