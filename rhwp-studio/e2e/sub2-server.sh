@@ -22,6 +22,14 @@ case "${1:-}" in
       echo "cargo 실행 파일 없음: $CARGO (환경변수 CARGO 로 재지정)"
       exit 1
     fi
+    # Canvas 시각 검증 e2e 가 같은 포트 (7710) 에서 studio dist 를 받아야 한다.
+    # dist 가 있으면 자동으로 RHWP_STUDIO_DIR 지정 — Puppeteer 가 7710 으로 갈 수 있음.
+    SCRIPT_DIR_ABS="$(cd "$(dirname "$0")" && pwd)"
+    STUDIO_DIST_DIR="$(cd "$SCRIPT_DIR_ABS/.." && pwd)/dist"
+    if [ -d "$STUDIO_DIST_DIR" ] && [ -z "${RHWP_STUDIO_DIR:-}" ]; then
+      export RHWP_STUDIO_DIR="$STUDIO_DIST_DIR"
+      echo "studio 정적 서빙 활성 — RHWP_STUDIO_DIR=$RHWP_STUDIO_DIR"
+    fi
     cd "$SERVER_DIR"
     RUST_LOG="${RUST_LOG:-info}" nohup "$CARGO" run > "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
