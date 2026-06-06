@@ -561,7 +561,7 @@ pub enum ElementType {
 
 - [ ] **Step 4: 테스트 통과 확인**
 
-Run: `cargo test --lib edit_op::tests::test_partial_paragraph_style_serialize_skip_none edit_op::tests::test_run_spec_deserialize edit_op::tests::test_element_type_serialize -- --nocapture`
+Run: `cargo test --lib edit_op::tests -- --nocapture`  *(prefix filter — cargo test 는 *단일 positional argument* 만 허용. `edit_op::tests` 가 신규 3 함수 모두 매치.)*
 Expected: 3 PASS.
 
 - [ ] **Step 5: 커밋**
@@ -650,7 +650,7 @@ Expected: 컴파일 실패.
 
 - [ ] **Step 6: 테스트 통과**
 
-Run: `cargo test --lib edit_op::tests::test_replace_runs_op_apply edit_op::tests::test_replace_runs_op_json_roundtrip -- --nocapture`
+Run: `cargo test --lib edit_op::tests::test_replace_runs_op -- --nocapture`  *(prefix `test_replace_runs_op` 가 _apply 와 _json_roundtrip 두 함수 모두 매치)*
 Expected: 2 PASS.
 
 - [ ] **Step 7: 커밋**
@@ -731,7 +731,7 @@ inverse arm:
 
 - [ ] **Step 4: 테스트 통과**
 
-Run: `cargo test --lib edit_op::tests::test_set_paragraph_style_op_apply_partial edit_op::tests::test_set_paragraph_style_op_json -- --nocapture`
+Run: `cargo test --lib edit_op::tests::test_set_paragraph_style_op -- --nocapture`  *(prefix 매치 두 함수)*
 Expected: 2 PASS.
 
 - [ ] **Step 5: 커밋**
@@ -809,7 +809,7 @@ inverse arm: `unreachable!` 동일 패턴.
 
 - [ ] **Step 4: 테스트 통과**
 
-Run: `cargo test --lib edit_op::tests::test_delete_range_op_apply_same_para edit_op::tests::test_delete_range_op_apply_multi_para -- --nocapture`
+Run: `cargo test --lib edit_op::tests::test_delete_range_op_apply -- --nocapture`  *(prefix 매치)*
 Expected: 2 PASS.
 
 - [ ] **Step 5: 커밋**
@@ -899,7 +899,7 @@ inverse arm: `unreachable!`.
 
 - [ ] **Step 4: 테스트 통과**
 
-Run: `cargo test --lib edit_op::tests::test_insert_paragraph_op_apply edit_op::tests::test_insert_paragraph_op_default_count -- --nocapture`
+Run: `cargo test --lib edit_op::tests::test_insert_paragraph_op -- --nocapture`  *(prefix 매치)*
 Expected: 2 PASS.
 
 - [ ] **Step 5: 커밋**
@@ -987,7 +987,7 @@ inverse arm: `unreachable!`.
 
 - [ ] **Step 4: 테스트 통과**
 
-Run: `cargo test --lib edit_op::tests::test_delete_element_op_apply_paragraph edit_op::tests::test_delete_element_op_apply_table -- --nocapture`
+Run: `cargo test --lib edit_op::tests::test_delete_element_op_apply -- --nocapture`  *(prefix 매치)*
 Expected: 2 PASS.
 
 - [ ] **Step 5: 커밋**
