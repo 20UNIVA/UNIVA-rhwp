@@ -215,6 +215,17 @@ pub enum EditOperation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         style: Option<PartialRunStyle>,
     },
+    /// 셀 내 범위 텍스트 삭제 (동·다문단). delete_range_native(cell_ctx=Some(...)) 위임.
+    DeleteRangeInCell {
+        section: usize,
+        table_para: usize,
+        row: usize,
+        col: usize,
+        cell_para_start: usize,
+        char_start: usize,
+        cell_para_end: usize,
+        char_end: usize,
+    },
 }
 
 fn one_count() -> usize { 1 }
@@ -370,6 +381,14 @@ impl DocumentCore {
                     )?;
                 }
             }
+            EditOperation::DeleteRangeInCell { section, table_para, row, col, cell_para_start, char_start, cell_para_end, char_end } => {
+                let ctrl_idx = 0usize;
+                let cell_idx = self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?;
+                self.delete_range_native(
+                    *section, *cell_para_start, *char_start, *cell_para_end, *char_end,
+                    Some((*table_para, ctrl_idx, cell_idx)),
+                )?;
+            }
         }
         Ok(())
     }
@@ -437,6 +456,9 @@ impl DocumentCore {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
             EditOperation::InsertTextInCell { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::DeleteRangeInCell { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
@@ -769,6 +791,26 @@ mod tests {
             crate::model::control::Control::Table(t) => t.cells[cell_idx].paragraphs[cell_para].text.clone(),
             _ => panic!("Table 컨트롤 아님"),
         }
+    }
+
+    #[test]
+    fn test_delete_range_in_cell_op_apply() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 1, 1).unwrap();
+        core.insert_text_in_cell_native(0, 1, 0, 0, 0, 0, "ABCDE").unwrap();
+        let op = EditOperation::DeleteRangeInCell {
+            section: 0,
+            table_para: 1,
+            row: 0,
+            col: 0,
+            cell_para_start: 0,
+            char_start: 1,
+            cell_para_end: 0,
+            char_end: 3,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(cell_text(&core, 0, 1, 0, 0, 0), "ADE");
     }
 
     #[test]
