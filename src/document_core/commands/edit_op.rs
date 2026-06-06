@@ -155,7 +155,9 @@ pub enum EditOperation {
         para_end: usize,
         char_end: usize,
     },
-    /// `after_para` 다음 위치에 빈 문단 `count` 개 삽입. 옵셔널 style 은 각 신규 문단에 적용.
+    /// `after_para` *위치*에 빈 문단 `count` 개 삽입 (Enter 와 동일 — 기존 `after_para` 문단이
+    /// 뒤로 밀림). 즉 `after_para=0` 호출 시 새 문단이 index 0 으로 들어가고 원래의 첫 문단이 index 1 로.
+    /// 옵셔널 style 은 각 신규 문단에 *동일하게* 적용.
     InsertParagraph {
         section: usize,
         after_para: usize,

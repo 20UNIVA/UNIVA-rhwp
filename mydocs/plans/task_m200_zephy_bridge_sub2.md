@@ -123,7 +123,7 @@ core.apply_para_format_native(0, 3, &props_json)?;
 | `replace_runs` | section, para, runs[] | (runs[i].style 은 부분) |
 | `set_paragraph_style` | section, para | style.align, style.indent, style.line_height |
 | `delete_range` | section, para_start, char_start, para_end, char_end | — |
-| `insert_paragraph` | section, after_para | count(default=1), style 부분 |
+| `insert_paragraph` | section, after_para (*위치* — Enter 와 동일, 해당 index 에 새 문단 삽입 + 기존 문단 뒤로 밀림) | count(default=1), style 부분 (각 신규 문단에 동일 적용) |
 | `delete_element` | section, para, element_type | — |
 | `insert_table` | section, insert_after_para, rows, cols | — |
 | `set_cell_style` | section, table_para, row, col | style.bgcolor, style.border, ... |

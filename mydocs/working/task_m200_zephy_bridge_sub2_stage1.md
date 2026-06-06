@@ -140,7 +140,7 @@ files generated
 
 | 항목 | 위치 | 처리 |
 |---|---|---|
-| `EditOperation::InsertParagraph` 의 *doc-comment ↔ 구현 semantic mismatch* — doc 은 "after_para 다음" 이라 명시되어 있으나 구현 (edit_op.rs:319) 은 `insert_paragraph_native(sec, after_para + i)` 로 *위치 인덱스 그대로* 처리 (= "at_para before" semantics). 본 spec 의 e2e 는 *현재 코드 동작* 에 맞춰 정정 (Phase 2f.17 fixup). | edit_op.rs:158 docstring vs 319 구현 | Sub-3 진입 전 *doc 정정 or 코드 정정* 의도 확인 |
+| ~~`EditOperation::InsertParagraph` 의 *doc-comment ↔ 구현 semantic mismatch*~~ → **결정 2026-06-07: 현재 코드 동작 (Enter 와 동일, after_para 위치에 삽입) 이 의도. doc-comment 만 정정 (commit `[SHA]`). Sub-3 추가 작업 없음.** | edit_op.rs:158 docstring | 해결 |
 | `insert_text` 가 `op_stash` 에 적재 안 됨 — Sub-1 의 `ws.rs::handle_client_text` 가 `append_op` 만 호출. Sub-2 신규 12 액션만 `apply_op_with_stash` 로 적재. 따라서 *undo 가 insert_text 를 되돌리지 못함*. | `server/src/ws.rs` (Sub-1 유산) | Sub-3 에서 `insert_text` 도 `op_stash` 적재로 통일 또는 undo 정책 별도 |
 | `InsertParagraph::style` 의 *부분 적용 위치* — 옵셔널 style 이 신규 문단 *각각*에 동일하게 적용. count > 1 일 때 *모든 신규 문단에 같은 style*. 의도된 동작인지 사용자 확인 권고. | `edit_op.rs::InsertParagraph::apply` | doc 명확화 |
 | `delete_table_control_native` 의 `control_idx` — Sub-2 는 *한 paragraph 에 한 table* 가정 (control_idx=0 고정). 한 paragraph 에 *여러 table* 있는 경우 첫 table 만 삭제. | `edit_op.rs::DeleteElement`, `main.ts::case 'delete_element'` | Sub-3 에서 `ElementType` 에 `control_idx` 추가 또는 자동 검색 정교화 |
