@@ -13,7 +13,7 @@ use tokio::sync::broadcast;
 
 /// 서버 → 클라 메시지.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServerEvent {
     /// 서버가 자기 DocumentCore에 진짜 적용한 op들.
     Ops {
@@ -26,11 +26,15 @@ pub enum ServerEvent {
         action: String,
         payload: serde_json::Value,
     },
+    /// Sub-2: 워크벤치 종료. 다른 탭에 알림.
+    Complete { seq: i64 },
+    /// Sub-2: undo 등으로 서버가 전체 스냅샷 복원. 클라는 wasm 통째 교체.
+    SnapshotRestored { seq: i64, snapshot_base64: String },
 }
 
 /// 클라 → 서버 메시지.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// 사용자가 직접 편집한 op를 서버에 미러링.
     Ops { ops: Vec<serde_json::Value> },
@@ -133,5 +137,30 @@ mod tests {
             ClientMessage::Snapshot { file_base64 } => assert_eq!(file_base64, "AAAA"),
             _ => panic!("Snapshot이어야 함"),
         }
+    }
+
+    #[test]
+    fn server_event_complete_serializes_with_snake_case() {
+        let ev = ServerEvent::Complete { seq: 42 };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains(r#""kind":"complete""#));
+        assert!(json.contains(r#""seq":42"#));
+    }
+
+    #[test]
+    fn server_event_snapshot_restored_serializes_with_snake_case() {
+        let ev = ServerEvent::SnapshotRestored {
+            seq: 7,
+            snapshot_base64: "AAAA".to_string(),
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains(r#""kind":"snapshot_restored""#));
+    }
+
+    #[test]
+    fn server_event_ops_still_lowercase_compat() {
+        let ev = ServerEvent::Ops { seq: 1, ops: vec![] };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains(r#""kind":"ops""#));
     }
 }
