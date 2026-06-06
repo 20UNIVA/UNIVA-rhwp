@@ -132,6 +132,15 @@ pub enum EditOperation {
         para: usize,
         prev_len: usize,
     },
+
+    // ─── Sub-2: 신규 12 variants (정방향만, inverse 는 sqlite snapshot stash) ───
+
+    /// 문단 내 runs 를 통째 교체.
+    ReplaceRuns {
+        section: usize,
+        para: usize,
+        runs: Vec<RunSpec>,
+    },
 }
 
 impl DocumentCore {
@@ -164,6 +173,11 @@ impl DocumentCore {
             }
             EditOperation::MergeParagraph { section, para, .. } => {
                 self.merge_paragraph_native(*section, *para)?;
+            }
+            EditOperation::ReplaceRuns { section, para, runs } => {
+                let runs_json = serde_json::to_string(runs)
+                    .map_err(|e| HwpError::RenderError(format!("runs 직렬화: {e}")))?;
+                self.replace_runs_native(*section, *para, &runs_json)?;
             }
         }
         Ok(())
@@ -203,6 +217,9 @@ impl DocumentCore {
                 prev_len,
             } => {
                 self.split_paragraph_native(*section, *para - 1, *prev_len)?;
+            }
+            EditOperation::ReplaceRuns { .. } => {
+                unreachable!("Sub-2 variants use snapshot stash for inverse");
             }
         }
         Ok(())
@@ -367,5 +384,30 @@ mod tests {
     fn test_element_type_serialize() {
         assert_eq!(serde_json::to_string(&ElementType::Paragraph).unwrap(), r#""paragraph""#);
         assert_eq!(serde_json::to_string(&ElementType::Table).unwrap(), r#""table""#);
+    }
+
+    #[test]
+    fn test_replace_runs_op_apply() {
+        let mut core = core_with_text("원본");
+        let op = EditOperation::ReplaceRuns {
+            section: 0,
+            para: 0,
+            runs: vec![
+                RunSpec { text: "변경".to_string(), style: Some(PartialRunStyle { bold: Some(true), ..Default::default() }) },
+                RunSpec { text: " 보통".to_string(), style: None },
+            ],
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "변경 보통");
+    }
+
+    #[test]
+    fn test_replace_runs_op_json_roundtrip() {
+        let json = r#"{"op":"replace_runs","section":0,"para":3,"runs":[{"text":"hi","style":{"bold":true}}]}"#;
+        let op: EditOperation = serde_json::from_str(json).unwrap();
+        assert!(matches!(op, EditOperation::ReplaceRuns { section: 0, para: 3, .. }));
+        let back = serde_json::to_string(&op).unwrap();
+        let op2: EditOperation = serde_json::from_str(&back).unwrap();
+        assert_eq!(op, op2);
     }
 }
