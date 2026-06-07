@@ -672,16 +672,9 @@ fn build_paragraph(core: &DocumentCore, sec: usize, para: usize) -> Vec<IrParagr
     for (ci, ctrl) in p.controls.iter().enumerate() {
         if matches!(ctrl, rhwp::model::control::Control::Table(_)) {
             if let Some(table) = build_table_paragraph(core, sec, para, ci) {
-                let mut out = Vec::new();
-                // 셀 평탄 entry 수집 — 표 본체 push 전후로 *둘 다 paragraphs[] 안에* 노출.
-                let cell_paras: Vec<IrParagraph> = table
-                    .cells
-                    .iter()
-                    .flat_map(|cell| cell.paragraphs.iter().cloned())
-                    .collect();
-                out.push(IrParagraph::Table(table));
-                out.extend(cell_paras);
-                return out;
+                // Sub-3 v2: 셀 평탄 entry 제거 — nested cell_locator 가 이미 4 좌표 보유.
+                // 모델은 table.cells[i].paragraphs[j] 안에서 직접 cell_locator 추출.
+                return vec![IrParagraph::Table(table)];
             }
         }
     }
@@ -1672,8 +1665,9 @@ mod tests {
 
     #[test]
     fn build_ir_slice_text_and_table() {
-        // 본문 첫 문단에 mock 2x2 표를 끼워넣고 build_ir_slice 가 *표 본체 + 셀 평탄 entry*
-        // 들을 paragraphs[] 에 함께 노출하는지 검증. Task 4.3 의 핵심 invariant.
+        // Sub-3 v2: 본문 첫 문단에 mock 2x2 표를 끼워넣고 build_ir_slice 가 *표 본체만*
+        // paragraphs[] 에 노출하는지 검증. nested 안 cell_locator 가 4 좌표를 보유해야
+        // 모델이 셀 위치를 식별할 수 있다. 셀 평탄 entry 는 제거.
         use rhwp::model::control::Control;
         use rhwp::model::table::{Cell, Table};
 
@@ -1713,7 +1707,7 @@ mod tests {
                 edit_session_id: Some("t".into()),
             },
         );
-        // paragraphs[] 에 table kind 가 적어도 1건 — flatten 된 셀 평탄 entry 도 함께 있어야 함.
+        // paragraphs[] 에 table kind 가 적어도 1건.
         let kinds: Vec<&str> = slice
             .paragraphs
             .iter()
@@ -1727,8 +1721,8 @@ mod tests {
             "표 entry 없음: {:?}",
             kinds
         );
-        // 셀 평탄 entry — para=-1, cell_locator.is_some() 인 Text 가 *4건* (2x2).
-        let cell_entries: Vec<_> = slice
+        // Sub-3 v2: 평탄 entry 가 *0건* 이어야 한다 (para=-1, cell_locator.is_some()).
+        let flat_cell_entries: Vec<_> = slice
             .paragraphs
             .iter()
             .filter_map(|p| match p {
@@ -1736,7 +1730,35 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(cell_entries.len(), 4, "2x2 셀 평탄 entry 4건 기대");
+        assert_eq!(
+            flat_cell_entries.len(),
+            0,
+            "평탄 cell_locator entry 가 남음: {} 건",
+            flat_cell_entries.len()
+        );
+        // nested cell_locator 검증 — table.cells[i].paragraphs[j].cell_locator 가 4 좌표 보유.
+        let table_para = slice
+            .paragraphs
+            .iter()
+            .find_map(|p| match p {
+                IrParagraph::Table(t) => Some(t),
+                _ => None,
+            })
+            .expect("table");
+        let cell00 = table_para
+            .cells
+            .iter()
+            .find(|c| c.row == 0 && c.col == 0)
+            .expect("(0,0)");
+        let cell_para0 = cell00.paragraphs.first().expect("cell para");
+        if let IrParagraph::Text(cp) = cell_para0 {
+            let cl = cp.cell_locator.as_ref().expect("nested cell_locator");
+            assert_eq!(cl.row, 0);
+            assert_eq!(cl.col, 0);
+            assert_eq!(cl.cell_para, 0);
+        } else {
+            panic!("nested cell paragraph 가 Text 가 아님");
+        }
     }
 
     #[test]
