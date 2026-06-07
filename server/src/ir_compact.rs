@@ -8,7 +8,61 @@
 
 #![allow(dead_code)]  // 구현 진행 중 일시 허용. Phase 5 종료 시 제거.
 
+use rhwp::model::style::Alignment;
+use rhwp::model::ColorRef;
 use serde::Serialize;
+
+/// `ColorRef` (0x00BBGGRR `u32`) → CSS hex 문자열 `"#RRGGBB"`.
+///
+/// 본체 `src/document_core/helpers.rs::color_ref_to_css` 가 `pub(crate)` 이라 server crate
+/// 에서 직접 호출 불가 — *결과가 동일* 한 변환을 server 측에 복제. 본체는 소문자 hex (`#ffc107`)
+/// 를 출력하지만 init.md spec 의 IR 응답은 대문자 hex (`#FFC107`) — TypeScript 원본
+/// (`rhwp-studio/src/llm-replay/style-map.ts`) 정합. 본체 helper 와 *대소문자만* 다르므로
+/// 본체 helper 의 결과를 그대로 받는 호출자는 `.to_ascii_uppercase()` 1 줄로 정합.
+fn color_ref_to_css(color: ColorRef) -> String {
+    // `ColorRef` 는 0x00BBGGRR — R 이 최하위 바이트.
+    // 본체 `helpers.rs::color_ref_to_css` 알고리즘 그대로.
+    let r = (color & 0xFF) as u8;
+    let g = ((color >> 8) & 0xFF) as u8;
+    let b = ((color >> 16) & 0xFF) as u8;
+    format!("#{:02X}{:02X}{:02X}", r, g, b)
+}
+
+/// `Alignment` enum → 소문자 키워드. init.md spec 의 `style.align` 값.
+fn alignment_to_str(a: Alignment) -> &'static str {
+    match a {
+        Alignment::Justify => "justify",
+        Alignment::Left => "left",
+        Alignment::Right => "right",
+        Alignment::Center => "center",
+        Alignment::Distribute => "distribute",
+        Alignment::Split => "split",
+    }
+}
+
+/// 글자의 위/아래 첨자 상태 → `style.vertical-align` 값.
+/// 둘 다 false 면 `"baseline"`, subscript 가 우선 (HWP 의 CharShape 도 둘이 상호 배타).
+fn vertical_align_to_str(subscript: bool, superscript: bool) -> &'static str {
+    if subscript {
+        "sub"
+    } else if superscript {
+        "super"
+    } else {
+        "baseline"
+    }
+}
+
+/// 셀의 `VerticalAlign` enum (Top=0/Center=1/Bottom=2) → `style.vertical-align` 키워드.
+/// 본체는 `rhwp::model::table::VerticalAlign` enum 이지만, init.md spec 은 `top|middle|bottom`
+/// 문자열 — Center 를 `middle` 로 매핑 (CSS table 의 vertical-align 관례).
+fn cell_vertical_align_to_str(va: rhwp::model::table::VerticalAlign) -> &'static str {
+    use rhwp::model::table::VerticalAlign;
+    match va {
+        VerticalAlign::Top => "top",
+        VerticalAlign::Center => "middle",
+        VerticalAlign::Bottom => "bottom",
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Default)]
 pub struct RunStyle {
@@ -192,6 +246,47 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert!(v["border"]["all"]["width"] == 100);
         assert!(v["border"]["left"].is_null());
+    }
+
+    #[test]
+    fn helper_alignment_to_str() {
+        use rhwp::model::style::Alignment;
+        assert_eq!(alignment_to_str(Alignment::Justify), "justify");
+        assert_eq!(alignment_to_str(Alignment::Left), "left");
+        assert_eq!(alignment_to_str(Alignment::Right), "right");
+        assert_eq!(alignment_to_str(Alignment::Center), "center");
+        assert_eq!(alignment_to_str(Alignment::Distribute), "distribute");
+        assert_eq!(alignment_to_str(Alignment::Split), "split");
+    }
+
+    #[test]
+    fn helper_vertical_align() {
+        assert_eq!(vertical_align_to_str(true, false), "sub");
+        assert_eq!(vertical_align_to_str(false, true), "super");
+        assert_eq!(vertical_align_to_str(false, false), "baseline");
+        // 둘 다 true 인 경우 (모델상 상호 배타지만 안전망) — sub 우선.
+        assert_eq!(vertical_align_to_str(true, true), "sub");
+    }
+
+    #[test]
+    fn helper_cell_vertical_align() {
+        use rhwp::model::table::VerticalAlign;
+        assert_eq!(cell_vertical_align_to_str(VerticalAlign::Top), "top");
+        assert_eq!(cell_vertical_align_to_str(VerticalAlign::Center), "middle");
+        assert_eq!(cell_vertical_align_to_str(VerticalAlign::Bottom), "bottom");
+    }
+
+    #[test]
+    fn helper_color_ref() {
+        // `ColorRef = u32` (0x00BBGGRR). 빨강 #FF0000 → r=0xFF, g=0x00, b=0x00 → 0x000000FF.
+        let red: rhwp::model::ColorRef = 0x000000FF;
+        assert_eq!(color_ref_to_css(red), "#FF0000");
+        // 노랑 #FFC107 → r=0xFF, g=0xC1, b=0x07 → BGR 순서로 0x0007C1FF.
+        let amber: rhwp::model::ColorRef = 0x0007C1FF;
+        assert_eq!(color_ref_to_css(amber), "#FFC107");
+        // 검정.
+        let black: rhwp::model::ColorRef = 0x00000000;
+        assert_eq!(color_ref_to_css(black), "#000000");
     }
 
     #[test]
