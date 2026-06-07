@@ -960,10 +960,15 @@ fn omit_para_style_defaults(
 /// 단일 run 을 compact JSON 으로 변환. style 이 defaults 와 모두 같으면 `style` 키 omit.
 ///
 /// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactRun` 의 Rust 대응.
-fn compact_run(run: &IrRun, defaults: &DocDefaults) -> serde_json::Value {
+///
+/// Sub-3 v2 Phase 3 — `is_first=true` 이면서 `char_offset==0` 인 경우 *해당 키 자체를 omit*.
+/// 모델은 첫 run 의 char_offset 부재 시 0 으로 해석 (init.md §3).
+fn compact_run(run: &IrRun, defaults: &DocDefaults, is_first: bool) -> serde_json::Value {
     let style = omit_run_style_defaults(&run.style, &defaults.run);
     let mut out = serde_json::Map::new();
-    out.insert("char_offset".into(), serde_json::json!(run.char_offset));
+    if !(is_first && run.char_offset == 0) {
+        out.insert("char_offset".into(), serde_json::json!(run.char_offset));
+    }
     out.insert("text".into(), serde_json::json!(run.text));
     if let Some(s) = style {
         out.insert("style".into(), s);
@@ -975,16 +980,32 @@ fn compact_run(run: &IrRun, defaults: &DocDefaults) -> serde_json::Value {
 ///
 /// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactText` 의 Rust 대응. 평탄화 조건은
 /// "runs 가 1건이고 그 run 에 `style` 키가 없는 경우" — 모델 입력 길이를 줄이기 위한 sugar.
-fn compact_text(p: &IrTextParagraph, defaults: &DocDefaults) -> serde_json::Value {
-    let runs: Vec<serde_json::Value> =
-        p.runs.iter().map(|r| compact_run(r, defaults)).collect();
+///
+/// Sub-3 v2 Phase 3 — *무용 구조 키 omit*:
+/// - `id` 는 *항상* 생략 (모델 미사용 디버그 라벨)
+/// - `sec` 는 `omit_sec=true` 이면 생략. 응답 전체에서 sec 가 단일이면 `doc_meta.anchor.sec` 가
+///   진실이므로 paragraph 마다의 sec 키는 중복.
+/// - `type:"text"` 는 기본값 — 생략. table 만 `"table"` 로 명시 유지.
+fn compact_text(
+    p: &IrTextParagraph,
+    defaults: &DocDefaults,
+    omit_sec: bool,
+) -> serde_json::Value {
+    let runs: Vec<serde_json::Value> = p
+        .runs
+        .iter()
+        .enumerate()
+        .map(|(i, r)| compact_run(r, defaults, i == 0))
+        .collect();
     let para_style = omit_para_style_defaults(&p.style, &defaults.paragraph);
 
     let mut out = serde_json::Map::new();
-    out.insert("id".into(), serde_json::json!(p.id));
-    out.insert("sec".into(), serde_json::json!(p.sec));
+    // id 항상 omit (모델 미사용 디버그 라벨).
+    if !omit_sec {
+        out.insert("sec".into(), serde_json::json!(p.sec));
+    }
     out.insert("para".into(), serde_json::json!(p.para));
-    out.insert("type".into(), serde_json::json!("text"));
+    // type:"text" 는 기본값 — omit.
     if let Some(cl) = &p.cell_locator {
         out.insert(
             "cell_locator".into(),
@@ -1043,7 +1064,13 @@ fn compact_border(border: &CellBorder) -> Option<CellBorder> {
 ///
 /// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactCell` 의 Rust 대응. 셀의 style 중 *border*
 /// 만 압축 대상 — 다른 키 (bgcolor/width/height/vertical-align) 는 그대로 직렬화.
-fn compact_cell(cell: &IrTableCell, defaults: &DocDefaults) -> serde_json::Value {
+///
+/// Sub-3 v2 Phase 3 — 셀 안 paragraph 도 동일하게 sec omit. 호출자가 `omit_sec` 전달.
+fn compact_cell(
+    cell: &IrTableCell,
+    defaults: &DocDefaults,
+    omit_sec: bool,
+) -> serde_json::Value {
     let mut out = serde_json::Map::new();
     out.insert("row".into(), serde_json::json!(cell.row));
     out.insert("col".into(), serde_json::json!(cell.col));
@@ -1069,8 +1096,8 @@ fn compact_cell(cell: &IrTableCell, defaults: &DocDefaults) -> serde_json::Value
         .paragraphs
         .iter()
         .map(|p| match p {
-            IrParagraph::Text(t) => compact_text(t, defaults),
-            IrParagraph::Table(tt) => compact_table(tt, defaults),
+            IrParagraph::Text(t) => compact_text(t, defaults, omit_sec),
+            IrParagraph::Table(tt) => compact_table(tt, defaults, omit_sec),
         })
         .collect();
     out.insert("paragraphs".into(), serde_json::Value::Array(paras));
@@ -1080,16 +1107,32 @@ fn compact_cell(cell: &IrTableCell, defaults: &DocDefaults) -> serde_json::Value
 /// 표 한 개를 compact JSON 으로 변환. 셀은 `compact_cell` 로 재귀.
 ///
 /// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactTable` 의 Rust 대응.
-fn compact_table(p: &IrTableParagraph, defaults: &DocDefaults) -> serde_json::Value {
-    serde_json::json!({
-        "id": p.id,
-        "sec": p.sec,
-        "para": p.para,
-        "type": "table",
-        "rows": p.rows,
-        "cols": p.cols,
-        "cells": p.cells.iter().map(|c| compact_cell(c, defaults)).collect::<Vec<_>>(),
-    })
+///
+/// Sub-3 v2 Phase 3 — `id` 항상 omit, `sec` 는 `omit_sec=true` 일 때 omit. `type:"table"` 은
+/// 기본값 ("text") 과 달라 *명시 유지* (모델이 표를 식별하는 키).
+fn compact_table(
+    p: &IrTableParagraph,
+    defaults: &DocDefaults,
+    omit_sec: bool,
+) -> serde_json::Value {
+    let mut out = serde_json::Map::new();
+    if !omit_sec {
+        out.insert("sec".into(), serde_json::json!(p.sec));
+    }
+    out.insert("para".into(), serde_json::json!(p.para));
+    out.insert("type".into(), serde_json::json!("table"));
+    out.insert("rows".into(), serde_json::json!(p.rows));
+    out.insert("cols".into(), serde_json::json!(p.cols));
+    out.insert(
+        "cells".into(),
+        serde_json::Value::Array(
+            p.cells
+                .iter()
+                .map(|c| compact_cell(c, defaults, omit_sec))
+                .collect(),
+        ),
+    );
+    serde_json::Value::Object(out)
 }
 
 /// `IrSlice` → `CompactIrSlice` (defaults 박스 + 압축된 paragraphs).
@@ -1098,12 +1141,24 @@ fn compact_table(p: &IrTableParagraph, defaults: &DocDefaults) -> serde_json::Va
 /// 로 defaults 를 먼저 산정한 뒤, 각 paragraph 를 `compact_text` / `compact_table` 로 변환한다.
 pub fn compact_ir_slice(ir: IrSlice) -> CompactIrSlice {
     let defaults = compute_doc_defaults(&ir);
+    // Sub-3 v2 Phase 3 — sec 단일성 판단. 응답 안의 모든 paragraph 가 같은 sec 이면
+    // paragraph 마다의 sec 키는 doc_meta.anchor.sec 와 중복 — omit.
+    let secs: std::collections::HashSet<usize> = ir
+        .paragraphs
+        .iter()
+        .map(|p| match p {
+            IrParagraph::Text(t) => t.sec,
+            IrParagraph::Table(t) => t.sec,
+        })
+        .collect();
+    let omit_sec = secs.len() <= 1;
+
     let paragraphs: Vec<serde_json::Value> = ir
         .paragraphs
         .iter()
         .map(|p| match p {
-            IrParagraph::Text(t) => compact_text(t, &defaults),
-            IrParagraph::Table(tt) => compact_table(tt, &defaults),
+            IrParagraph::Text(t) => compact_text(t, &defaults, omit_sec),
+            IrParagraph::Table(tt) => compact_table(tt, &defaults, omit_sec),
         })
         .collect();
     CompactIrSlice {
@@ -1952,9 +2007,14 @@ mod tests {
             run: RunStyle::default(),
             paragraph: ParagraphStyle::default(),
         };
-        let v = compact_text(&t, &defaults);
+        let v = compact_text(&t, &defaults, false);
         assert!(v.get("runs").is_none(), "단일 plain run 은 runs 생략");
         assert_eq!(v["text"], "ABC");
+        // Sub-3 v2 Phase 3 — id 항상 omit, type:"text" 도 omit.
+        assert!(v.get("id").is_none(), "id 키 잔존");
+        assert!(v.get("type").is_none(), "기본 type 'text' 가 명시되어 있음");
+        // omit_sec=false 시나리오 — sec 키 유지.
+        assert_eq!(v["sec"], 0);
     }
 
     #[test]
@@ -1983,10 +2043,48 @@ mod tests {
             },
             paragraph: ParagraphStyle::default(),
         };
-        let v = compact_text(&t, &defaults);
+        let v = compact_text(&t, &defaults, false);
         assert!(v.get("text").is_none(), "styled run 은 runs 형태 유지");
         let runs = v["runs"].as_array().expect("runs array");
         assert_eq!(runs[0]["style"]["bold"], true);
+        // Sub-3 v2 Phase 3 — 첫 run 의 char_offset:0 은 omit.
+        assert!(
+            runs[0].get("char_offset").is_none(),
+            "첫 run 의 char_offset:0 이 잔존"
+        );
+    }
+
+    #[test]
+    fn compact_run_first_zero_offset_omitted() {
+        // Sub-3 v2 Phase 3 — is_first=true + char_offset==0 → 키 omit.
+        // is_first=false 이거나 offset != 0 → 키 유지.
+        let r = IrRun {
+            char_offset: 0,
+            length: 3,
+            text: "abc".into(),
+            style: RunStyle::default(),
+        };
+        let defaults = DocDefaults {
+            run: RunStyle::default(),
+            paragraph: ParagraphStyle::default(),
+        };
+        let v_first = compact_run(&r, &defaults, true);
+        assert!(v_first.get("char_offset").is_none(), "첫 run 0 → omit");
+
+        let v_not_first = compact_run(&r, &defaults, false);
+        assert_eq!(
+            v_not_first["char_offset"], 0,
+            "두 번째 이후 run 의 offset 0 은 유지 (실제로는 합쳐졌어야 하지만 안전망)"
+        );
+
+        let r2 = IrRun {
+            char_offset: 5,
+            length: 1,
+            text: "d".into(),
+            style: RunStyle::default(),
+        };
+        let v_first_nonzero = compact_run(&r2, &defaults, true);
+        assert_eq!(v_first_nonzero["char_offset"], 5, "첫 run 이라도 0 이 아니면 유지");
     }
 
     #[test]
@@ -2007,6 +2105,116 @@ mod tests {
         assert_eq!(v["defaults"]["run"]["bold"], false);
         assert_eq!(v["defaults"]["run"]["color"], "#000000");
         assert_eq!(v["doc_meta"]["anchor"]["sec"], 0);
+
+        // Sub-3 v2 Phase 3 — blank 문서는 단일 sec 이므로 paragraph 의 sec 키 omit.
+        // id 도 항상 omit, type:"text" 도 omit.
+        if let Some(arr) = v["paragraphs"].as_array() {
+            if let Some(p0) = arr.first() {
+                assert!(p0.get("id").is_none(), "paragraph id 키 잔존");
+                assert!(
+                    p0.get("sec").is_none(),
+                    "단일 sec 문서에서 paragraph sec 키 잔존"
+                );
+                // type 키는 부재이거나, 부재 시 기본 'text' — 'text' 가 명시되어 있으면 안 됨.
+                assert!(
+                    p0.get("type").is_none(),
+                    "기본 type 'text' 가 명시되어 있음"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn compact_ir_slice_omits_sec_when_single() {
+        // 명시적 omit_sec 시나리오 — blank 문서로 단일 sec 검증.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let slice = build_compact_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: None,
+                page: None,
+            },
+        );
+        let v = serde_json::to_value(&slice).unwrap();
+        let arr = v["paragraphs"].as_array().expect("paragraphs");
+        for p in arr {
+            assert!(p.get("sec").is_none(), "단일 sec — paragraph sec 키 잔존: {}", p);
+            assert!(p.get("id").is_none(), "id 키 잔존: {}", p);
+        }
+        // doc_meta.anchor.sec 는 그대로 유지.
+        assert_eq!(v["doc_meta"]["anchor"]["sec"], 0);
+    }
+
+    #[test]
+    fn compact_ir_slice_table_keeps_type_omits_id_sec() {
+        // Sub-3 v2 Phase 3 — 표 entry 는 type:"table" 명시 유지, id 항상 omit,
+        // 단일 sec 이면 sec omit.
+        use rhwp::model::control::Control;
+        use rhwp::model::table::{Cell, Table};
+
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let mut core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+
+        let mut table = Table {
+            row_count: 1,
+            col_count: 1,
+            ..Default::default()
+        };
+        table.cells.push(Cell {
+            col: 0,
+            row: 0,
+            col_span: 1,
+            row_span: 1,
+            width: 1000,
+            height: 500,
+            border_fill_id: 0,
+            paragraphs: vec![rhwp::model::paragraph::Paragraph::default()],
+            ..Default::default()
+        });
+        core.document_mut().sections[0].paragraphs[0]
+            .controls
+            .push(Control::Table(Box::new(table)));
+
+        let slice = build_compact_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: Some("t".into()),
+                page: None,
+            },
+        );
+        let v = serde_json::to_value(&slice).unwrap();
+        let arr = v["paragraphs"].as_array().expect("paragraphs");
+        let tbl = arr
+            .iter()
+            .find(|p| p.get("type").and_then(|t| t.as_str()) == Some("table"))
+            .expect("table entry");
+        // type:"table" 명시 유지.
+        assert_eq!(tbl["type"], "table");
+        // id 항상 omit, 단일 sec — sec omit.
+        assert!(tbl.get("id").is_none(), "table id 잔존");
+        assert!(tbl.get("sec").is_none(), "단일 sec — table sec 잔존");
+        // 셀 안 paragraph 의 sec 도 omit.
+        if let Some(cells) = tbl.get("cells").and_then(|c| c.as_array()) {
+            for c in cells {
+                if let Some(paras) = c.get("paragraphs").and_then(|p| p.as_array()) {
+                    for cp in paras {
+                        assert!(
+                            cp.get("sec").is_none(),
+                            "셀 안 paragraph sec 잔존: {}",
+                            cp
+                        );
+                        assert!(cp.get("id").is_none(), "셀 안 paragraph id 잔존: {}", cp);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
