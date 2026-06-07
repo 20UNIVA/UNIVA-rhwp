@@ -839,6 +839,58 @@ fn compute_doc_defaults(ir: &IrSlice) -> DocDefaults {
     }
 }
 
+/// `style` 의 키 중 *defaults 와 같은 값* 은 제외한 JSON. 결과가 빈 객체면 None.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::omitDefaults` 의 Rust 대응 (run 측). JSON 직렬화
+/// 후 키-값 비교 — `RunStyle` 의 `skip_serializing_if = "Option::is_none"` 덕에 None 키는 양쪽 모두
+/// 생략되어 자연스럽게 일치.
+fn omit_run_style_defaults(
+    style: &RunStyle,
+    defaults: &RunStyle,
+) -> Option<serde_json::Value> {
+    let s_json = serde_json::to_value(style).ok()?;
+    let d_json = serde_json::to_value(defaults).ok()?;
+    let mut out = serde_json::Map::new();
+    if let (serde_json::Value::Object(s_obj), serde_json::Value::Object(d_obj)) = (s_json, d_json)
+    {
+        for (k, v) in s_obj {
+            if d_obj.get(&k) == Some(&v) {
+                continue;
+            }
+            out.insert(k, v);
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(out))
+    }
+}
+
+/// `omit_run_style_defaults` 의 paragraph 판 — 동일 알고리즘.
+fn omit_para_style_defaults(
+    style: &ParagraphStyle,
+    defaults: &ParagraphStyle,
+) -> Option<serde_json::Value> {
+    let s_json = serde_json::to_value(style).ok()?;
+    let d_json = serde_json::to_value(defaults).ok()?;
+    let mut out = serde_json::Map::new();
+    if let (serde_json::Value::Object(s_obj), serde_json::Value::Object(d_obj)) = (s_json, d_json)
+    {
+        for (k, v) in s_obj {
+            if d_obj.get(&k) == Some(&v) {
+                continue;
+            }
+            out.insert(k, v);
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(out))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1586,6 +1638,36 @@ mod tests {
         assert_eq!(d.run.font_name.as_deref(), Some("맑은 고딕"));
         assert_eq!(d.paragraph.align.as_deref(), Some("left"));
         assert_eq!(d.paragraph.line_height, Some(160));
+    }
+
+    #[test]
+    fn omit_run_defaults_drops_matching() {
+        let style = RunStyle {
+            bold: Some(false),
+            font_size: Some(22.0),
+            ..Default::default()
+        };
+        let defaults = RunStyle {
+            bold: Some(false),
+            font_size: Some(11.0),
+            ..Default::default()
+        };
+        let out = omit_run_style_defaults(&style, &defaults).unwrap();
+        assert!(out.get("bold").is_none());
+        assert_eq!(out["font-size"], 22.0);
+    }
+
+    #[test]
+    fn omit_run_defaults_all_same_returns_none() {
+        let s = RunStyle {
+            bold: Some(false),
+            ..Default::default()
+        };
+        let d = RunStyle {
+            bold: Some(false),
+            ..Default::default()
+        };
+        assert!(omit_run_style_defaults(&s, &d).is_none());
     }
 
     #[test]
