@@ -6,8 +6,6 @@
 //!
 //! 호출 위치: `server/src/main.rs::ir_slice_handler` 의 compact 분기.
 
-#![allow(dead_code)]  // 구현 진행 중 일시 허용. Phase 5 종료 시 제거.
-
 use rhwp::document_core::DocumentCore;
 use rhwp::model::style::{
     Alignment, BorderLine, BorderLineType, CharShape, LineSpacingType, ParaShape, UnderlineType,
