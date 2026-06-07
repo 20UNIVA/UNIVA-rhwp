@@ -18,6 +18,7 @@ use rhwp::renderer::style_resolver::{
     detect_lang_category, primary_font_name, ResolvedBorderStyle, ResolvedCharStyle,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 
 /// `ColorRef` (0x00BBGGRR `u32`) → CSS hex 문자열 `"#RRGGBB"`.
 ///
@@ -748,6 +749,96 @@ pub fn build_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> IrSlice {
     }
 }
 
+/// 가장 흔한 값(mode) 을 돌려준다. 동률 시 *먼저 등장한 값* 우선 — 옛 ts 원본 동작 정합.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::mode` 의 Rust 대응. 직렬화 가능한 임의 타입
+/// 을 받아 *JSON 문자열* 키로 빈도 카운트 — `f64` 처럼 `Hash` 가 없는 타입도 지원하기 위함.
+/// 직렬화 실패한 항목은 *조용히 무시* (carbon copy 가 NaN 등 비정상 값일 가능성을 차단).
+fn mode<T: Clone + serde::Serialize>(arr: &[T]) -> Option<T> {
+    if arr.is_empty() {
+        return None;
+    }
+    let mut counts: HashMap<String, (T, usize)> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for v in arr {
+        let k = match serde_json::to_string(v) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let entry = counts.entry(k.clone()).or_insert_with(|| {
+            order.push(k.clone());
+            (v.clone(), 0)
+        });
+        entry.1 += 1;
+    }
+    // count 가 큰 것 우선, 동률이면 *먼저 등장한 순서* (order 인덱스가 작은 것) 우선.
+    order
+        .iter()
+        .enumerate()
+        .map(|(idx, k)| {
+            let (val, cnt) = counts.get(k).unwrap();
+            (idx, val.clone(), *cnt)
+        })
+        .max_by(|(ia, _, ca), (ib, _, cb)| ca.cmp(cb).then(ib.cmp(ia)))
+        .map(|(_, v, _)| v)
+}
+
+/// 문서 전체 paragraph 를 순회해 가장 흔한 font-size/font-name 으로 defaults 산정.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::computeDocDefaults` 의 Rust 대응. font-size 와
+/// font-name 만 *통계 산정* — 나머지 키 (bold/italic/color 등) 는 *상수 기본값* 으로 고정한다.
+/// ts 원본도 동일 패턴 (`charPropsToRunStyle` 기본값을 그대로 박아넣음).
+fn compute_doc_defaults(ir: &IrSlice) -> DocDefaults {
+    let mut sizes: Vec<f64> = Vec::new();
+    let mut fonts: Vec<String> = Vec::new();
+
+    fn visit(p: &IrParagraph, sizes: &mut Vec<f64>, fonts: &mut Vec<String>) {
+        match p {
+            IrParagraph::Text(t) => {
+                for r in &t.runs {
+                    if let Some(s) = r.style.font_size {
+                        sizes.push(s);
+                    }
+                    if let Some(f) = &r.style.font_name {
+                        fonts.push(f.clone());
+                    }
+                }
+            }
+            IrParagraph::Table(tt) => {
+                for cell in &tt.cells {
+                    for inner in &cell.paragraphs {
+                        visit(inner, sizes, fonts);
+                    }
+                }
+            }
+        }
+    }
+    for p in &ir.paragraphs {
+        visit(p, &mut sizes, &mut fonts);
+    }
+
+    DocDefaults {
+        run: RunStyle {
+            bold: Some(false),
+            italic: Some(false),
+            underline: Some(false),
+            strikethrough: Some(false),
+            color: Some("#000000".into()),
+            highlight: None,
+            char_spacing: Some(0),
+            char_width: Some(100),
+            vertical_align: Some("baseline".into()),
+            font_size: Some(mode(&sizes).unwrap_or(10.0)),
+            font_name: Some(mode(&fonts).unwrap_or_else(|| "맑은 고딕".into())),
+        },
+        paragraph: ParagraphStyle {
+            align: Some("left".into()),
+            indent: Some(0),
+            line_height: Some(160),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1457,6 +1548,44 @@ mod tests {
         for p in &slice.paragraphs {
             assert!(matches!(p, IrParagraph::Text(_)));
         }
+    }
+
+    #[test]
+    fn mode_returns_most_frequent_f64() {
+        let v: Vec<f64> = vec![1.0, 2.0, 2.0, 3.0];
+        assert_eq!(mode(&v), Some(2.0));
+        let empty: Vec<f64> = vec![];
+        assert_eq!(mode(&empty), None);
+    }
+
+    #[test]
+    fn mode_ties_keep_first_string() {
+        let v: Vec<String> = vec!["a".into(), "b".into(), "a".into(), "b".into()];
+        assert_eq!(mode(&v), Some("a".into()));
+    }
+
+    #[test]
+    fn compute_doc_defaults_from_empty_slice() {
+        let slice = IrSlice {
+            doc_meta: IrDocMeta {
+                edit_session_id: "t".into(),
+                page: 1,
+                total_pages: 1,
+                anchor: IrAnchor {
+                    sec: 0,
+                    para_start: 0,
+                    para_end: 0,
+                },
+            },
+            paragraphs: vec![],
+        };
+        let d = compute_doc_defaults(&slice);
+        assert_eq!(d.run.bold, Some(false));
+        assert_eq!(d.run.color.as_deref(), Some("#000000"));
+        assert_eq!(d.run.font_size, Some(10.0));
+        assert_eq!(d.run.font_name.as_deref(), Some("맑은 고딕"));
+        assert_eq!(d.paragraph.align.as_deref(), Some("left"));
+        assert_eq!(d.paragraph.line_height, Some(160));
     }
 
     #[test]
