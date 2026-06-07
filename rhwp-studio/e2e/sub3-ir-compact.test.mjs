@@ -124,6 +124,27 @@ async function main() {
   assert.equal(raw.mode, 'raw', 'raw.mode !== raw');
   assert.ok(Array.isArray(raw.paragraphs), 'raw.paragraphs 배열 없음');
 
+  // 7) Sub-3 v2 — page query 시나리오.
+  //   본 e2e 문서는 짧아 보통 1 페이지지만, page=0 은 응답 형식만 동일하면 OK.
+  //   getIrSlice helper 가 page 파라미터를 모르므로 직접 fetch.
+  const BASE_URL = process.env.RHWP_SERVER_URL || 'http://127.0.0.1:7710';
+  const getWithPage = async (page) => {
+    const resp = await fetch(
+      `${BASE_URL}/sessions/${encodeURIComponent(fid)}/ir-slice?mode=compact&page=${page}`,
+    );
+    if (!resp.ok) throw new Error(`getWithPage 실패 ${resp.status}: ${await resp.text()}`);
+    return resp.json();
+  };
+
+  const page0 = await getWithPage(0);
+  assert.ok(page0.defaults, 'page=0 응답에 defaults 누락');
+  assert.ok(Array.isArray(page0.paragraphs), 'page=0 응답의 paragraphs 배열 아님');
+
+  // 8) page=999 (범위 외) — 서버 측 fallback 으로 sec/para_start/para_end 폴백 (응답 형식 동일).
+  const pageOOB = await getWithPage(999);
+  assert.ok(pageOOB.defaults, 'page=999 응답에 defaults 누락 (fallback 동작 일관성)');
+  assert.ok(Array.isArray(pageOOB.paragraphs), 'page=999 응답의 paragraphs 배열 아님');
+
   console.log('✓ sub3-ir-compact PASS');
 }
 
