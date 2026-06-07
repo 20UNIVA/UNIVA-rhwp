@@ -8,7 +8,7 @@
 
 #![allow(dead_code)]  // 구현 진행 중 일시 허용. Phase 5 종료 시 제거.
 
-use rhwp::model::style::{Alignment, CharShape, UnderlineType};
+use rhwp::model::style::{Alignment, CharShape, LineSpacingType, ParaShape, UnderlineType};
 use rhwp::model::ColorRef;
 use rhwp::renderer::style_resolver::{primary_font_name, ResolvedCharStyle};
 use serde::Serialize;
@@ -101,6 +101,24 @@ fn char_shape_to_run_style(
         vertical_align: Some(
             vertical_align_to_str(cs.subscript, cs.superscript).to_string(),
         ),
+    }
+}
+
+/// `ParaShape` → `ParagraphStyle`.
+///
+/// 옛 TypeScript 원본 `style-map.ts::paraPropsToParaStyle` 의 Rust 대응. 정렬/들여쓰기 두
+/// 키는 항상 전달, *줄 간격은 `Percent` 타입일 때만* 전달 — 다른 타입 (Fixed/SpaceOnly/
+/// Minimum) 은 HWP 내부 단위(HWPUNIT)·줄높이 배수가 섞여 모델 입력 단위가 통일되지 않으므로,
+/// init.md spec 은 *Percent 만* 채택하기로 한 결정 (ts 원본 `style-map.ts:62` 도 동일 분기).
+fn para_shape_to_para_style(ps: &ParaShape) -> ParagraphStyle {
+    ParagraphStyle {
+        align: Some(alignment_to_str(ps.alignment).to_string()),
+        indent: Some(ps.indent),
+        line_height: if matches!(ps.line_spacing_type, LineSpacingType::Percent) {
+            Some(ps.line_spacing)
+        } else {
+            None
+        },
     }
 }
 
@@ -445,6 +463,60 @@ mod tests {
 
         assert_eq!(kor.font_name.as_deref(), Some("함초롬돋움"));
         assert_eq!(eng.font_name.as_deref(), Some("Calibri"));
+    }
+
+    #[test]
+    fn para_style_align_center_percent_160() {
+        use rhwp::model::style::{Alignment, LineSpacingType, ParaShape};
+        let ps = ParaShape {
+            alignment: Alignment::Center,
+            indent: 0,
+            line_spacing: 160,
+            line_spacing_type: LineSpacingType::Percent,
+            ..Default::default()
+        };
+        let s = para_shape_to_para_style(&ps);
+        assert_eq!(s.align.as_deref(), Some("center"));
+        assert_eq!(s.indent, Some(0));
+        assert_eq!(s.line_height, Some(160));
+    }
+
+    #[test]
+    fn para_style_line_height_omitted_when_not_percent() {
+        use rhwp::model::style::{LineSpacingType, ParaShape};
+        let ps = ParaShape {
+            line_spacing: 1000,
+            line_spacing_type: LineSpacingType::Fixed,
+            ..Default::default()
+        };
+        let s = para_shape_to_para_style(&ps);
+        // Fixed/SpaceOnly/Minimum 은 모델 입력 단위가 통일되지 않아 omit.
+        assert!(s.line_height.is_none());
+
+        let ps2 = ParaShape {
+            line_spacing: 100,
+            line_spacing_type: LineSpacingType::Minimum,
+            ..Default::default()
+        };
+        let s2 = para_shape_to_para_style(&ps2);
+        assert!(s2.line_height.is_none());
+    }
+
+    #[test]
+    fn para_style_indent_negative_outdent() {
+        use rhwp::model::style::{Alignment, LineSpacingType, ParaShape};
+        // 내어쓰기(음수 indent) — i32 로 그대로 전달.
+        let ps = ParaShape {
+            alignment: Alignment::Left,
+            indent: -1500,
+            line_spacing: 200,
+            line_spacing_type: LineSpacingType::Percent,
+            ..Default::default()
+        };
+        let s = para_shape_to_para_style(&ps);
+        assert_eq!(s.align.as_deref(), Some("left"));
+        assert_eq!(s.indent, Some(-1500));
+        assert_eq!(s.line_height, Some(200));
     }
 
     #[test]
