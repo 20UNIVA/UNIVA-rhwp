@@ -344,8 +344,14 @@ pub struct CompactIrSlice {
 /// 의 char_shape_id_at 과 ResolvedCharStyle 을 합쳐 `char_shape_to_run_style` 호출 결과를
 /// 넣는다.
 ///
-/// 빈 문단 (len=0) 에 대해서는 `char_offset=0, length=0, text="", style=default` 1건을
+/// 빈 문단 (len=0) 에 대해서는 `char_offset=0, length=0, text="", style=style_at(0)` 1건을
 /// 반환 — IR slice 가 빈 문단도 "1개 run" 으로 표현하기로 한 init.md spec 정합.
+///
+/// Sub-4 v3 — 빈 문단의 placeholder run style 을 `RunStyle::default()` 대신 *paragraph
+/// 의 첫 char_shape* 로 채운다. 빈 셀이라도 셀에 묶여 있는 char_shape (색·글자 크기 등)
+/// 가 응답에 드러나, 모델이 *이 자리에 글자를 넣었을 때 어떤 스타일로 보일지* 미리
+/// 확인 가능. 이전 동작은 `replace_cell_runs` 호출 후 텍스트가 갑자기 셀의 기존 색으로
+/// 그려져 모델이 진단하기 어려웠다.
 fn collect_runs<F>(text: &str, len: usize, mut style_at: F) -> Vec<IrRun>
 where
     F: FnMut(usize) -> RunStyle,
@@ -355,7 +361,7 @@ where
             char_offset: 0,
             length: 0,
             text: String::new(),
-            style: RunStyle::default(),
+            style: style_at(0),
         }];
     }
     let chars: Vec<char> = text.chars().collect();
@@ -1794,6 +1800,25 @@ mod tests {
         assert_eq!(runs[0].length, 0);
         assert_eq!(runs[0].char_offset, 0);
         assert!(runs[0].text.is_empty());
+    }
+
+    #[test]
+    fn collect_runs_empty_paragraph_takes_style_from_callback() {
+        // Sub-4 v3 — 빈 paragraph 라도 style_at(0) 호출 결과를 placeholder run 의
+        // style 로 사용해야 한다. 빈 셀에 묶인 char_shape (빨간색 등) 가 응답에 노출되도록.
+        let red_style = RunStyle {
+            color: Some("#FF0000".into()),
+            bold: Some(true),
+            ..Default::default()
+        };
+        let captured_red = red_style.clone();
+        let runs = collect_runs("", 0, move |off| {
+            assert_eq!(off, 0, "빈 paragraph 에 대해 style_at 은 offset 0 으로 호출");
+            captured_red.clone()
+        });
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].length, 0);
+        assert_eq!(runs[0].style, red_style, "callback 이 반환한 style 이 placeholder 에 박혀야");
     }
 
     #[test]

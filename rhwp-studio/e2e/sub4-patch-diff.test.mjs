@@ -117,6 +117,31 @@ record('insert_table → replace_cell_runs 가 cell target 으로 압축됨', as
   assert.equal(typeof t2.body.diff.location.cell.cellIdx, 'number');
 });
 
+record('빈 셀의 before 응답에 runs[0].style 이 항상 노출됨 (Sub-4 v3)', async () => {
+  // 이전엔 빈 paragraph 의 compact 직렬화가 placeholder run 의 style 을 *문서 defaults
+  // 와 같다* 판정해 omit — 셀에 묶인 char_shape (색 등) 가 응답에서 사라져 모델이 "왜 갑자기
+  // 빨간색이지?" 라고 혼란을 겪었음. Sub-4 v3 는 빈 paragraph 라도 paragraph 첫 char_shape
+  // 를 placeholder style 로 채워, runs 키 자체가 응답에 *항상 존재* 하게 보장.
+  const fid = newFileId('sub4-empty-cell-style');
+  await createSession(fid);
+  await postWorkbench(fid, 'insert_table', {
+    section: 0, insert_after_para: 0, rows: 2, cols: 2,
+  });
+  // 빈 셀 상태에서 replace_cell_runs 호출 → before.cell.paragraphs[0].runs 가 정의돼 있어야.
+  const { body } = await postWorkbench(fid, 'replace_cell_runs', {
+    section: 0, table_para: 1, row: 0, col: 0, cell_para: 0,
+    runs: [{ text: 'A', style: {} }],
+  });
+  const beforePara = body.diff.before.cell.paragraphs[0];
+  assert.ok(
+    Array.isArray(beforePara.runs),
+    `빈 셀의 before 에도 runs 키가 있어야 — got ${JSON.stringify(beforePara)}`,
+  );
+  assert.ok(beforePara.runs.length >= 1, 'placeholder run 1건 이상');
+  // run 의 style 키 자체 존재 검증 (style omit 가능하지만 runs 키는 살아있음).
+  assert.ok('style' in beforePara.runs[0] || beforePara.runs[0].text === '', 'run 형식 유지');
+});
+
 record('큰 표 셀 1개 편집 응답 크기가 표 크기와 무관하게 작음', async () => {
   // 10x10 = 100 셀. 표 전체 IR 두 번 (before+after) 이면 수만 byte 이지만,
   // cell target 압축 후엔 1KB 미만이어야 한다.
