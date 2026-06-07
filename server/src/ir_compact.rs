@@ -943,6 +943,117 @@ fn compact_text(p: &IrTextParagraph, defaults: &DocDefaults) -> serde_json::Valu
     serde_json::Value::Object(out)
 }
 
+/// 4면 모두 동일한 spec 이면 `all` 1키로 축약. 4면 모두 None 이면 None.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactBorder` 의 Rust 대응. 동일 판정은
+/// `Option<CellBorderSpec>` 의 `PartialEq` — 4면 모두 `Some` 이고 값이 같아야 `all` 적용.
+fn compact_border(border: &CellBorder) -> Option<CellBorder> {
+    let sides = [&border.left, &border.right, &border.top, &border.bottom];
+    let first_some = sides[0].as_ref();
+    let all_same = first_some.is_some() && sides.iter().all(|s| s.as_ref() == first_some);
+    if all_same {
+        return Some(CellBorder {
+            left: None,
+            right: None,
+            top: None,
+            bottom: None,
+            all: first_some.cloned(),
+        });
+    }
+    if sides.iter().any(|s| s.is_some()) {
+        Some(CellBorder {
+            left: border.left.clone(),
+            right: border.right.clone(),
+            top: border.top.clone(),
+            bottom: border.bottom.clone(),
+            all: None,
+        })
+    } else {
+        None
+    }
+}
+
+/// 셀 한 칸을 compact JSON 으로 변환. border 만 4면 축약·내부 문단은 compact_text/compact_table 재귀.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactCell` 의 Rust 대응. 셀의 style 중 *border*
+/// 만 압축 대상 — 다른 키 (bgcolor/width/height/vertical-align) 는 그대로 직렬화.
+fn compact_cell(cell: &IrTableCell, defaults: &DocDefaults) -> serde_json::Value {
+    let mut out = serde_json::Map::new();
+    out.insert("row".into(), serde_json::json!(cell.row));
+    out.insert("col".into(), serde_json::json!(cell.col));
+    if let Some(rs) = cell.row_span {
+        out.insert("row_span".into(), serde_json::json!(rs));
+    }
+    if let Some(cs) = cell.col_span {
+        out.insert("col_span".into(), serde_json::json!(cs));
+    }
+    // border 만 compact 처리한 사본 — 나머지 키는 원본 그대로.
+    let mut style_clone = cell.style.clone();
+    if let Some(b) = &cell.style.border {
+        style_clone.border = compact_border(b);
+    }
+    if let Ok(s_val) = serde_json::to_value(&style_clone) {
+        if let Some(obj) = s_val.as_object() {
+            if !obj.is_empty() {
+                out.insert("style".into(), s_val);
+            }
+        }
+    }
+    let paras: Vec<serde_json::Value> = cell
+        .paragraphs
+        .iter()
+        .map(|p| match p {
+            IrParagraph::Text(t) => compact_text(t, defaults),
+            IrParagraph::Table(tt) => compact_table(tt, defaults),
+        })
+        .collect();
+    out.insert("paragraphs".into(), serde_json::Value::Array(paras));
+    serde_json::Value::Object(out)
+}
+
+/// 표 한 개를 compact JSON 으로 변환. 셀은 `compact_cell` 로 재귀.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactTable` 의 Rust 대응.
+fn compact_table(p: &IrTableParagraph, defaults: &DocDefaults) -> serde_json::Value {
+    serde_json::json!({
+        "id": p.id,
+        "sec": p.sec,
+        "para": p.para,
+        "type": "table",
+        "rows": p.rows,
+        "cols": p.cols,
+        "cells": p.cells.iter().map(|c| compact_cell(c, defaults)).collect::<Vec<_>>(),
+    })
+}
+
+/// `IrSlice` → `CompactIrSlice` (defaults 박스 + 압축된 paragraphs).
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactIRSlice` 의 Rust 대응. compute_doc_defaults
+/// 로 defaults 를 먼저 산정한 뒤, 각 paragraph 를 `compact_text` / `compact_table` 로 변환한다.
+pub fn compact_ir_slice(ir: IrSlice) -> CompactIrSlice {
+    let defaults = compute_doc_defaults(&ir);
+    let paragraphs: Vec<serde_json::Value> = ir
+        .paragraphs
+        .iter()
+        .map(|p| match p {
+            IrParagraph::Text(t) => compact_text(t, &defaults),
+            IrParagraph::Table(tt) => compact_table(tt, &defaults),
+        })
+        .collect();
+    CompactIrSlice {
+        doc_meta: ir.doc_meta,
+        paragraphs,
+        defaults,
+    }
+}
+
+/// `build_ir_slice` + `compact_ir_slice` 결합 — endpoint 가 호출할 진입 함수.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildCompactIRSlice` 의 Rust 대응.
+pub fn build_compact_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> CompactIrSlice {
+    compact_ir_slice(build_ir_slice(core, opts))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1777,6 +1888,50 @@ mod tests {
         assert!(v.get("text").is_none(), "styled run 은 runs 형태 유지");
         let runs = v["runs"].as_array().expect("runs array");
         assert_eq!(runs[0]["style"]["bold"], true);
+    }
+
+    #[test]
+    fn compact_ir_slice_blank_doc() {
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let slice = build_compact_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: None,
+            },
+        );
+        let v = serde_json::to_value(&slice).unwrap();
+        assert_eq!(v["defaults"]["run"]["bold"], false);
+        assert_eq!(v["defaults"]["run"]["color"], "#000000");
+        assert_eq!(v["doc_meta"]["anchor"]["sec"], 0);
+    }
+
+    #[test]
+    fn compact_border_4sides_same_to_all() {
+        let spec = CellBorderSpec {
+            width: Some(100),
+            color: Some("#000000".into()),
+            ..Default::default()
+        };
+        let b = CellBorder {
+            left: Some(spec.clone()),
+            right: Some(spec.clone()),
+            top: Some(spec.clone()),
+            bottom: Some(spec.clone()),
+            all: None,
+        };
+        let c = compact_border(&b).expect("border");
+        assert!(c.all.is_some());
+        assert!(c.left.is_none() && c.right.is_none() && c.top.is_none() && c.bottom.is_none());
+    }
+
+    #[test]
+    fn compact_border_4sides_none_returns_none() {
+        let b = CellBorder::default();
+        assert!(compact_border(&b).is_none());
     }
 
     #[test]
