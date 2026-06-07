@@ -19,6 +19,7 @@ mod events;
 mod ws;
 mod storage;
 mod store;
+mod ir_compact;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
