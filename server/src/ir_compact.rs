@@ -537,6 +537,116 @@ fn build_cell_paragraph(
     }
 }
 
+/// 셀 한 칸의 IR 표현을 빌드. `Control::Table` 이 아니거나 셀이 범위 밖이면 `None`.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::tryBuildCell` 의 Rust 대응. *셀의 4면 테두리/
+/// 배경* 은 `Cell::border_fill_id` 가 가리키는 `BorderFill` 항목에 있고, style_resolver 가 이미
+/// 풀어둔 `ResolvedBorderStyle` 을 `core.styles().border_styles` 에서 *1-indexed* 로 조회한다
+/// (`border_fill_id=1` → `border_styles[0]`). 본체 `layout/tests.rs:675` 의 invariant 그대로.
+/// `border_fill_id=0` 인 셀은 *배경·테두리 모두 미설정* 으로 보고 `None` 을 전달.
+fn try_build_cell(
+    core: &DocumentCore,
+    sec: usize,
+    parent_para: usize,
+    control_idx: usize,
+    cell_idx: usize,
+) -> Option<IrTableCell> {
+    let parent = core
+        .document()
+        .sections
+        .get(sec)?
+        .paragraphs
+        .get(parent_para)?;
+    let table = match parent.controls.get(control_idx)? {
+        rhwp::model::control::Control::Table(t) => t,
+        _ => return None,
+    };
+    let cell = table.cells.get(cell_idx)?;
+
+    let row = cell.row;
+    let col = cell.col;
+    let row_span = cell.row_span;
+    let col_span = cell.col_span;
+
+    // border_fill_id 가 0 이면 BorderFill 참조 없음 → border_style = None.
+    // 1-indexed: id=1 이 border_styles[0]. saturating_sub(1) 로 안전 변환.
+    let border_style = if cell.border_fill_id > 0 {
+        core.styles()
+            .border_styles
+            .get((cell.border_fill_id - 1) as usize)
+    } else {
+        None
+    };
+    let style = cell_to_cell_style(cell, border_style);
+
+    let mut paragraphs = Vec::with_capacity(cell.paragraphs.len());
+    for cp in 0..cell.paragraphs.len() {
+        paragraphs.push(IrParagraph::Text(build_cell_paragraph(
+            core,
+            sec,
+            parent_para,
+            control_idx,
+            cell_idx,
+            cp,
+            row,
+            col,
+        )));
+    }
+
+    Some(IrTableCell {
+        row,
+        col,
+        // span = 1 은 spec 의 *기본값* — 키 자체를 omit. span > 1 일 때만 채움.
+        row_span: if row_span > 1 { Some(row_span) } else { None },
+        col_span: if col_span > 1 { Some(col_span) } else { None },
+        style,
+        paragraphs,
+    })
+}
+
+/// 본문 문단의 `controls[control_idx]` 가 표인 경우 표 한 개의 IR 빌드.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildTableParagraph` 의 Rust 대응. 셀 순회는
+/// `Table::cells` 의 *행 우선 순서* 그대로 — `Table::rebuild_grid` 가 sort 후 보장.
+fn build_table_paragraph(
+    core: &DocumentCore,
+    sec: usize,
+    para: usize,
+    control_idx: usize,
+) -> Option<IrTableParagraph> {
+    let parent = core
+        .document()
+        .sections
+        .get(sec)?
+        .paragraphs
+        .get(para)?;
+    let table = match parent.controls.get(control_idx)? {
+        rhwp::model::control::Control::Table(t) => t,
+        _ => return None,
+    };
+
+    let rows = table.row_count;
+    let cols = table.col_count;
+    let cell_count = table.cells.len();
+
+    let mut cells = Vec::with_capacity(cell_count);
+    for cell_idx in 0..cell_count {
+        if let Some(c) = try_build_cell(core, sec, para, control_idx, cell_idx) {
+            cells.push(c);
+        }
+    }
+
+    Some(IrTableParagraph {
+        id: format!("p_{}_{}", sec, para),
+        sec,
+        para,
+        kind: "table",
+        rows,
+        cols,
+        cells,
+    })
+}
+
 /// `build_ir_slice` 의 입력 파라미터.
 ///
 /// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildIRSlice` 의 옵션 객체와 정합. `sec`
@@ -1078,6 +1188,136 @@ mod tests {
         assert_eq!(locator.row, 5);
         assert_eq!(locator.col, 7);
         assert_eq!(locator.cell_para, 0);
+    }
+
+    #[test]
+    fn build_table_paragraph_none_when_no_table() {
+        // 표 control 이 없는 본문 문단 — build_table_paragraph 는 None 반환.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let result = build_table_paragraph(&core, 0, 0, 0);
+        assert!(result.is_none(), "표가 없으면 None");
+    }
+
+    #[test]
+    fn try_build_cell_none_when_no_table() {
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let result = try_build_cell(&core, 0, 0, 0, 0);
+        assert!(result.is_none(), "표가 없으면 try_build_cell 도 None");
+    }
+
+    #[test]
+    fn build_table_paragraph_with_mock_table() {
+        // blank hwpx 로드 후 본문 첫 문단에 *직접* Control::Table 를 끼워넣어 positive path 검증.
+        // 본체 mutator (insert_table_native 등) 의존을 피하고 *IR 빌드 알고리즘만* 검증.
+        use rhwp::model::control::Control;
+        use rhwp::model::table::{Cell, Table};
+
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let mut core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+
+        // 2x2 표 mock — 4 cells, row/col 0..2 직접 채움.
+        let mut table = Table {
+            row_count: 2,
+            col_count: 2,
+            ..Default::default()
+        };
+        for r in 0..2u16 {
+            for c in 0..2u16 {
+                table.cells.push(Cell {
+                    col: c,
+                    row: r,
+                    col_span: 1,
+                    row_span: 1,
+                    width: 1000,
+                    height: 500,
+                    border_fill_id: 0, // 테두리·배경 미설정 — border_style = None 경로 검증
+                    paragraphs: vec![rhwp::model::paragraph::Paragraph::default()],
+                    ..Default::default()
+                });
+            }
+        }
+        // 병합 셀이 없으니 row_span = 1 — IR 측에서 키 자체 omit.
+        // 첫 문단의 controls 에 표 끼워넣기.
+        // blank hwpx 의 첫 문단에는 이미 섹션·단 정의 등 *비-표 control* 이 있다.
+        // 표는 controls 끝에 push 되므로 *제일 마지막 인덱스* 가 표.
+        core.document_mut().sections[0].paragraphs[0]
+            .controls
+            .push(Control::Table(Box::new(table)));
+        let ctrl_idx = core.document().sections[0].paragraphs[0].controls.len() - 1;
+
+        let result =
+            build_table_paragraph(&core, 0, 0, ctrl_idx).expect("표 있음 → Some");
+        assert_eq!(result.kind, "table");
+        assert_eq!(result.id, "p_0_0");
+        assert_eq!(result.sec, 0);
+        assert_eq!(result.para, 0);
+        assert_eq!(result.rows, 2);
+        assert_eq!(result.cols, 2);
+        assert_eq!(result.cells.len(), 4);
+
+        // 첫 셀: row=0, col=0, span 키 omit, 문단 1건.
+        let c00 = &result.cells[0];
+        assert_eq!(c00.row, 0);
+        assert_eq!(c00.col, 0);
+        assert!(c00.row_span.is_none(), "span=1 → 키 omit");
+        assert!(c00.col_span.is_none());
+        assert_eq!(c00.paragraphs.len(), 1);
+        // 셀 안 첫 문단이 Text 타입이며 cell_locator 가 채워졌는지.
+        match &c00.paragraphs[0] {
+            IrParagraph::Text(t) => {
+                assert_eq!(t.para, -1);
+                // id 형식: p_{sec}_{table_para}_c{ctrl_idx}_{cell_idx}_{cell_para}
+                assert_eq!(t.id, format!("p_0_0_c{}_0_0", ctrl_idx));
+                let loc = t.cell_locator.as_ref().expect("locator");
+                assert_eq!(loc.row, 0);
+                assert_eq!(loc.col, 0);
+            }
+            _ => panic!("셀 안 문단은 Text 여야 함"),
+        }
+        // 마지막 셀 (row=1, col=1) — 셀 순서는 행 우선.
+        let c11 = &result.cells[3];
+        assert_eq!(c11.row, 1);
+        assert_eq!(c11.col, 1);
+    }
+
+    #[test]
+    fn try_build_cell_with_row_span() {
+        // row_span > 1 인 셀 — IR 측 row_span 키가 채워지는지.
+        use rhwp::model::control::Control;
+        use rhwp::model::table::{Cell, Table};
+
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let mut core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+
+        let mut table = Table {
+            row_count: 2,
+            col_count: 1,
+            ..Default::default()
+        };
+        // 단일 병합 셀 (row_span=2, col_span=1).
+        table.cells.push(Cell {
+            col: 0,
+            row: 0,
+            col_span: 1,
+            row_span: 2,
+            width: 1000,
+            height: 1000,
+            border_fill_id: 0,
+            paragraphs: vec![rhwp::model::paragraph::Paragraph::default()],
+            ..Default::default()
+        });
+        core.document_mut().sections[0].paragraphs[0]
+            .controls
+            .push(Control::Table(Box::new(table)));
+        // blank hwpx 의 첫 문단에는 비-표 control 이 이미 있으므로 *끝에 push 된* 표는
+        // 마지막 인덱스. build_table_paragraph_with_mock_table 테스트와 동일 fix.
+        let ctrl_idx = core.document().sections[0].paragraphs[0].controls.len() - 1;
+
+        let cell = try_build_cell(&core, 0, 0, ctrl_idx, 0).expect("cell 0");
+        assert_eq!(cell.row_span, Some(2));
+        assert!(cell.col_span.is_none(), "col_span=1 → 키 omit");
     }
 
     #[test]
