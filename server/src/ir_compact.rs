@@ -8,8 +8,9 @@
 
 #![allow(dead_code)]  // 구현 진행 중 일시 허용. Phase 5 종료 시 제거.
 
-use rhwp::model::style::Alignment;
+use rhwp::model::style::{Alignment, CharShape, UnderlineType};
 use rhwp::model::ColorRef;
+use rhwp::renderer::style_resolver::{primary_font_name, ResolvedCharStyle};
 use serde::Serialize;
 
 /// `ColorRef` (0x00BBGGRR `u32`) → CSS hex 문자열 `"#RRGGBB"`.
@@ -49,6 +50,57 @@ fn vertical_align_to_str(subscript: bool, superscript: bool) -> &'static str {
         "super"
     } else {
         "baseline"
+    }
+}
+
+/// `ResolvedCharStyle` + raw `CharShape` 의 두 짝 → `RunStyle` 평탄화.
+///
+/// 옛 TypeScript 원본 `rhwp-studio/src/llm-replay/style-map.ts::charPropsToRunStyle` 의
+/// Rust 대응. *resolved* 측 (style_resolver 가 폰트 치환·언어별 폰트 풀이까지 마친 결과) 에
+/// bold/italic/색·언어별 폰트 이름이 있고, *raw* 측 (`doc_info.char_shapes[id]`) 에는
+/// 변환 전 원본 HWPUNIT 크기 (`base_size`) 가 남아있다. ts 의 `p.fontSize * 0.01` 정합 위해
+/// `base_size / 100.0` 로 pt 단위 환산.
+///
+/// `lang_idx` 는 `detect_lang_category(ch)` 가 반환한 7개 언어 카테고리 인덱스 — 한국어=0/
+/// 영어=1/한자=2/일본어=3/기타=4/기호=5/사용자=6. 언어별 폰트가 비어있으면 한국어로 폴백.
+fn char_shape_to_run_style(
+    cs: &ResolvedCharStyle,
+    raw_cs: &CharShape,
+    lang_idx: usize,
+) -> RunStyle {
+    // 언어별 폰트 이름. style_resolver 는 한컴 치환 체인을 평탄화한 *최종* 이름을 보유.
+    let font_family_raw = cs.font_family_for_lang(lang_idx);
+    let font_family = primary_font_name(font_family_raw).to_string();
+
+    // 음영(형광펜) 색. resolved 의 `shade_color` 는 0x00FFFFFF (흰색=없음) 가 sentinel.
+    // ts 원본은 `shadeColor` 가 없으면 키 자체를 생략 — `Option` 으로 표현.
+    let highlight = if cs.shade_color == 0x00FFFFFF {
+        None
+    } else {
+        Some(color_ref_to_css(cs.shade_color))
+    };
+
+    // 자간·장평 — *raw* CharShape 의 한국어(=인덱스 0) 값을 정수 그대로 전달.
+    // resolved 측은 이미 px·비율로 환산되어 있어 모델 입력으로는 부적합 (init.md spec 은
+    // HWP 원본 단위 정수).
+    let char_spacing = raw_cs.spacings.first().copied().unwrap_or(0) as i32;
+    let char_width = raw_cs.ratios.first().copied().unwrap_or(100) as i32;
+
+    RunStyle {
+        bold: Some(cs.bold),
+        italic: Some(cs.italic),
+        // resolved 의 `underline` 은 `UnderlineType` enum — None 외엔 모두 underline=true.
+        underline: Some(!matches!(cs.underline, UnderlineType::None)),
+        strikethrough: Some(cs.strikethrough),
+        color: Some(color_ref_to_css(cs.text_color)),
+        highlight,
+        font_size: Some((raw_cs.base_size as f64) / 100.0),
+        font_name: Some(font_family),
+        char_spacing: Some(char_spacing),
+        char_width: Some(char_width),
+        vertical_align: Some(
+            vertical_align_to_str(cs.subscript, cs.superscript).to_string(),
+        ),
     }
 }
 
@@ -287,6 +339,112 @@ mod tests {
         // 검정.
         let black: rhwp::model::ColorRef = 0x00000000;
         assert_eq!(color_ref_to_css(black), "#000000");
+    }
+
+    #[test]
+    fn run_style_from_char_shape_bold_size() {
+        use rhwp::model::style::{CharShape, UnderlineType};
+        use rhwp::renderer::style_resolver::ResolvedCharStyle;
+
+        // resolved: bold + 한국어 함초롬돋움.
+        let mut resolved = ResolvedCharStyle::default();
+        resolved.bold = true;
+        resolved.italic = false;
+        resolved.font_family = "함초롬돋움".into();
+        resolved.font_families = vec![
+            "함초롬돋움".into(),
+            "Calibri".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ];
+        resolved.text_color = 0x000000FF; // 빨강 #FF0000 (BGR 순서로 R=0xFF 가 low byte)
+        resolved.shade_color = 0x00FFFFFF; // sentinel — highlight 없음
+        resolved.underline = UnderlineType::None;
+        resolved.strikethrough = false;
+        resolved.subscript = false;
+        resolved.superscript = false;
+
+        // raw: base_size=2400 (= 24pt), 한국어 자간 0, 장평 100.
+        let mut raw = CharShape::default();
+        raw.base_size = 2400;
+        raw.ratios = [100, 100, 100, 100, 100, 100, 100];
+        raw.spacings = [0, 0, 0, 0, 0, 0, 0];
+
+        let run_style = char_shape_to_run_style(&resolved, &raw, 0);
+
+        assert_eq!(run_style.bold, Some(true));
+        assert_eq!(run_style.italic, Some(false));
+        assert_eq!(run_style.underline, Some(false));
+        assert_eq!(run_style.strikethrough, Some(false));
+        // 24pt = 2400 / 100.
+        assert_eq!(run_style.font_size, Some(24.0));
+        assert_eq!(run_style.font_name.as_deref(), Some("함초롬돋움"));
+        assert_eq!(run_style.color.as_deref(), Some("#FF0000"));
+        // shade_color 가 sentinel 이면 키 자체 미설정.
+        assert!(run_style.highlight.is_none());
+        assert_eq!(run_style.char_spacing, Some(0));
+        assert_eq!(run_style.char_width, Some(100));
+        assert_eq!(run_style.vertical_align.as_deref(), Some("baseline"));
+    }
+
+    #[test]
+    fn run_style_underline_subscript_highlight() {
+        use rhwp::model::style::{CharShape, UnderlineType};
+        use rhwp::renderer::style_resolver::ResolvedCharStyle;
+
+        // 밑줄 + 아래첨자 + 형광펜(노랑).
+        let mut resolved = ResolvedCharStyle::default();
+        resolved.font_family = "맑은 고딕".into();
+        resolved.font_families = vec!["맑은 고딕".into(); 7];
+        resolved.underline = UnderlineType::Bottom;
+        resolved.subscript = true;
+        resolved.shade_color = 0x0007C1FF; // #FFC107 (BGR 표기로 B=07 G=C1 R=FF)
+        resolved.text_color = 0;
+
+        let mut raw = CharShape::default();
+        raw.base_size = 1100; // 11pt
+        raw.ratios = [100; 7];
+        raw.spacings = [0; 7];
+
+        let run_style = char_shape_to_run_style(&resolved, &raw, 0);
+
+        assert_eq!(run_style.underline, Some(true));
+        assert_eq!(run_style.vertical_align.as_deref(), Some("sub"));
+        assert_eq!(run_style.highlight.as_deref(), Some("#FFC107"));
+        assert_eq!(run_style.font_size, Some(11.0));
+    }
+
+    #[test]
+    fn run_style_lang_specific_font() {
+        use rhwp::model::style::CharShape;
+        use rhwp::renderer::style_resolver::ResolvedCharStyle;
+
+        // 영어(1) 카테고리 폰트가 한국어와 다른 경우, lang_idx=1 로 호출하면 영어 폰트가 들어와야.
+        let mut resolved = ResolvedCharStyle::default();
+        resolved.font_family = "함초롬돋움".into();
+        resolved.font_families = vec![
+            "함초롬돋움".into(),
+            "Calibri".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ];
+
+        let mut raw = CharShape::default();
+        raw.base_size = 1000;
+        raw.ratios = [100; 7];
+        raw.spacings = [0; 7];
+
+        let kor = char_shape_to_run_style(&resolved, &raw, 0);
+        let eng = char_shape_to_run_style(&resolved, &raw, 1);
+
+        assert_eq!(kor.font_name.as_deref(), Some("함초롬돋움"));
+        assert_eq!(eng.font_name.as_deref(), Some("Calibri"));
     }
 
     #[test]
