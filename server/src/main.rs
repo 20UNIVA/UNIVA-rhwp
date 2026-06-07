@@ -500,26 +500,26 @@ pub(crate) async fn apply_op_with_stash(
     let op_json_str = op_json.to_string();
 
     // before 캡처 + export_hwpx (snapshot stash 용) — 같은 lock 안에서 처리.
-    let (before_blob, before_slice) = {
+    let (before_blob, before_target) = {
         let s = session.lock().unwrap();
         let blob = s
             .core
             .export_hwpx_native()
             .map_err(|e| AppError::internal(format!("export_hwpx_native: {e}")))?;
-        let slice = ir_compact::capture_before_slice(&s.core, &range);
-        (blob, slice)
+        let target = ir_compact::capture_before_target(&s.core, &range);
+        (blob, target)
     };
 
     // 적용 + after 캡처. apply 가 실패하면 PatchDiff 없이 그대로 오류 전파.
-    let (seq, after_slice) = {
+    let (seq, after_target) = {
         let mut s = session.lock().unwrap();
         s.core
             .apply_edit_op(&op)
             .map_err(|e| AppError::unprocessable(format!("apply_edit_op: {e}")))?;
         let seq = s.next_seq;
         s.next_seq += 1;
-        let slice = ir_compact::capture_after_slice(&s.core, &range);
-        (seq, slice)
+        let target = ir_compact::capture_after_target(&s.core, &range);
+        (seq, target)
     };
 
     state
@@ -535,7 +535,7 @@ pub(crate) async fn apply_op_with_stash(
         },
     );
 
-    let diff = ir_compact::build_patch_diff(&op_tag, &range, before_slice, after_slice);
+    let diff = ir_compact::build_patch_diff(&op_tag, &range, before_target, after_target);
     Ok((seq, Some(diff)))
 }
 

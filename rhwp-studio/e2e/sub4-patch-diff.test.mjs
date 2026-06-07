@@ -25,7 +25,7 @@ function record(name, fn) {
   TEST_RESULTS.push({ name, fn });
 }
 
-record('insert_text 응답에 diff 가 채워지고 changed=true', async () => {
+record('insert_text 응답에 diff 가 채워지고 paragraphs target 사용', async () => {
   const fid = newFileId('sub4-it');
   await createSession(fid);
   // insert_text 는 server 가 ops 분기 — diff 채워야 함.
@@ -39,10 +39,12 @@ record('insert_text 응답에 diff 가 채워지고 changed=true', async () => {
   assert.equal(body.diff.summary.changed, true, 'insert_text 는 changed=true 여야');
   assert.ok(
     body.diff.summary.afterTextLen >= body.diff.summary.beforeTextLen + 2,
-    `텍스트 길이 2 글자 증가해야 — before=${body.diff.summary.beforeTextLen}, after=${body.diff.summary.afterTextLen}`,
+    `텍스트 길이 2 글자 증가 — before=${body.diff.summary.beforeTextLen}, after=${body.diff.summary.afterTextLen}`,
   );
-  assert.equal(body.diff.location.section, 0);
-  assert.equal(body.diff.location.paraStartBefore, 0);
+  // 본문 편집 → paragraphs target.
+  assert.ok(body.diff.before.paragraphs, 'before.paragraphs 가 있어야');
+  assert.ok(body.diff.after.paragraphs, 'after.paragraphs 가 있어야');
+  assert.ok(body.diff.before.cell === undefined, 'cell 키는 없어야');
 });
 
 record('replace_runs 응답 diff.op 가 정확히 매핑', async () => {
@@ -76,20 +78,21 @@ record('insert_paragraph 응답 location.paraEndAfter 가 늘어남', async () =
   assert.equal(loc.paraEndAfter, 3, `after_end 가 0+1+2=3 이어야 — got ${loc.paraEndAfter}`);
 });
 
-record('insert_table → replace_cell_runs 로 cell focus 동작', async () => {
+record('insert_table → replace_cell_runs 가 cell target 으로 압축됨', async () => {
   const fid = newFileId('sub4-rcr');
   await createSession(fid);
-  // 먼저 표를 만들어 둔다.
+  // 먼저 표를 만들어 둔다 (insert_table 자체는 paragraphs target — cell focus 없음).
   const t1 = await postWorkbench(fid, 'insert_table', {
     section: 0, insert_after_para: 0, rows: 2, cols: 2,
   });
   assert.equal(t1.body.applied, 'ops');
   assert.ok(t1.body.diff, 'insert_table 도 diff 필요');
   assert.equal(t1.body.diff.op, 'insert_table');
+  assert.ok(t1.body.diff.after.paragraphs, 'insert_table 는 paragraphs target');
   // after = [0..2) — 원래 para + 새 표 para.
   assert.equal(t1.body.diff.location.paraEndAfter, 2);
 
-  // 표는 para index 1 에 위치 (insert_after_para=0 → para 1 추가).
+  // 셀 한 칸 변경 → cell target.
   const t2 = await postWorkbench(fid, 'replace_cell_runs', {
     section: 0, table_para: 1, row: 0, col: 0, cell_para: 0,
     runs: [{ text: '셀값', style: {} }],
@@ -97,13 +100,43 @@ record('insert_table → replace_cell_runs 로 cell focus 동작', async () => {
   assert.equal(t2.body.applied, 'ops');
   assert.ok(t2.body.diff, 'replace_cell_runs diff 필요');
   assert.equal(t2.body.diff.op, 'replace_cell_runs');
-  assert.ok(t2.body.diff.location.cell, 'cell focus 필요');
+  // cell target 검증.
+  assert.ok(t2.body.diff.before.cell, 'before.cell 가 있어야 (cell target)');
+  assert.ok(t2.body.diff.after.cell, 'after.cell 가 있어야');
+  assert.ok(t2.body.diff.before.paragraphs === undefined, 'paragraphs 키 없어야');
+  // cell 자체에 row/col/paragraphs 들어 있음.
+  assert.equal(t2.body.diff.after.cell.row, 0);
+  assert.equal(t2.body.diff.after.cell.col, 0);
+  assert.ok(Array.isArray(t2.body.diff.after.cell.paragraphs));
+  // location.cell 좌표.
+  assert.ok(t2.body.diff.location.cell, 'location.cell 필요');
   assert.equal(t2.body.diff.location.cell.tablePara, 1);
   assert.equal(t2.body.diff.location.cell.row, 0);
   assert.equal(t2.body.diff.location.cell.col, 0);
   assert.equal(t2.body.diff.location.cell.cellPara, 0);
-  // cellIdx 는 서버가 미리 변환해 채워줌.
   assert.equal(typeof t2.body.diff.location.cell.cellIdx, 'number');
+});
+
+record('큰 표 셀 1개 편집 응답 크기가 표 크기와 무관하게 작음', async () => {
+  // 10x10 = 100 셀. 표 전체 IR 두 번 (before+after) 이면 수만 byte 이지만,
+  // cell target 압축 후엔 1KB 미만이어야 한다.
+  const fid = newFileId('sub4-size');
+  await createSession(fid);
+  await postWorkbench(fid, 'insert_table', {
+    section: 0, insert_after_para: 0, rows: 10, cols: 10,
+  });
+  const { body } = await postWorkbench(fid, 'replace_cell_runs', {
+    section: 0, table_para: 1, row: 5, col: 7, cell_para: 0,
+    runs: [{ text: '변경값' }],
+  });
+  const respSize = JSON.stringify(body).length;
+  assert.ok(
+    respSize < 2000,
+    `10x10 표 셀 1개 변경 응답이 2KB 미만이어야 — 실제 ${respSize} byte`,
+  );
+  // 그리고 응답에 다른 셀들 정보는 없어야 — cell target 안에 row=5, col=7 의 셀 한 칸만.
+  assert.equal(body.diff.after.cell.row, 5);
+  assert.equal(body.diff.after.cell.col, 7);
 });
 
 record('delete_range 응답 paraEndAfter 가 줄어듦', async () => {
@@ -117,10 +150,12 @@ record('delete_range 응답 paraEndAfter 가 줄어듦', async () => {
   });
   assert.ok(body.diff, 'delete_range diff 필요');
   assert.equal(body.diff.op, 'delete_range');
-  // before = [0..3), after = [0..1) — paragraphCount 정확히 검증.
+  // before = [0..3), after = [0..1) — paragraphs target.
   assert.equal(body.diff.location.paraStartBefore, 0);
   assert.equal(body.diff.location.paraEndBefore, 3);
   assert.equal(body.diff.location.paraEndAfter, 1);
+  assert.ok(body.diff.before.paragraphs, 'before.paragraphs');
+  assert.ok(body.diff.after.paragraphs, 'after.paragraphs');
   assert.ok(
     body.diff.summary.afterParaCount <= body.diff.summary.beforeParaCount,
     `paragraph 수 줄어야 — before=${body.diff.summary.beforeParaCount}, after=${body.diff.summary.afterParaCount}`,
