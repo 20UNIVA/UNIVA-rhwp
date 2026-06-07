@@ -891,6 +891,58 @@ fn omit_para_style_defaults(
     }
 }
 
+/// 단일 run 을 compact JSON 으로 변환. style 이 defaults 와 모두 같으면 `style` 키 omit.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactRun` 의 Rust 대응.
+fn compact_run(run: &IrRun, defaults: &DocDefaults) -> serde_json::Value {
+    let style = omit_run_style_defaults(&run.style, &defaults.run);
+    let mut out = serde_json::Map::new();
+    out.insert("char_offset".into(), serde_json::json!(run.char_offset));
+    out.insert("text".into(), serde_json::json!(run.text));
+    if let Some(s) = style {
+        out.insert("style".into(), s);
+    }
+    serde_json::Value::Object(out)
+}
+
+/// 본문 문단을 compact JSON 으로 변환. *단일 run + run 스타일 없음* 이면 `text` 직속으로 평탄화.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::compactText` 의 Rust 대응. 평탄화 조건은
+/// "runs 가 1건이고 그 run 에 `style` 키가 없는 경우" — 모델 입력 길이를 줄이기 위한 sugar.
+fn compact_text(p: &IrTextParagraph, defaults: &DocDefaults) -> serde_json::Value {
+    let runs: Vec<serde_json::Value> =
+        p.runs.iter().map(|r| compact_run(r, defaults)).collect();
+    let para_style = omit_para_style_defaults(&p.style, &defaults.paragraph);
+
+    let mut out = serde_json::Map::new();
+    out.insert("id".into(), serde_json::json!(p.id));
+    out.insert("sec".into(), serde_json::json!(p.sec));
+    out.insert("para".into(), serde_json::json!(p.para));
+    out.insert("type".into(), serde_json::json!("text"));
+    if let Some(cl) = &p.cell_locator {
+        out.insert(
+            "cell_locator".into(),
+            serde_json::to_value(cl).unwrap_or_default(),
+        );
+    }
+    if let Some(s) = para_style {
+        out.insert("style".into(), s);
+    }
+    // 단일 run + 스타일 없음 → text 직속.
+    if runs.len() == 1 && runs[0].get("style").is_none() {
+        out.insert(
+            "text".into(),
+            runs[0]
+                .get("text")
+                .cloned()
+                .unwrap_or(serde_json::Value::String(String::new())),
+        );
+    } else {
+        out.insert("runs".into(), serde_json::Value::Array(runs));
+    }
+    serde_json::Value::Object(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1668,6 +1720,63 @@ mod tests {
             ..Default::default()
         };
         assert!(omit_run_style_defaults(&s, &d).is_none());
+    }
+
+    #[test]
+    fn compact_text_single_run_inline() {
+        let t = IrTextParagraph {
+            id: "p_0_0".into(),
+            sec: 0,
+            para: 0,
+            kind: "text",
+            style: ParagraphStyle::default(),
+            runs: vec![IrRun {
+                char_offset: 0,
+                length: 3,
+                text: "ABC".into(),
+                style: RunStyle::default(),
+            }],
+            cell_locator: None,
+        };
+        let defaults = DocDefaults {
+            run: RunStyle::default(),
+            paragraph: ParagraphStyle::default(),
+        };
+        let v = compact_text(&t, &defaults);
+        assert!(v.get("runs").is_none(), "단일 plain run 은 runs 생략");
+        assert_eq!(v["text"], "ABC");
+    }
+
+    #[test]
+    fn compact_text_styled_run_keeps_runs() {
+        let t = IrTextParagraph {
+            id: "p_0_0".into(),
+            sec: 0,
+            para: 0,
+            kind: "text",
+            style: ParagraphStyle::default(),
+            runs: vec![IrRun {
+                char_offset: 0,
+                length: 3,
+                text: "ABC".into(),
+                style: RunStyle {
+                    bold: Some(true),
+                    ..Default::default()
+                },
+            }],
+            cell_locator: None,
+        };
+        let defaults = DocDefaults {
+            run: RunStyle {
+                bold: Some(false),
+                ..Default::default()
+            },
+            paragraph: ParagraphStyle::default(),
+        };
+        let v = compact_text(&t, &defaults);
+        assert!(v.get("text").is_none(), "styled run 은 runs 형태 유지");
+        let runs = v["runs"].as_array().expect("runs array");
+        assert_eq!(runs[0]["style"]["bold"], true);
     }
 
     #[test]
