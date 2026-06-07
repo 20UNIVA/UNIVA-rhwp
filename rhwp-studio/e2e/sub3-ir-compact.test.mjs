@@ -1,0 +1,123 @@
+/**
+ * Sub-3 IR compact 응답 검증.
+ *
+ * 텍스트 + bold + 표 + 셀 텍스트가 init.md spec §2 의 평탄 형식으로
+ * 직렬화되는지를 워크벤치 호출 후 GET /ir-slice?mode=compact 응답으로
+ * 확인한다.
+ *
+ * 시나리오:
+ *   1. replace_runs 로 문단 0 에 'A' (bold) 삽입
+ *   2. insert_paragraph 로 문단 1 추가
+ *   3. insert_table 로 문단 2 위치에 2x2 표 삽입 (insert_after_para=1)
+ *   4. replace_cell_runs 로 (0,0) 셀에 'CELL_TEXT' 작성
+ *
+ * 검증:
+ *   1. defaults 박스 (run/paragraph)
+ *   2. 첫 문단의 bold run
+ *   3. type=table 의 rows/cols/cells
+ *   4. 셀 (0,0) 의 'CELL_TEXT'
+ *   5. cell_locator 평탄 entry
+ *   6. raw 모드 호환 (Sub-2 회귀 0)
+ */
+
+import {
+  newFileId,
+  createSession,
+  postWorkbench,
+  getIrSlice,
+} from './sub2-helpers.mjs';
+import assert from 'node:assert/strict';
+
+async function main() {
+  const fid = newFileId('sub3-ir-compact');
+  await createSession(fid);
+
+  // 1) 문단 0 에 bold 'A'
+  const r1 = await postWorkbench(fid, 'replace_runs', {
+    section: 0,
+    para: 0,
+    runs: [{ text: 'A', style: { bold: true } }],
+  });
+  if (r1.status !== 200) throw new Error(`replace_runs 실패: ${JSON.stringify(r1)}`);
+
+  // 2) 문단 1 삽입
+  const r2 = await postWorkbench(fid, 'insert_paragraph', {
+    section: 0,
+    after_para: 0,
+    count: 1,
+  });
+  if (r2.status !== 200) throw new Error(`insert_paragraph 실패: ${JSON.stringify(r2)}`);
+
+  // 3) 문단 2 위치에 2x2 표
+  const r3 = await postWorkbench(fid, 'insert_table', {
+    section: 0,
+    insert_after_para: 1,
+    rows: 2,
+    cols: 2,
+  });
+  if (r3.status !== 200) throw new Error(`insert_table 실패: ${JSON.stringify(r3)}`);
+
+  // 4) (0,0) 셀에 'CELL_TEXT'
+  const r4 = await postWorkbench(fid, 'replace_cell_runs', {
+    section: 0,
+    table_para: 2,
+    row: 0,
+    col: 0,
+    cell_para: 0,
+    runs: [{ text: 'CELL_TEXT' }],
+  });
+  if (r4.status !== 200) throw new Error(`replace_cell_runs 실패: ${JSON.stringify(r4)}`);
+
+  // === compact 모드 응답 ===
+  const compact = await getIrSlice(fid, 0, 0, null, 'compact');
+  console.log('compact response (head):', JSON.stringify(compact, null, 2).slice(0, 800));
+
+  // 1) defaults 박스
+  assert.ok(compact.defaults, 'defaults 박스 누락');
+  assert.equal(compact.defaults.run.bold, false, 'defaults.run.bold 기본값 false');
+  assert.equal(compact.defaults.run.color, '#000000', 'defaults.run.color 기본값 #000000');
+  assert.equal(compact.defaults.paragraph.align, 'left', 'defaults.paragraph.align 기본값 left');
+
+  // 2) bold 'A' 가 들어간 문단 찾기 (insert_paragraph 가 좌표를 미는 case 대비
+  // — para 0 또는 para 1 어디든 'A' 를 가진 첫 text 문단을 찾는다)
+  assert.ok(Array.isArray(compact.paragraphs), 'paragraphs 배열 없음');
+  const boldPara = compact.paragraphs.find(
+    (p) => p.type === 'text' && Array.isArray(p.runs) && p.runs.some((r) => r.text === 'A'),
+  );
+  assert.ok(boldPara, `bold 'A' 가 들어간 문단 없음: ${JSON.stringify(compact.paragraphs)}`);
+  const boldRun = boldPara.runs.find((r) => r.text === 'A');
+  assert.equal(boldRun.style?.bold, true, `bold 누락: ${JSON.stringify(boldRun)}`);
+
+  // 3) 표 문단
+  const table = compact.paragraphs.find((p) => p.type === 'table');
+  assert.ok(table, '표 문단 없음');
+  assert.equal(table.rows, 2, 'table.rows !== 2');
+  assert.equal(table.cols, 2, 'table.cols !== 2');
+  assert.equal(table.cells.length, 4, 'table.cells.length !== 4');
+
+  // 4) 셀 (0,0) 'CELL_TEXT'
+  const cell00 = table.cells.find((c) => c.row === 0 && c.col === 0);
+  assert.ok(cell00, '셀 (0,0) 없음');
+  const cellPara = cell00.paragraphs[0];
+  const cellText = cellPara.text ?? cellPara.runs?.map((r) => r.text).join('');
+  assert.equal(cellText, 'CELL_TEXT', `셀 텍스트 불일치: ${cellText}`);
+
+  // 5) cell_locator 평탄 entry
+  const cellEntry = compact.paragraphs.find((p) => p.cell_locator);
+  assert.ok(cellEntry, 'cell_locator 평탄 entry 없음');
+  assert.equal(cellEntry.cell_locator.table_para, 2, 'cell_locator.table_para !== 2');
+  assert.equal(cellEntry.cell_locator.row, 0, 'cell_locator.row !== 0');
+  assert.equal(cellEntry.cell_locator.col, 0, 'cell_locator.col !== 0');
+
+  // 6) raw 모드 호환
+  const raw = await getIrSlice(fid, 0, 0, null, 'raw');
+  assert.equal(raw.mode, 'raw', 'raw.mode !== raw');
+  assert.ok(Array.isArray(raw.paragraphs), 'raw.paragraphs 배열 없음');
+
+  console.log('✓ sub3-ir-compact PASS');
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
