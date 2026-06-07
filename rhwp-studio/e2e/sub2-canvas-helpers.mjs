@@ -9,7 +9,7 @@
  * 프로젝트 helpers.mjs 와 같은 방식 — 시스템 Chrome 또는 PUPPETEER_EXECUTABLE_PATH.
  *
  * 서버 측 — sub2-server.sh 가 RHWP_STUDIO_DIR 를 dist 로 지정 → 같은 포트 (7710) 에서
- * studio 정적 자산 서빙. Puppeteer 가 `http://127.0.0.1:7710/?fileId=...` 로 진입.
+ * studio 정적 자산 서빙. Puppeteer 가 `http://127.0.0.1:7710/hwp/?fileId=...` 로 진입.
  */
 
 import puppeteer from 'puppeteer-core';
@@ -24,8 +24,8 @@ const CHROME_PATH =
   || process.env.PUPPETEER_EXECUTABLE_PATH
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-/** Studio 가 7710 포트에서 같은 origin 으로 서빙된다는 전제. */
-export const STUDIO_BASE = process.env.STUDIO_BASE || 'http://127.0.0.1:7710';
+/** Studio 가 7710 포트의 `/hwp` 아래 같은 origin 으로 서빙된다는 전제. */
+export const STUDIO_BASE = process.env.STUDIO_BASE || 'http://127.0.0.1:7710/hwp';
 
 /**
  * Puppeteer 브라우저 가동 (headless).
@@ -77,7 +77,7 @@ export async function openSession(browser, fileId, timeoutMs = 30000) {
     console.error('[browser requestfailed]', req.url(), req.failure()?.errorText);
   });
   // ssrBase 미지정 시 SessionClient 는 baseUrlWs="" 로 잘못된 ws:/// URL 생성 → ws open silent fail.
-  // STUDIO_BASE 그대로 ssrBase 로 전달해 http://127.0.0.1:7710 origin 명시.
+  // STUDIO_BASE (`/hwp` 포함) 그대로 ssrBase 로 전달 — fetch 와 ws 가 prefix 포함 origin 사용.
   const url = `${STUDIO_BASE}/?fileId=${encodeURIComponent(fileId)}&ssrBase=${encodeURIComponent(STUDIO_BASE)}`;
 
   // 디버깅 (SUB2_CANVAS_VERBOSE=1 일 때) — WebSocket 트래픽을 console 로 가시화.

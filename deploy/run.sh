@@ -15,4 +15,5 @@ fi
 export RHWP_STUDIO_DIR="${RHWP_STUDIO_DIR:-$HERE/studio}"
 
 echo "rhwp-server 시작 — ADDR=${RHWP_SERVER_ADDR:-0.0.0.0:7710} STUDIO_DIR=$RHWP_STUDIO_DIR"
+echo "  모든 경로는 /hwp prefix — 헬스체크: curl http://localhost:7710/hwp/health"
 exec "$HERE/rhwp-server"

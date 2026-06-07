@@ -63,8 +63,15 @@ let currentSsrFileId: string | null = null;
 let currentIsBlank = false;
 
 const SSR_PARAMS = new URLSearchParams(location.search);
-/** iframe 부모가 `?fileId=&ssrBase=` 로 전달. */
-const SSR_BASE_URL = SSR_PARAMS.get('ssrBase') ?? '';
+/**
+ * iframe 부모가 `?fileId=&ssrBase=` 로 전달. 미지정 시 same-origin 으로 보고
+ * `import.meta.env.BASE_URL` ('/hwp/') 의 trailing slash 만 제거해 prefix 로 사용 —
+ * fetch 와 WebSocket 모두 `/hwp/sessions/...` 로 자동 전송된다.
+ *
+ * ssrBase 가 cross-origin 으로 명시되면 그 값을 그대로 사용 (deploy 가이드의 책임).
+ */
+const SSR_BASE_URL =
+  SSR_PARAMS.get('ssrBase') ?? import.meta.env.BASE_URL.replace(/\/$/, '');
 const SSR_URL_FILE_ID = SSR_PARAMS.get('fileId');
 /** SSR 모드 활성 조건 — fileId/ssrBase/ssr 중 하나라도 있으면. */
 const SSR_MODE = SSR_PARAMS.has('fileId') || SSR_PARAMS.has('ssrBase') || SSR_PARAMS.has('ssr');

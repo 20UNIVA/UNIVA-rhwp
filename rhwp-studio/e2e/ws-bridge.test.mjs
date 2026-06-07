@@ -13,8 +13,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const SERVER = 'http://127.0.0.1:7710';
-const WS_BASE = 'ws://127.0.0.1:7710';
+const SERVER = 'http://127.0.0.1:7710/hwp';
+const WS_BASE = 'ws://127.0.0.1:7710/hwp';
 const BLANK_HWPX = resolve(import.meta.dirname ?? '.', '..', '..', 'samples', 'hwpx', 'blank_hwpx.hwpx');
 
 async function http(method, path, body) {

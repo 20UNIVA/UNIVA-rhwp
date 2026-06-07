@@ -12,8 +12,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Buffer } from 'node:buffer';
 
-export const BASE = 'http://127.0.0.1:7710';
-export const WS_BASE = 'ws://127.0.0.1:7710';
+// 서버가 `/hwp` 아래로 nest — 모든 호출이 prefix 포함.
+export const BASE = 'http://127.0.0.1:7710/hwp';
+export const WS_BASE = 'ws://127.0.0.1:7710/hwp';
 
 /**
  * 빈 hwpx 샘플 경로.

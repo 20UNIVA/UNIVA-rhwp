@@ -143,7 +143,7 @@ async function main() {
   // 7) Sub-3 v2 — page query 시나리오.
   //   본 e2e 문서는 짧아 보통 1 페이지지만, page=0 은 응답 형식만 동일하면 OK.
   //   getIrSlice helper 가 page 파라미터를 모르므로 직접 fetch.
-  const BASE_URL = process.env.RHWP_SERVER_URL || 'http://127.0.0.1:7710';
+  const BASE_URL = process.env.RHWP_SERVER_URL || 'http://127.0.0.1:7710/hwp';
   const getWithPage = async (page) => {
     const resp = await fetch(
       `${BASE_URL}/sessions/${encodeURIComponent(fid)}/ir-slice?mode=compact&page=${page}`,

@@ -36,7 +36,7 @@ case "${1:-}" in
     echo "서버 시작 pid=$(cat $PIDFILE), log=$LOGFILE"
     # 가동 대기 — /health 200 까지 최대 30초.
     for i in $(seq 1 30); do
-      if curl -sf http://127.0.0.1:7710/health > /dev/null 2>&1; then
+      if curl -sf http://127.0.0.1:7710/hwp/health > /dev/null 2>&1; then
         echo "서버 가동 확인 (${i}초 소요)"
         exit 0
       fi
@@ -67,7 +67,7 @@ case "${1:-}" in
   status)
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
       echo "가동 중 (pid=$(cat $PIDFILE))"
-      curl -sf http://127.0.0.1:7710/health > /dev/null 2>&1 \
+      curl -sf http://127.0.0.1:7710/hwp/health > /dev/null 2>&1 \
         && echo "/health OK" \
         || echo "/health 응답 없음"
     else

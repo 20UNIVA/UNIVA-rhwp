@@ -1272,16 +1272,39 @@ fn router(state: AppState) -> Router {
         .with_state(state);
 
     // RHWP_STUDIO_DIR 가 지정되면 studio 정적 자산(dist)도 같은 포트에서 서빙한다.
-    // → single-origin 배포(별도 웹서버/CORS 불필요). 미지정 시 API 전용(기존 동작).
-    if let Ok(dir) = std::env::var("RHWP_STUDIO_DIR") {
-        if !dir.is_empty() {
-            tracing::info!("studio 정적 서빙: {dir}");
-            app = app.fallback_service(
-                tower_http::services::ServeDir::new(dir).append_index_html_on_directories(true),
-            );
+    // → single-origin 배포(별도 웹서버/CORS 불필요). 미지정 시 API 전용.
+    //
+    // SPA deep-link 복원 — 새로고침 시 `?fileId=...` 가 정적 파일로 매칭되지 않아도
+    // index.html 로 폴백해 클라이언트 라우팅이 처리하도록 ServeDir.fallback(ServeFile).
+    let index_path = std::env::var("RHWP_STUDIO_DIR").ok().and_then(|dir| {
+        if dir.is_empty() {
+            None
+        } else {
+            let p = std::path::PathBuf::from(&dir).join("index.html");
+            Some((dir, p))
         }
+    });
+    if let Some((dir, idx)) = index_path.clone() {
+        tracing::info!("studio 정적 서빙: {dir}");
+        app = app.fallback_service(
+            tower_http::services::ServeDir::new(dir)
+                .append_index_html_on_directories(true)
+                .fallback(tower_http::services::ServeFile::new(idx)),
+        );
     }
-    app
+
+    // ── /hwp prefix 일괄 적용 ──
+    // 모든 경로(API + 정적 자산)가 `/hwp/` 아래로 들어간다. iframe / 모델 호출 / 헬스체크
+    // 모두 prefix 명시 — 단일 진입점.
+    //
+    // nest 사각지대: axum 0.7 의 `nest("/hwp")` 는 `/hwp`(exact) 와 `/hwp/{*rest}`(≥1 세그먼트)
+    // 만 매칭해 정확히 `/hwp/` (trailing slash) 가 빠진다. iframe 진입이 보통 `/hwp/` 형태라
+    // index.html 을 trailing-slash 경로에 명시 라우팅한다.
+    let mut root = Router::new().nest("/hwp", app);
+    if let Some((_, idx)) = index_path {
+        root = root.route_service("/hwp/", tower_http::services::ServeFile::new(idx));
+    }
+    root
 }
 
 #[tokio::main]
