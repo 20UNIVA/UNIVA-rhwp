@@ -39,6 +39,11 @@ pub struct CellBorderSpec {
     #[serde(skip_serializing_if = "Option::is_none")] pub color: Option<String>,
 }
 
+/// 셀 테두리 — 4면 + `all` 축약 키.
+///
+/// `all` 은 TypeScript 원본 (`rhwp-studio/src/llm-replay/types.ts::CellBorderSpec`) 에는
+/// *없는* compact-단계 확장. Phase 4 빌더는 항상 `None` 으로 채우고, Phase 5 압축이
+/// 4면이 동일한 경우에만 `all` 한 칸으로 축약한다.
 #[derive(Debug, Clone, PartialEq, Serialize, Default)]
 pub struct CellBorder {
     #[serde(skip_serializing_if = "Option::is_none")] pub left: Option<CellBorderSpec>,
