@@ -445,6 +445,61 @@ fn build_text_paragraph(core: &DocumentCore, sec: usize, para: usize) -> IrTextP
     }
 }
 
+/// `build_ir_slice` 의 입력 파라미터.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildIRSlice` 의 옵션 객체와 정합. `sec`
+/// 은 섹션 인덱스, `para_start..para_end` 는 *반열림 구간*. `para_end == None` 이면 섹션의
+/// 마지막 문단까지, `edit_session_id == None` 이면 현재 시각 (ms) 기반 자동 생성.
+#[derive(Debug, Clone)]
+pub struct BuildOptions {
+    pub sec: usize,
+    pub para_start: usize,
+    pub para_end: Option<usize>,
+    pub edit_session_id: Option<String>,
+}
+
+/// IR slice 진입점 — *텍스트 path 만* 처리 (표 처리는 Phase 4).
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildIRSlice` 의 Rust 대응 중 텍스트 부분.
+/// `para_start..para_end` 가 섹션의 문단 수를 초과하면 끝쪽 경계를 잘라 panic 없이 빈 slice 를
+/// 반환. `edit_session_id` 미지정 시 `std::time::SystemTime::now()` 기반 ms 타임스탬프로 채움.
+pub fn build_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> IrSlice {
+    let sec = opts.sec;
+    let total = core.document().sections[sec].paragraphs.len();
+    let start = opts.para_start.min(total);
+    let end = opts.para_end.unwrap_or(total).min(total);
+
+    // edit_session_id — 미지정 시 ms 단위 timestamp 로 자동 생성. chrono 의존을 피하기 위해
+    // std::time::SystemTime 직접 사용.
+    let edit_session_id = opts.edit_session_id.clone().unwrap_or_else(|| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        format!("ed_{}", ms)
+    });
+
+    let mut paragraphs = Vec::with_capacity(end.saturating_sub(start));
+    for p in start..end {
+        paragraphs.push(IrParagraph::Text(build_text_paragraph(core, sec, p)));
+    }
+
+    IrSlice {
+        doc_meta: IrDocMeta {
+            edit_session_id,
+            page: 1,
+            total_pages: 1,
+            anchor: IrAnchor {
+                sec,
+                para_start: start,
+                para_end: end,
+            },
+        },
+        paragraphs,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -852,6 +907,45 @@ mod tests {
         if para.runs.len() == 1 {
             assert_eq!(para.runs[0].length, 0);
         }
+    }
+
+    #[test]
+    fn build_ir_slice_blank_doc() {
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let slice = build_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: Some("test".into()),
+            },
+        );
+        assert_eq!(slice.doc_meta.anchor.sec, 0);
+        assert_eq!(slice.doc_meta.edit_session_id, "test");
+        // 빈 문서라도 섹션 0 에는 최소 1개 문단이 존재 — paragraphs 가 비어있지 않아야.
+        assert!(!slice.paragraphs.is_empty());
+        // anchor.para_end 는 섹션의 실제 문단 수를 넘지 않음.
+        let total = core.document().sections[0].paragraphs.len();
+        assert_eq!(slice.doc_meta.anchor.para_end, total);
+    }
+
+    #[test]
+    fn build_ir_slice_auto_edit_session_id() {
+        // edit_session_id 가 None 이면 "ed_<ms>" 형식의 자동 ID 생성.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let slice = build_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: None,
+            },
+        );
+        assert!(slice.doc_meta.edit_session_id.starts_with("ed_"));
     }
 
     #[test]
