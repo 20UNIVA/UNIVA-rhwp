@@ -8,9 +8,12 @@
 
 #![allow(dead_code)]  // 구현 진행 중 일시 허용. Phase 5 종료 시 제거.
 
-use rhwp::model::style::{Alignment, CharShape, LineSpacingType, ParaShape, UnderlineType};
+use rhwp::model::style::{
+    Alignment, BorderLine, BorderLineType, CharShape, LineSpacingType, ParaShape, UnderlineType,
+};
+use rhwp::model::table::Cell;
 use rhwp::model::ColorRef;
-use rhwp::renderer::style_resolver::{primary_font_name, ResolvedCharStyle};
+use rhwp::renderer::style_resolver::{primary_font_name, ResolvedBorderStyle, ResolvedCharStyle};
 use serde::Serialize;
 
 /// `ColorRef` (0x00BBGGRR `u32`) → CSS hex 문자열 `"#RRGGBB"`.
@@ -101,6 +104,63 @@ fn char_shape_to_run_style(
         vertical_align: Some(
             vertical_align_to_str(cs.subscript, cs.superscript).to_string(),
         ),
+    }
+}
+
+/// 본체 `BorderLine` → `CellBorderSpec`. `line_type == None` 이면 `None` 반환 (해당 면 미설정).
+///
+/// 본체 `BorderLine` 은 4면 모두 *항상 존재* (배열) — `BorderFill::default()` 는 `Solid` 가
+/// 기본값이지만 실제 폭이 0 이거나 line_type 이 `None` 인 경우 시각적으로 "테두리 없음".
+/// 따라서 "선 없음" 판정은 `line_type == BorderLineType::None` 으로만 단정 (width=0 은
+/// 본체 helper 에서 "굵기 0.1mm" 인덱스를 의미할 수 있어 sentinel 로 쓰면 안 됨).
+fn border_line_to_spec(b: &BorderLine) -> Option<CellBorderSpec> {
+    if matches!(b.line_type, BorderLineType::None) {
+        return None;
+    }
+    Some(CellBorderSpec {
+        // 선 종류는 표 27 의 인덱스 (0=None, 1=Solid, ...). enum 값을 u8 로 캐스팅.
+        border_type: Some(b.line_type as u8),
+        width: Some(b.width as i32),
+        color: Some(color_ref_to_css(b.color)),
+    })
+}
+
+/// `Cell` + 옵션 `ResolvedBorderStyle` → `CellStyle`.
+///
+/// 옛 TypeScript 원본 `style-map.ts::cellPropsToCellStyle` 의 Rust 대응. 셀의 *배경색*과
+/// *4면 테두리* 는 `Cell` 자체가 아닌 `border_fill_id` 가 가리키는 `BorderFill` 테이블 항목
+/// 에 들어있다 — style_resolver 가 그 BorderFill 을 `ResolvedBorderStyle` 로 풀어둔 상태로
+/// 받는다.
+///
+/// `border_style` 이 `None` 이면 배경·테두리 모두 미설정 (셀에 border_fill_id=0 인 경우).
+/// `all` 은 Phase 4 빌더에서 항상 `None` 으로 두고, Phase 5 압축이 4면이 동일한 경우에만 `all`
+/// 한 칸으로 축약 — Phase 1 에서 정의한 invariant 그대로.
+fn cell_to_cell_style(cell: &Cell, border_style: Option<&ResolvedBorderStyle>) -> CellStyle {
+    // 배경색·테두리는 ResolvedBorderStyle 에서 분리.
+    let bgcolor = border_style
+        .and_then(|bs| bs.fill_color)
+        .map(color_ref_to_css);
+
+    let border = border_style.map(|bs| CellBorder {
+        // 본체 borders 배열 인덱스: 0=좌, 1=우, 2=상, 3=하 (BorderFill 정의 정합).
+        left: border_line_to_spec(&bs.borders[0]),
+        right: border_line_to_spec(&bs.borders[1]),
+        top: border_line_to_spec(&bs.borders[2]),
+        bottom: border_line_to_spec(&bs.borders[3]),
+        all: None, // 압축 단계에서 채움 — Phase 1 invariant.
+    });
+
+    // 4면 모두 미설정이면 border 키 자체 omit (init.md spec 의 sparse 표현).
+    let border = border.filter(|b| {
+        b.left.is_some() || b.right.is_some() || b.top.is_some() || b.bottom.is_some()
+    });
+
+    CellStyle {
+        bgcolor,
+        width: Some(cell.width as i32),
+        height: Some(cell.height as i32),
+        border,
+        vertical_align: Some(cell_vertical_align_to_str(cell.vertical_align).to_string()),
     }
 }
 
@@ -517,6 +577,109 @@ mod tests {
         assert_eq!(s.align.as_deref(), Some("left"));
         assert_eq!(s.indent, Some(-1500));
         assert_eq!(s.line_height, Some(200));
+    }
+
+    #[test]
+    fn cell_style_with_bgcolor() {
+        use rhwp::model::table::{Cell, VerticalAlign};
+        use rhwp::renderer::style_resolver::ResolvedBorderStyle;
+
+        let cell = Cell {
+            width: 1000,
+            height: 500,
+            vertical_align: VerticalAlign::Center,
+            ..Default::default()
+        };
+
+        // 배경색 #FFC107 (BGR 표기로 R=0xFF, G=0xC1, B=0x07 → 0x0007C1FF).
+        // 4면 테두리는 BorderLine::default() = Solid + width 0 — 기본 "보임"
+        // 으로 풀이되지만 본 테스트는 fill_color 만 검증.
+        let mut bs = ResolvedBorderStyle::default();
+        bs.fill_color = Some(0x0007C1FF);
+
+        let s = cell_to_cell_style(&cell, Some(&bs));
+        assert_eq!(s.bgcolor.as_deref(), Some("#FFC107"));
+        assert_eq!(s.width, Some(1000));
+        assert_eq!(s.height, Some(500));
+        assert_eq!(s.vertical_align.as_deref(), Some("middle"));
+    }
+
+    #[test]
+    fn cell_style_no_border_style() {
+        // border_style=None (border_fill_id=0 인 셀) — border 키, bgcolor 키 모두 omit.
+        use rhwp::model::table::{Cell, VerticalAlign};
+        let cell = Cell {
+            width: 800,
+            height: 300,
+            vertical_align: VerticalAlign::Top,
+            ..Default::default()
+        };
+        let s = cell_to_cell_style(&cell, None);
+        assert!(s.bgcolor.is_none());
+        assert!(s.border.is_none());
+        assert_eq!(s.width, Some(800));
+        assert_eq!(s.height, Some(300));
+        assert_eq!(s.vertical_align.as_deref(), Some("top"));
+    }
+
+    #[test]
+    fn cell_style_border_only_some_sides() {
+        // 좌·하 두 면만 테두리, 우·상 두 면은 None.
+        use rhwp::model::style::{BorderLine, BorderLineType};
+        use rhwp::model::table::{Cell, VerticalAlign};
+        use rhwp::renderer::style_resolver::ResolvedBorderStyle;
+
+        let cell = Cell {
+            width: 500,
+            height: 500,
+            vertical_align: VerticalAlign::Bottom,
+            ..Default::default()
+        };
+
+        let mut bs = ResolvedBorderStyle::default();
+        bs.fill_color = None;
+        // borders 배열 순서: 0=좌, 1=우, 2=상, 3=하.
+        bs.borders[0] = BorderLine {
+            line_type: BorderLineType::Solid,
+            width: 1,
+            color: 0x000000FF, // 빨강
+        };
+        bs.borders[1] = BorderLine {
+            line_type: BorderLineType::None,
+            ..Default::default()
+        };
+        bs.borders[2] = BorderLine {
+            line_type: BorderLineType::None,
+            ..Default::default()
+        };
+        bs.borders[3] = BorderLine {
+            line_type: BorderLineType::Dash,
+            width: 2,
+            color: 0,
+        };
+
+        let s = cell_to_cell_style(&cell, Some(&bs));
+        let border = s.border.expect("일부 면만 설정되어도 border 키는 존재");
+        assert!(border.left.is_some());
+        assert!(border.right.is_none());
+        assert!(border.top.is_none());
+        assert!(border.bottom.is_some());
+        // 좌측 면 — type/width/color 확인.
+        let left = border.left.unwrap();
+        assert_eq!(left.border_type, Some(BorderLineType::Solid as u8));
+        assert_eq!(left.width, Some(1));
+        assert_eq!(left.color.as_deref(), Some("#FF0000"));
+        // 하단 면 — Dash 종류 확인.
+        let bottom = border.bottom.unwrap();
+        assert_eq!(bottom.border_type, Some(BorderLineType::Dash as u8));
+        assert_eq!(bottom.width, Some(2));
+        // 4면 모두 BorderLineType::None 으로 만들면 border 키 자체 omit 되는지 확인 (다른 셀).
+        let mut bs_all_none = ResolvedBorderStyle::default();
+        for i in 0..4 {
+            bs_all_none.borders[i].line_type = BorderLineType::None;
+        }
+        let s2 = cell_to_cell_style(&cell, Some(&bs_all_none));
+        assert!(s2.border.is_none(), "4면 모두 None 이면 border 키 omit");
     }
 
     #[test]
