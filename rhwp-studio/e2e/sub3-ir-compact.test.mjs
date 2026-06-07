@@ -16,7 +16,8 @@
  *   2. 첫 문단의 bold run
  *   3. type=table 의 rows/cols/cells
  *   4. 셀 (0,0) 의 'CELL_TEXT'
- *   5. cell_locator 평탄 entry
+ *   5. nested 안 cell_locator (셀 (0,0) paragraph 의 4 좌표)
+ *   5-1. paragraphs[] top-level 에 평탄 cell_locator entry 가 *없음*
  *   6. raw 모드 호환 (Sub-2 회귀 0)
  */
 
@@ -102,12 +103,21 @@ async function main() {
   const cellText = cellPara.text ?? cellPara.runs?.map((r) => r.text).join('');
   assert.equal(cellText, 'CELL_TEXT', `셀 텍스트 불일치: ${cellText}`);
 
-  // 5) cell_locator 평탄 entry
-  const cellEntry = compact.paragraphs.find((p) => p.cell_locator);
-  assert.ok(cellEntry, 'cell_locator 평탄 entry 없음');
-  assert.equal(cellEntry.cell_locator.table_para, 2, 'cell_locator.table_para !== 2');
-  assert.equal(cellEntry.cell_locator.row, 0, 'cell_locator.row !== 0');
-  assert.equal(cellEntry.cell_locator.col, 0, 'cell_locator.col !== 0');
+  // 5) Sub-3 v2: nested 안 cell_locator — 셀 (0,0) 의 paragraph 가 cell_locator 4 좌표 보유.
+  const cellPara0 = cell00.paragraphs[0];
+  assert.ok(cellPara0.cell_locator, 'nested cell_locator 누락');
+  assert.equal(cellPara0.cell_locator.table_para, table.para, 'cell_locator.table_para 불일치');
+  assert.equal(cellPara0.cell_locator.row, 0, 'cell_locator.row !== 0');
+  assert.equal(cellPara0.cell_locator.col, 0, 'cell_locator.col !== 0');
+  assert.equal(cellPara0.cell_locator.cell_para, 0, 'cell_locator.cell_para !== 0');
+
+  // 5-1) Sub-3 v2: paragraphs[] top-level 에는 cell_locator 평탄 entry 가 *없어야* 함.
+  const flatCellEntries = compact.paragraphs.filter((p) => p.cell_locator);
+  assert.equal(
+    flatCellEntries.length,
+    0,
+    `평탄 cell_locator entry 가 남음: ${flatCellEntries.length} 건`,
+  );
 
   // 6) raw 모드 호환
   const raw = await getIrSlice(fid, 0, 0, null, 'raw');
