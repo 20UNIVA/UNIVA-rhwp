@@ -694,6 +694,57 @@ pub struct BuildOptions {
     pub para_start: usize,
     pub para_end: Option<usize>,
     pub edit_session_id: Option<String>,
+    /// Sub-3 v2: 페이지 단위 슬라이스. `Some(n)` 이면 paginator 결과에서 *문서 전체 0-based*
+    /// 페이지 `n` 의 paragraph 범위로 sec/para_start/para_end 를 *덮어쓴다*. 범위 외이거나
+    /// 페이지에 paragraph 가 없으면 sec/para_start/para_end 폴백.
+    pub page: Option<u32>,
+}
+
+/// 페이지 번호 → `(sec, para_start, para_end)` 매핑.
+///
+/// `page_num` 은 *문서 전체 페이지 0-based* — paginator 가 섹션별로 분할한 `PaginationResult`
+/// 들의 `pages` 를 *섹션 순서* 로 평탄화한 인덱스. 페이지가 범위 밖이거나 그 페이지에 paragraph
+/// 가 하나도 없으면 `None`. `para_end` 는 *exclusive*.
+///
+/// `PageItem` 의 모든 variant 가 `para_index` (또는 `para_index` + 다른 필드) 를 가지므로
+/// 각 variant 에서 `para_index` 를 추출 → min/max+1 으로 [start, end) 구간 산정.
+pub fn page_to_para_range(
+    core: &DocumentCore,
+    page_num: u32,
+) -> Option<(usize, usize, usize)> {
+    use rhwp::renderer::pagination::PageItem;
+
+    let mut global_idx: u32 = 0;
+    for pr in core.pagination().iter() {
+        for page in &pr.pages {
+            if global_idx == page_num {
+                // 페이지의 모든 단을 가로질러 paragraph 인덱스 수집.
+                let mut pis: Vec<usize> = Vec::new();
+                for col in &page.column_contents {
+                    for item in &col.items {
+                        let pi = match item {
+                            PageItem::FullParagraph { para_index } => *para_index,
+                            PageItem::PartialParagraph { para_index, .. } => *para_index,
+                            PageItem::Table { para_index, .. } => *para_index,
+                            PageItem::PartialTable { para_index, .. } => *para_index,
+                            PageItem::Shape { para_index, .. } => *para_index,
+                        };
+                        pis.push(pi);
+                    }
+                }
+                if pis.is_empty() {
+                    return None;
+                }
+                // 페이지가 속한 섹션 — PageContent.section_index.
+                let sec = page.section_index;
+                let start = *pis.iter().min().unwrap();
+                let end = *pis.iter().max().unwrap() + 1;
+                return Some((sec, start, end));
+            }
+            global_idx += 1;
+        }
+    }
+    None
 }
 
 /// IR slice 진입점 — *텍스트 path 만* 처리 (표 처리는 Phase 4).
@@ -702,10 +753,34 @@ pub struct BuildOptions {
 /// `para_start..para_end` 가 섹션의 문단 수를 초과하면 끝쪽 경계를 잘라 panic 없이 빈 slice 를
 /// 반환. `edit_session_id` 미지정 시 `std::time::SystemTime::now()` 기반 ms 타임스탬프로 채움.
 pub fn build_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> IrSlice {
-    let sec = opts.sec;
-    let total = core.document().sections[sec].paragraphs.len();
-    let start = opts.para_start.min(total);
-    let end = opts.para_end.unwrap_or(total).min(total);
+    // Sub-3 v2: page 지정 시 paginator 결과로 sec/start/end 덮어씀. 범위 외 / 빈 페이지면 fallback.
+    let (sec, start, end) = if let Some(p) = opts.page {
+        if let Some(triple) = page_to_para_range(core, p) {
+            triple
+        } else {
+            let sec = opts.sec;
+            let total = core
+                .document()
+                .sections
+                .get(sec)
+                .map(|s| s.paragraphs.len())
+                .unwrap_or(0);
+            let start = opts.para_start.min(total);
+            let end = opts.para_end.unwrap_or(total).min(total);
+            (sec, start, end)
+        }
+    } else {
+        let sec = opts.sec;
+        let total = core
+            .document()
+            .sections
+            .get(sec)
+            .map(|s| s.paragraphs.len())
+            .unwrap_or(0);
+        let start = opts.para_start.min(total);
+        let end = opts.para_end.unwrap_or(total).min(total);
+        (sec, start, end)
+    };
 
     // edit_session_id — 미지정 시 ms 단위 timestamp 로 자동 생성. chrono 의존을 피하기 위해
     // std::time::SystemTime 직접 사용.
@@ -1465,6 +1540,7 @@ mod tests {
                 para_start: 0,
                 para_end: None,
                 edit_session_id: Some("test".into()),
+                page: None,
             },
         );
         assert_eq!(slice.doc_meta.anchor.sec, 0);
@@ -1488,6 +1564,7 @@ mod tests {
                 para_start: 0,
                 para_end: None,
                 edit_session_id: None,
+                page: None,
             },
         );
         assert!(slice.doc_meta.edit_session_id.starts_with("ed_"));
@@ -1705,6 +1782,7 @@ mod tests {
                 para_start: 0,
                 para_end: None,
                 edit_session_id: Some("t".into()),
+                page: None,
             },
         );
         // paragraphs[] 에 table kind 가 적어도 1건.
@@ -1774,6 +1852,7 @@ mod tests {
                 para_start: 0,
                 para_end: None,
                 edit_session_id: Some("t".into()),
+                page: None,
             },
         );
         let total = core.document().sections[0].paragraphs.len();
@@ -1921,6 +2000,7 @@ mod tests {
                 para_start: 0,
                 para_end: None,
                 edit_session_id: None,
+                page: None,
             },
         );
         let v = serde_json::to_value(&slice).unwrap();
@@ -1952,6 +2032,49 @@ mod tests {
     fn compact_border_4sides_none_returns_none() {
         let b = CellBorder::default();
         assert!(compact_border(&b).is_none());
+    }
+
+    #[test]
+    fn build_ir_slice_with_page_0_blank() {
+        // Sub-3 v2 — page=0 으로 호출 시 paginator 결과의 첫 페이지 paragraph 범위로
+        // sec/start/end 가 매핑되거나, 매핑 실패 시 sec/para_start/para_end 폴백.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let slice = build_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: Some("t".into()),
+                page: Some(0),
+            },
+        );
+        // 어느 경로든 anchor.sec 가 0 — blank 문서는 섹션이 1 개뿐.
+        assert_eq!(slice.doc_meta.anchor.sec, 0);
+    }
+
+    #[test]
+    fn build_ir_slice_with_page_out_of_range_falls_back() {
+        // page=999 같은 범위 외 — page_to_para_range 가 None → fallback path 동작.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let slice = build_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: Some("t".into()),
+                page: Some(999),
+            },
+        );
+        // fallback 은 opts.sec / para_start / para_end 사용 — sec=0, para_start=0.
+        assert_eq!(slice.doc_meta.anchor.sec, 0);
+        assert_eq!(slice.doc_meta.anchor.para_start, 0);
+        // para_end 는 섹션 전체 문단 수.
+        let total = core.document().sections[0].paragraphs.len();
+        assert_eq!(slice.doc_meta.anchor.para_end, total);
     }
 
     #[test]
