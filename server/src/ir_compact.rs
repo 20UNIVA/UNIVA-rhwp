@@ -647,6 +647,50 @@ fn build_table_paragraph(
     })
 }
 
+/// 본문 문단 한 개 → IR slice 의 paragraphs[] 평탄 entry 묶음.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildParagraph` 의 Rust 대응. 절차:
+/// 1. 본문 문단이 *표 control* 을 가지면 → 표 본체 (`IrParagraph::Table`) 한 건 +
+///    각 셀의 모든 문단을 평탄화한 `IrParagraph::Text` 들을 *같은 paragraphs[] 안* 에
+///    나란히 push. 모델이 표와 셀 내용을 한 배열에서 동시에 볼 수 있도록 한다 — 옛 ts
+///    원본의 *flatten 평탄 표현* 규약 (init.md spec 의 paragraphs[] 정의 정합).
+/// 2. 표 control 이 없으면 → 일반 텍스트 문단 1건만 반환.
+///
+/// 한 문단에 표 control 이 둘 이상이면 *첫 표만* 처리 (옛 ts 원본도 동일 — 한 문단에
+/// 표는 하나라는 HWP 관습).
+fn build_paragraph(core: &DocumentCore, sec: usize, para: usize) -> Vec<IrParagraph> {
+    let p = match core
+        .document()
+        .sections
+        .get(sec)
+        .and_then(|s| s.paragraphs.get(para))
+    {
+        Some(p) => p,
+        None => return vec![],
+    };
+
+    // 첫 번째 Table control 검색.
+    for (ci, ctrl) in p.controls.iter().enumerate() {
+        if matches!(ctrl, rhwp::model::control::Control::Table(_)) {
+            if let Some(table) = build_table_paragraph(core, sec, para, ci) {
+                let mut out = Vec::new();
+                // 셀 평탄 entry 수집 — 표 본체 push 전후로 *둘 다 paragraphs[] 안에* 노출.
+                let cell_paras: Vec<IrParagraph> = table
+                    .cells
+                    .iter()
+                    .flat_map(|cell| cell.paragraphs.iter().cloned())
+                    .collect();
+                out.push(IrParagraph::Table(table));
+                out.extend(cell_paras);
+                return out;
+            }
+        }
+    }
+
+    // 표 없음 → 일반 텍스트 문단 1건.
+    vec![IrParagraph::Text(build_text_paragraph(core, sec, para))]
+}
+
 /// `build_ir_slice` 의 입력 파라미터.
 ///
 /// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildIRSlice` 의 옵션 객체와 정합. `sec`
@@ -684,7 +728,9 @@ pub fn build_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> IrSlice {
 
     let mut paragraphs = Vec::with_capacity(end.saturating_sub(start));
     for p in start..end {
-        paragraphs.push(IrParagraph::Text(build_text_paragraph(core, sec, p)));
+        // 본문 문단마다 *표 분기* 거쳐 평탄 entry 묶음을 반환받는다 — 텍스트만 있으면 1건,
+        // 표가 있으면 표 본체 + 셀 평탄 entry 들로 확장.
+        paragraphs.extend(build_paragraph(core, sec, p));
     }
 
     IrSlice {
@@ -1318,6 +1364,99 @@ mod tests {
         let cell = try_build_cell(&core, 0, 0, ctrl_idx, 0).expect("cell 0");
         assert_eq!(cell.row_span, Some(2));
         assert!(cell.col_span.is_none(), "col_span=1 → 키 omit");
+    }
+
+    #[test]
+    fn build_ir_slice_text_and_table() {
+        // 본문 첫 문단에 mock 2x2 표를 끼워넣고 build_ir_slice 가 *표 본체 + 셀 평탄 entry*
+        // 들을 paragraphs[] 에 함께 노출하는지 검증. Task 4.3 의 핵심 invariant.
+        use rhwp::model::control::Control;
+        use rhwp::model::table::{Cell, Table};
+
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let mut core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+
+        let mut table = Table {
+            row_count: 2,
+            col_count: 2,
+            ..Default::default()
+        };
+        for r in 0..2u16 {
+            for c in 0..2u16 {
+                table.cells.push(Cell {
+                    col: c,
+                    row: r,
+                    col_span: 1,
+                    row_span: 1,
+                    width: 1000,
+                    height: 500,
+                    border_fill_id: 0,
+                    paragraphs: vec![rhwp::model::paragraph::Paragraph::default()],
+                    ..Default::default()
+                });
+            }
+        }
+        core.document_mut().sections[0].paragraphs[0]
+            .controls
+            .push(Control::Table(Box::new(table)));
+
+        let slice = build_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: Some("t".into()),
+            },
+        );
+        // paragraphs[] 에 table kind 가 적어도 1건 — flatten 된 셀 평탄 entry 도 함께 있어야 함.
+        let kinds: Vec<&str> = slice
+            .paragraphs
+            .iter()
+            .map(|p| match p {
+                IrParagraph::Text(t) => t.kind,
+                IrParagraph::Table(t) => t.kind,
+            })
+            .collect();
+        assert!(
+            kinds.iter().any(|k| *k == "table"),
+            "표 entry 없음: {:?}",
+            kinds
+        );
+        // 셀 평탄 entry — para=-1, cell_locator.is_some() 인 Text 가 *4건* (2x2).
+        let cell_entries: Vec<_> = slice
+            .paragraphs
+            .iter()
+            .filter_map(|p| match p {
+                IrParagraph::Text(t) if t.para == -1 && t.cell_locator.is_some() => Some(t),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(cell_entries.len(), 4, "2x2 셀 평탄 entry 4건 기대");
+    }
+
+    #[test]
+    fn build_ir_slice_text_only_unchanged() {
+        // 표가 없는 blank doc — build_paragraph 분기 후에도 텍스트 path 가 *그대로 1건/문단*
+        // 으로 동작하는지 회귀 검증.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let slice = build_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0,
+                para_start: 0,
+                para_end: None,
+                edit_session_id: Some("t".into()),
+            },
+        );
+        let total = core.document().sections[0].paragraphs.len();
+        // 표 없는 blank 문서 → paragraphs 수 = 섹션 문단 수.
+        assert_eq!(slice.paragraphs.len(), total);
+        // 모두 Text 타입이어야.
+        for p in &slice.paragraphs {
+            assert!(matches!(p, IrParagraph::Text(_)));
+        }
     }
 
     #[test]
