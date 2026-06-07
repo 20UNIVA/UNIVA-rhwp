@@ -57,6 +57,95 @@ pub struct CellStyle {
     #[serde(rename = "vertical-align", skip_serializing_if = "Option::is_none")] pub vertical_align: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+pub struct IrRun {
+    pub char_offset: usize,
+    pub length: usize,
+    pub text: String,
+    pub style: RunStyle,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CellLocator {
+    pub table_para: usize,
+    pub row: u16,
+    pub col: u16,
+    pub cell_para: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IrTextParagraph {
+    pub id: String,
+    pub sec: usize,
+    pub para: i64,
+    #[serde(rename = "type")] pub kind: &'static str,
+    pub style: ParagraphStyle,
+    pub runs: Vec<IrRun>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub cell_locator: Option<CellLocator>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IrTableCell {
+    pub row: u16,
+    pub col: u16,
+    #[serde(skip_serializing_if = "Option::is_none")] pub row_span: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub col_span: Option<u16>,
+    pub style: CellStyle,
+    pub paragraphs: Vec<IrParagraph>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IrTableParagraph {
+    pub id: String,
+    pub sec: usize,
+    pub para: usize,
+    #[serde(rename = "type")] pub kind: &'static str,
+    pub rows: u16,
+    pub cols: u16,
+    pub cells: Vec<IrTableCell>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum IrParagraph {
+    Text(IrTextParagraph),
+    Table(IrTableParagraph),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct IrAnchor {
+    pub sec: usize,
+    pub para_start: usize,
+    pub para_end: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IrDocMeta {
+    pub edit_session_id: String,
+    pub page: u32,
+    pub total_pages: u32,
+    pub anchor: IrAnchor,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IrSlice {
+    pub doc_meta: IrDocMeta,
+    pub paragraphs: Vec<IrParagraph>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DocDefaults {
+    pub run: RunStyle,
+    pub paragraph: ParagraphStyle,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CompactIrSlice {
+    pub doc_meta: IrDocMeta,
+    pub paragraphs: Vec<serde_json::Value>,
+    pub defaults: DocDefaults,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,5 +187,22 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert!(v["border"]["all"]["width"] == 100);
         assert!(v["border"]["left"].is_null());
+    }
+
+    #[test]
+    fn empty_ir_slice_serializes() {
+        let slice = IrSlice {
+            doc_meta: IrDocMeta {
+                edit_session_id: "sim-1".into(),
+                page: 1,
+                total_pages: 1,
+                anchor: IrAnchor { sec: 0, para_start: 0, para_end: 0 },
+            },
+            paragraphs: vec![],
+        };
+        let v = serde_json::to_value(&slice).unwrap();
+        assert_eq!(v["doc_meta"]["page"], 1);
+        assert_eq!(v["doc_meta"]["anchor"]["para_start"], 0);
+        assert!(v["paragraphs"].as_array().unwrap().is_empty());
     }
 }
