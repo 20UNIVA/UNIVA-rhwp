@@ -81,10 +81,12 @@ async function main() {
 
   // 2) bold 'A' 가 들어간 문단 찾기 (insert_paragraph 가 좌표를 미는 case 대비
   // — para 0 또는 para 1 어디든 'A' 를 가진 첫 text 문단을 찾는다)
+  // Sub-3 v2 Phase 3 — type:"text" 는 omit. type 부재 시 기본 'text', 'table' 만 명시.
   assert.ok(Array.isArray(compact.paragraphs), 'paragraphs 배열 없음');
-  const boldPara = compact.paragraphs.find(
-    (p) => p.type === 'text' && Array.isArray(p.runs) && p.runs.some((r) => r.text === 'A'),
-  );
+  const boldPara = compact.paragraphs.find((p) => {
+    const isText = (p.type ?? 'text') === 'text';
+    return isText && Array.isArray(p.runs) && p.runs.some((r) => r.text === 'A');
+  });
   assert.ok(boldPara, `bold 'A' 가 들어간 문단 없음: ${JSON.stringify(compact.paragraphs)}`);
   const boldRun = boldPara.runs.find((r) => r.text === 'A');
   assert.equal(boldRun.style?.bold, true, `bold 누락: ${JSON.stringify(boldRun)}`);
@@ -118,6 +120,20 @@ async function main() {
     0,
     `평탄 cell_locator entry 가 남음: ${flatCellEntries.length} 건`,
   );
+
+  // 5-2) Sub-3 v2 Phase 3: 구조 키 omit 검증.
+  //   - id 항상 omit (text/table 모두)
+  //   - 단일 sec 응답이므로 paragraph 마다의 sec 키 omit
+  //   - type:"text" 는 omit (기본값), table 만 type:"table" 명시
+  for (const p of compact.paragraphs) {
+    assert.equal(p.id, undefined, `paragraph id 잔존: ${JSON.stringify(p).slice(0, 120)}`);
+    assert.equal(p.sec, undefined, `단일 sec 응답에서 paragraph sec 잔존: ${JSON.stringify(p).slice(0, 120)}`);
+    if (p.type !== undefined) {
+      assert.equal(p.type, 'table', `text 는 type 부재여야 함, table 만 명시: ${p.type}`);
+    }
+  }
+  // doc_meta.anchor.sec 는 그대로 유지 — 응답 전체의 sec 진실.
+  assert.equal(typeof compact.doc_meta?.anchor?.sec, 'number', 'doc_meta.anchor.sec 누락');
 
   // 6) raw 모드 호환
   const raw = await getIrSlice(fid, 0, 0, null, 'raw');
