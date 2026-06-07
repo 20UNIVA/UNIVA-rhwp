@@ -976,6 +976,10 @@ struct IrSliceQuery {
     para_start: Option<usize>,
     #[serde(default)]
     para_end: Option<usize>,
+    /// Sub-3 v2 — 문서 전체 0-based 페이지 번호. 지정 시 paginator 결과로
+    /// sec/para_start/para_end 가 *덮어써짐*. raw 모드에는 영향 없음.
+    #[serde(default)]
+    page: Option<u32>,
     #[serde(default = "default_ir_slice_mode")]
     mode: String,
 }
@@ -1019,14 +1023,20 @@ async fn ir_slice_handler(
             para_start,
             para_end: Some(para_end),
             edit_session_id: Some(format!("cli_{}", file_id)),
+            // Sub-3 v2 — page query 지정 시 paginator 결과로 sec/start/end 가 덮어써짐.
+            page: q.page,
         };
         let slice = ir_compact::build_compact_ir_slice(&s.core, &opts);
+        // anchor 값은 page 매핑 후의 *실제* sec/para_start/para_end — top-level 호환 필드도
+        // 이 값으로 채워야 옛 client 가 일관되게 인식. move 전에 사본을 떠둔다.
+        let anchor_sec = slice.doc_meta.anchor.sec;
+        let anchor_start = slice.doc_meta.anchor.para_start;
+        let anchor_end = slice.doc_meta.anchor.para_end;
         let mut v = serde_json::to_value(&slice).unwrap_or(serde_json::Value::Null);
-        // 옛 client 호환 — top-level section/para_start/para_end/mode 동시 노출
         if let serde_json::Value::Object(ref mut m) = v {
-            m.insert("section".into(), serde_json::json!(sec));
-            m.insert("para_start".into(), serde_json::json!(para_start));
-            m.insert("para_end".into(), serde_json::json!(para_end));
+            m.insert("section".into(), serde_json::json!(anchor_sec));
+            m.insert("para_start".into(), serde_json::json!(anchor_start));
+            m.insert("para_end".into(), serde_json::json!(anchor_end));
             m.insert("mode".into(), serde_json::json!("compact"));
         }
         return Ok(Json(v));
