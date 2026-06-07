@@ -132,6 +132,13 @@ pub struct ActiveFieldInfo {
 }
 
 impl DocumentCore {
+    /// IR slice 빌더용 read-only accessor — `server::ir_compact` 에서 사용 (Sub-3).
+    /// `ResolvedCharStyle` / `ResolvedBorderStyle` 평탄화 결과에 접근.
+    /// (`document()` 는 이미 `commands/document.rs:626` 에 노출되어 있어 재정의 불필요.)
+    pub fn styles(&self) -> &ResolvedStyleSet {
+        &self.styles
+    }
+
     /// 총 페이지 수를 반환한다.
     pub fn page_count(&self) -> u32 {
         self.pagination
