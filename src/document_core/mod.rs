@@ -139,6 +139,12 @@ impl DocumentCore {
         &self.styles
     }
 
+    /// IR slice 빌더용 read-only accessor — Sub-3 v2 의 페이지 단위 슬라이스가 사용.
+    /// `PaginationResult` (renderer 의 페이지 분할 결과) 를 그대로 노출.
+    pub fn pagination(&self) -> &[PaginationResult] {
+        &self.pagination
+    }
+
     /// 총 페이지 수를 반환한다.
     pub fn page_count(&self) -> u32 {
         self.pagination
