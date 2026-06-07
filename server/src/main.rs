@@ -1008,43 +1008,47 @@ async fn ir_slice_handler(
     let para_start = q.para_start.unwrap_or(0);
     let para_end = q.para_end.unwrap_or(total).min(total);
 
-    let total_chars: usize = (para_start..para_end)
-        .filter_map(|i| s.core.document().sections[sec].paragraphs.get(i))
-        .map(|p| p.text.chars().count())
-        .sum();
-
     let resolved_mode = match q.mode.as_str() {
         "raw" => "raw",
-        "compact" => "compact",
-        _ if total_chars < 5000 => "raw",
         _ => "compact",
     };
+
+    if resolved_mode == "compact" {
+        let opts = ir_compact::BuildOptions {
+            sec,
+            para_start,
+            para_end: Some(para_end),
+            edit_session_id: Some(format!("cli_{}", file_id)),
+        };
+        let slice = ir_compact::build_compact_ir_slice(&s.core, &opts);
+        let mut v = serde_json::to_value(&slice).unwrap_or(serde_json::Value::Null);
+        // 옛 client 호환 — top-level section/para_start/para_end/mode 동시 노출
+        if let serde_json::Value::Object(ref mut m) = v {
+            m.insert("section".into(), serde_json::json!(sec));
+            m.insert("para_start".into(), serde_json::json!(para_start));
+            m.insert("para_end".into(), serde_json::json!(para_end));
+            m.insert("mode".into(), serde_json::json!("compact"));
+        }
+        return Ok(Json(v));
+    }
 
     let paragraphs: Vec<serde_json::Value> = (para_start..para_end)
         .map(|p| {
             let para = &s.core.document().sections[sec].paragraphs[p];
-            if resolved_mode == "raw" {
-                // Paragraph 의 Serialize derive 로 직접 직렬화. `controls`,
-                // `ctrl_data_records` 는 #[serde(skip)] 되어 제외 — Control enum
-                // 이 Serialize 미구현이라 raw 에서 빠진다. 컨트롤 목록은 별도로
-                // /sessions/{id}/ir 의 ParagraphView::controls 로 조회.
-                let mut v = serde_json::to_value(para).unwrap_or(serde_json::Value::Null);
-                if let serde_json::Value::Object(ref mut map) = v {
-                    map.insert("para".into(), serde_json::Value::from(p));
-                    // 컨트롤은 raw 직렬화에서 빠지므로 길이만 보강.
-                    map.insert(
-                        "controls_len".into(),
-                        serde_json::Value::from(para.controls.len()),
-                    );
-                }
-                v
-            } else {
-                serde_json::json!({
-                    "para": p,
-                    "text": para.text,
-                    "para_shape_id": para.para_shape_id,
-                })
+            // Paragraph 의 Serialize derive 로 직접 직렬화. `controls`,
+            // `ctrl_data_records` 는 #[serde(skip)] 되어 제외 — Control enum
+            // 이 Serialize 미구현이라 raw 에서 빠진다. 컨트롤 목록은 별도로
+            // /sessions/{id}/ir 의 ParagraphView::controls 로 조회.
+            let mut v = serde_json::to_value(para).unwrap_or(serde_json::Value::Null);
+            if let serde_json::Value::Object(ref mut map) = v {
+                map.insert("para".into(), serde_json::Value::from(p));
+                // 컨트롤은 raw 직렬화에서 빠지므로 길이만 보강.
+                map.insert(
+                    "controls_len".into(),
+                    serde_json::Value::from(para.controls.len()),
+                );
             }
+            v
         })
         .collect();
 
