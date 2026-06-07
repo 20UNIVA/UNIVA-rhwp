@@ -8,12 +8,15 @@
 
 #![allow(dead_code)]  // 구현 진행 중 일시 허용. Phase 5 종료 시 제거.
 
+use rhwp::document_core::DocumentCore;
 use rhwp::model::style::{
     Alignment, BorderLine, BorderLineType, CharShape, LineSpacingType, ParaShape, UnderlineType,
 };
 use rhwp::model::table::Cell;
 use rhwp::model::ColorRef;
-use rhwp::renderer::style_resolver::{primary_font_name, ResolvedBorderStyle, ResolvedCharStyle};
+use rhwp::renderer::style_resolver::{
+    detect_lang_category, primary_font_name, ResolvedBorderStyle, ResolvedCharStyle,
+};
 use serde::Serialize;
 
 /// `ColorRef` (0x00BBGGRR `u32`) → CSS hex 문자열 `"#RRGGBB"`.
@@ -388,6 +391,58 @@ where
         });
     }
     runs
+}
+
+/// 본문 문단 (`sec`, `para` 인덱스) 의 IR 표현을 빌드.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildTextParagraph` 의 Rust 대응. 절차:
+/// 1. `core.document().sections[sec].paragraphs[para]` 에서 본문 텍스트와 길이 추출
+/// 2. `para_shape_id` 가 가리키는 `doc_info.para_shapes[id]` 를 `para_shape_to_para_style`
+///    으로 변환 — 인덱스가 범위를 벗어나면 `ParagraphStyle::default()` 로 폴백
+/// 3. 각 글자 오프셋마다 `char_shape_id_at(off)` 로 char_shape 인덱스를 얻고, *resolved*
+///    (`core.styles().char_styles[id]`) 와 *raw* (`doc_info.char_shapes[id]`) 둘을 함께 가져와
+///    `char_shape_to_run_style` 호출. 둘 중 하나라도 없으면 `RunStyle::default()` 로 폴백
+/// 4. `collect_runs` 로 인접 동일 스타일 run 을 병합
+///
+/// 빈 문단 (텍스트 길이 0) 은 `collect_runs` 가 `length=0` 1건을 반환 — IR 응답 구조 유지.
+fn build_text_paragraph(core: &DocumentCore, sec: usize, para: usize) -> IrTextParagraph {
+    let p = &core.document().sections[sec].paragraphs[para];
+    let len = p.text.chars().count();
+
+    // 문단 모양 — para_shape_id 가 가리키는 doc_info.para_shapes[id] (범위 밖이면 default).
+    let para_style = core
+        .document()
+        .doc_info
+        .para_shapes
+        .get(p.para_shape_id as usize)
+        .map(para_shape_to_para_style)
+        .unwrap_or_default();
+
+    // 인접 run 병합 — 각 글자 위치의 char_shape_id 를 얻어 resolved + raw 둘로 run style 합성.
+    let chars: Vec<char> = p.text.chars().collect();
+    let runs = collect_runs(&p.text, len, |off| {
+        let id = p.char_shape_id_at(off).unwrap_or(0) as usize;
+        let resolved = core.styles().char_styles.get(id);
+        let raw = core.document().doc_info.char_shapes.get(id);
+        match (resolved, raw) {
+            (Some(rs), Some(rw)) => {
+                // detect_lang_category 는 char 1 개를 받아 7개 카테고리 중 하나의 인덱스 반환.
+                let lang_idx = chars.get(off).copied().map(detect_lang_category).unwrap_or(0);
+                char_shape_to_run_style(rs, rw, lang_idx)
+            }
+            _ => RunStyle::default(),
+        }
+    });
+
+    IrTextParagraph {
+        id: format!("p_{}_{}", sec, para),
+        sec,
+        para: para as i64,
+        kind: "text",
+        style: para_style,
+        runs,
+        cell_locator: None,
+    }
 }
 
 #[cfg(test)]
@@ -777,6 +832,26 @@ mod tests {
         assert_eq!(runs[0].length, 0);
         assert_eq!(runs[0].char_offset, 0);
         assert!(runs[0].text.is_empty());
+    }
+
+    #[test]
+    fn build_text_paragraph_blank_returns_default_style() {
+        // `samples/hwpx/blank_hwpx.hwpx` 는 워크스페이스 루트의 빈 문서.
+        // 첫 섹션의 첫 문단을 빌드해 보면 텍스트가 비어있어 collect_runs 가 len=0 1건 반환.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load blank");
+
+        let para = build_text_paragraph(&core, 0, 0);
+        assert_eq!(para.kind, "text");
+        assert_eq!(para.id, "p_0_0");
+        assert_eq!(para.sec, 0);
+        assert_eq!(para.para, 0);
+        // 빈 문단이라도 collect_runs 는 1건의 placeholder run 을 반환.
+        assert!(!para.runs.is_empty());
+        // 빈 문단이면 첫 run 은 length=0.
+        if para.runs.len() == 1 {
+            assert_eq!(para.runs[0].length, 0);
+        }
     }
 
     #[test]
