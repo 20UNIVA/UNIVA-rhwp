@@ -248,6 +248,197 @@ pub enum EditOperation {
 
 fn one_count() -> usize { 1 }
 
+// ─── Sub-4: 영향 범위 헬퍼 (patch diff 캡처용) ────────────────────────────────
+
+/// 편집 연산이 영향을 미치는 문단 범위와 셀 좌표.
+///
+/// `before` 는 *적용 전* 캡처해야 할 문단 범위, `after` 는 *적용 후* 캡처할 범위다.
+/// insert 계열은 after 가 늘어나고, delete 계열은 줄어든다.
+/// `cell` 이 채워져 있으면 표 셀 단위 편집임을 표시하며 IR 슬라이스 내부에서
+/// 해당 셀만 강조해 보여 줄 수 있다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AffectedRange {
+    pub section: usize,
+    pub before: ParaRange,
+    pub after: ParaRange,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell: Option<CellFocus>,
+}
+
+/// 0-based 문단 인덱스의 반열린 범위 `[start, end)`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParaRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl ParaRange {
+    pub fn single(para: usize) -> Self { Self { start: para, end: para + 1 } }
+    pub fn empty(at: usize) -> Self { Self { start: at, end: at } }
+}
+
+/// 표 셀 편집의 좌표.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellFocus {
+    pub table_para: usize,
+    pub row: usize,
+    pub col: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_idx: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_para: Option<usize>,
+}
+
+impl EditOperation {
+    /// 편집 연산이 영향을 미치는 문단 범위 / 셀 좌표.
+    ///
+    /// 적용 전 (`before`) 과 적용 후 (`after`) 범위가 다를 수 있다.
+    /// IR 슬라이스 캡처 (patch diff) 에서 사용한다.
+    pub fn affected_range(&self) -> AffectedRange {
+        match self {
+            EditOperation::InsertText { section, para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*para),
+                after: ParaRange::single(*para),
+                cell: None,
+            },
+            EditOperation::DeleteText { section, para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*para),
+                after: ParaRange::single(*para),
+                cell: None,
+            },
+            EditOperation::SplitParagraph { section, para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*para),
+                after: ParaRange { start: *para, end: *para + 2 },
+                cell: None,
+            },
+            EditOperation::MergeParagraph { section, para, .. } => {
+                let prev = para.saturating_sub(1);
+                AffectedRange {
+                    section: *section,
+                    before: ParaRange { start: prev, end: *para + 1 },
+                    after: ParaRange::single(prev),
+                    cell: None,
+                }
+            }
+            EditOperation::ReplaceRuns { section, para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*para),
+                after: ParaRange::single(*para),
+                cell: None,
+            },
+            EditOperation::SetParagraphStyle { section, para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*para),
+                after: ParaRange::single(*para),
+                cell: None,
+            },
+            EditOperation::DeleteRange { section, para_start, para_end, .. } => {
+                let end_exclusive = para_end.saturating_add(1);
+                AffectedRange {
+                    section: *section,
+                    before: ParaRange { start: *para_start, end: end_exclusive },
+                    after: ParaRange::single(*para_start),
+                    cell: None,
+                }
+            }
+            EditOperation::InsertParagraph { section, after_para, count, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*after_para),
+                after: ParaRange { start: *after_para, end: *after_para + 1 + *count },
+                cell: None,
+            },
+            EditOperation::DeleteElement { section, para, element_type } => {
+                match element_type {
+                    ElementType::Paragraph => AffectedRange {
+                        section: *section,
+                        before: ParaRange::single(*para),
+                        after: ParaRange::empty(*para),
+                        cell: None,
+                    },
+                    ElementType::Table => AffectedRange {
+                        section: *section,
+                        before: ParaRange::single(*para),
+                        after: ParaRange::single(*para),
+                        cell: None,
+                    },
+                }
+            }
+            EditOperation::InsertTable { section, insert_after_para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*insert_after_para),
+                after: ParaRange { start: *insert_after_para, end: *insert_after_para + 2 },
+                cell: None,
+            },
+            EditOperation::SetCellStyle { section, table_para, row, col, cell_idx, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*table_para),
+                after: ParaRange::single(*table_para),
+                cell: Some(CellFocus {
+                    table_para: *table_para,
+                    row: *row,
+                    col: *col,
+                    cell_idx: *cell_idx,
+                    cell_para: None,
+                }),
+            },
+            EditOperation::MergeCells { section, table_para, row_start, col_start, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*table_para),
+                after: ParaRange::single(*table_para),
+                cell: Some(CellFocus {
+                    table_para: *table_para,
+                    row: *row_start,
+                    col: *col_start,
+                    cell_idx: None,
+                    cell_para: None,
+                }),
+            },
+            EditOperation::ReplaceCellRuns { section, table_para, row, col, cell_idx, cell_para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*table_para),
+                after: ParaRange::single(*table_para),
+                cell: Some(CellFocus {
+                    table_para: *table_para,
+                    row: *row,
+                    col: *col,
+                    cell_idx: *cell_idx,
+                    cell_para: Some(*cell_para),
+                }),
+            },
+            EditOperation::InsertTextInCell { section, table_para, row, col, cell_idx, cell_para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*table_para),
+                after: ParaRange::single(*table_para),
+                cell: Some(CellFocus {
+                    table_para: *table_para,
+                    row: *row,
+                    col: *col,
+                    cell_idx: *cell_idx,
+                    cell_para: Some(*cell_para),
+                }),
+            },
+            EditOperation::DeleteRangeInCell { section, table_para, row, col, cell_idx, cell_para_start, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*table_para),
+                after: ParaRange::single(*table_para),
+                cell: Some(CellFocus {
+                    table_para: *table_para,
+                    row: *row,
+                    col: *col,
+                    cell_idx: *cell_idx,
+                    cell_para: Some(*cell_para_start),
+                }),
+            },
+        }
+    }
+}
+
 impl DocumentCore {
     /// (row, col) 좌표를 `Table.cells` 의 선형 인덱스로 변환한다.
     /// 셀 단위 편집 variant (SetCellStyle, ReplaceCellRuns, InsertTextInCell, DeleteRangeInCell)
@@ -915,5 +1106,150 @@ mod tests {
             }
         };
         assert!(cells_after < cells_before, "병합 후 cells 수 감소해야 함 (before={}, after={})", cells_before, cells_after);
+    }
+
+    // ─── Sub-4: affected_range() variant 별 검증 ────────────────────────────
+
+    #[test]
+    fn affected_range_replace_runs_single_para() {
+        let op = EditOperation::ReplaceRuns { section: 0, para: 5, runs: vec![] };
+        let r = op.affected_range();
+        assert_eq!(r.section, 0);
+        assert_eq!(r.before, ParaRange::single(5));
+        assert_eq!(r.after, ParaRange::single(5));
+        assert!(r.cell.is_none());
+    }
+
+    #[test]
+    fn affected_range_set_paragraph_style_single_para() {
+        let op = EditOperation::SetParagraphStyle {
+            section: 1, para: 3, style: PartialParagraphStyle::default(),
+        };
+        let r = op.affected_range();
+        assert_eq!(r.section, 1);
+        assert_eq!(r.before, ParaRange::single(3));
+        assert_eq!(r.after, ParaRange::single(3));
+    }
+
+    #[test]
+    fn affected_range_delete_range_multi_para_collapses_after() {
+        let op = EditOperation::DeleteRange {
+            section: 0, para_start: 2, char_start: 0, para_end: 5, char_end: 3,
+        };
+        let r = op.affected_range();
+        // before = [2..6) (para_end inclusive → +1)
+        assert_eq!(r.before, ParaRange { start: 2, end: 6 });
+        // after collapses to single paragraph
+        assert_eq!(r.after, ParaRange::single(2));
+    }
+
+    #[test]
+    fn affected_range_insert_paragraph_after_expands() {
+        let op = EditOperation::InsertParagraph {
+            section: 0, after_para: 3, count: 2, style: None,
+        };
+        let r = op.affected_range();
+        assert_eq!(r.before, ParaRange::single(3));
+        // after = [3..3+1+2) = [3..6)
+        assert_eq!(r.after, ParaRange { start: 3, end: 6 });
+    }
+
+    #[test]
+    fn affected_range_insert_table_after_expands() {
+        let op = EditOperation::InsertTable {
+            section: 0, insert_after_para: 4, rows: 2, cols: 3,
+        };
+        let r = op.affected_range();
+        assert_eq!(r.before, ParaRange::single(4));
+        // after = [4..4+2) = [4..6) — 원래 paragraph + 새 표 paragraph
+        assert_eq!(r.after, ParaRange { start: 4, end: 6 });
+    }
+
+    #[test]
+    fn affected_range_delete_element_paragraph_empty_after() {
+        let op = EditOperation::DeleteElement {
+            section: 0, para: 7, element_type: ElementType::Paragraph,
+        };
+        let r = op.affected_range();
+        assert_eq!(r.before, ParaRange::single(7));
+        assert_eq!(r.after, ParaRange::empty(7));
+    }
+
+    #[test]
+    fn affected_range_delete_element_table_keeps_paragraph() {
+        // 표 control 만 삭제 — paragraph 자체는 남는다.
+        let op = EditOperation::DeleteElement {
+            section: 0, para: 7, element_type: ElementType::Table,
+        };
+        let r = op.affected_range();
+        assert_eq!(r.before, ParaRange::single(7));
+        assert_eq!(r.after, ParaRange::single(7));
+    }
+
+    #[test]
+    fn affected_range_set_cell_style_carries_cell_focus() {
+        let op = EditOperation::SetCellStyle {
+            section: 0, table_para: 4, row: 2, col: 3,
+            cell_idx: Some(11), style: PartialCellStyle::default(),
+        };
+        let r = op.affected_range();
+        assert_eq!(r.before, ParaRange::single(4));
+        assert_eq!(r.after, ParaRange::single(4));
+        let cell = r.cell.expect("cell focus 필요");
+        assert_eq!(cell.table_para, 4);
+        assert_eq!(cell.row, 2);
+        assert_eq!(cell.col, 3);
+        assert_eq!(cell.cell_idx, Some(11));
+        assert_eq!(cell.cell_para, None);
+    }
+
+    #[test]
+    fn affected_range_replace_cell_runs_carries_cell_para() {
+        let op = EditOperation::ReplaceCellRuns {
+            section: 0, table_para: 4, row: 1, col: 2,
+            cell_idx: Some(6), cell_para: 0, runs: vec![],
+        };
+        let r = op.affected_range();
+        let cell = r.cell.expect("cell focus 필요");
+        assert_eq!(cell.cell_idx, Some(6));
+        assert_eq!(cell.cell_para, Some(0));
+    }
+
+    #[test]
+    fn affected_range_merge_cells_uses_start_coords() {
+        let op = EditOperation::MergeCells {
+            section: 0, table_para: 4,
+            row_start: 1, col_start: 2, row_end: 3, col_end: 5,
+        };
+        let r = op.affected_range();
+        let cell = r.cell.expect("cell focus 필요");
+        assert_eq!(cell.row, 1);
+        assert_eq!(cell.col, 2);
+    }
+
+    #[test]
+    fn affected_range_split_paragraph_grows_after() {
+        let op = EditOperation::SplitParagraph { section: 0, para: 5, offset: 3 };
+        let r = op.affected_range();
+        assert_eq!(r.before, ParaRange::single(5));
+        assert_eq!(r.after, ParaRange { start: 5, end: 7 });
+    }
+
+    #[test]
+    fn affected_range_merge_paragraph_consumes_prev() {
+        let op = EditOperation::MergeParagraph { section: 0, para: 5, prev_len: 4 };
+        let r = op.affected_range();
+        // before = [4..6), after = [4..5)
+        assert_eq!(r.before, ParaRange { start: 4, end: 6 });
+        assert_eq!(r.after, ParaRange::single(4));
+    }
+
+    #[test]
+    fn affected_range_merge_paragraph_at_zero_saturates() {
+        // 안전: para=0 이면 prev=0 (실제로는 invalid 이지만 panic 방지 확인).
+        let op = EditOperation::MergeParagraph { section: 0, para: 0, prev_len: 0 };
+        let r = op.affected_range();
+        assert_eq!(r.before.start, 0);
+        assert_eq!(r.after.start, 0);
     }
 }

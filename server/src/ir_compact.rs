@@ -6,7 +6,7 @@
 //!
 //! 호출 위치: `server/src/main.rs::ir_slice_handler` 의 compact 분기.
 
-use rhwp::document_core::DocumentCore;
+use rhwp::document_core::{AffectedRange, CellFocus, DocumentCore};
 use rhwp::model::style::{
     Alignment, BorderLine, BorderLineType, CharShape, LineSpacingType, ParaShape, UnderlineType,
 };
@@ -1175,9 +1175,155 @@ pub fn build_compact_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> Compa
     compact_ir_slice(build_ir_slice(core, opts))
 }
 
+// ─── Sub-4: patch diff 캡처 ─────────────────────────────────────────
+
+/// 편집 연산 적용 전후의 IR 스냅샷.
+///
+/// `op` 는 EditOperation 의 `op` 태그(예: "replace_cell_runs") — 모델이 어떤 액션
+/// 결과인지 응답에서 바로 인식하도록 함께 싣는다.
+/// `before` 와 `after` 는 *영향 범위* 만 잘라낸 compact IR slice 이며, 동일 범위가
+/// 아닐 수 있다 (삽입은 after 확장, 삭제는 after 축소).
+/// `summary` 는 변경 여부와 길이 통계를 미리 계산해 모델이 한눈에 확인할 수 있게 한다.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchDiff {
+    pub op: String,
+    pub location: PatchLocation,
+    pub before: CompactIrSlice,
+    pub after: CompactIrSlice,
+    pub summary: PatchSummary,
+}
+
+/// 변경 위치 좌표.
+///
+/// 본문 paragraph 범위는 0-based 반열린 `[start, end)`. 표 셀 단위 편집이면 `cell`
+/// 에 (table_para, row, col, cell_idx?, cell_para?) 가 채워진다.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchLocation {
+    pub section: usize,
+    pub para_start_before: usize,
+    pub para_end_before: usize,
+    pub para_start_after: usize,
+    pub para_end_after: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<CellFocus>,
+}
+
+/// before/after 변화 요약. 모델이 응답 JSON 만 보고 *적용 여부* 와 *변화 크기* 를
+/// 즉시 알 수 있도록 미리 계산해 둔다.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchSummary {
+    /// before != after (compact IR JSON 직렬화 비교). false 면 *no-op* — 좌표/payload 가
+    /// 실제 데이터를 바꾸지 못한 경우 (예: 같은 runs 로 교체, 빈 범위 삭제).
+    pub changed: bool,
+    pub before_para_count: usize,
+    pub after_para_count: usize,
+    pub before_text_len: usize,
+    pub after_text_len: usize,
+}
+
+fn compact_slice_para_count(slice: &CompactIrSlice) -> usize {
+    slice.paragraphs.len()
+}
+
+fn compact_slice_text_len(slice: &CompactIrSlice) -> usize {
+    // 표 셀 안 텍스트까지 모두 합쳐 단순 글자 길이 합산.
+    fn paragraph_text_len(p: &serde_json::Value) -> usize {
+        match p.get("type").and_then(|t| t.as_str()) {
+            Some("table") => {
+                if let Some(cells) = p.get("table").and_then(|t| t.get("cells")).and_then(|c| c.as_array()) {
+                    cells.iter().map(|c| {
+                        c.get("paragraphs").and_then(|ps| ps.as_array())
+                            .map(|ps| ps.iter().map(paragraph_text_len).sum::<usize>())
+                            .unwrap_or(0)
+                    }).sum()
+                } else { 0 }
+            }
+            _ => {
+                p.get("runs").and_then(|r| r.as_array())
+                    .map(|runs| runs.iter().map(|r| {
+                        r.get("text").and_then(|t| t.as_str()).map(|s| s.chars().count()).unwrap_or(0)
+                    }).sum::<usize>())
+                    .unwrap_or(0)
+            }
+        }
+    }
+    slice.paragraphs.iter().map(paragraph_text_len).sum()
+}
+
+/// 편집 적용 전 IR 슬라이스 캡처. `affected_range.before` 범위를 잘라 compact IR
+/// 로 반환한다.
+pub fn capture_before_slice(core: &DocumentCore, range: &AffectedRange) -> CompactIrSlice {
+    let opts = BuildOptions {
+        sec: range.section,
+        para_start: range.before.start,
+        para_end: Some(range.before.end),
+        edit_session_id: None,
+        page: None,
+    };
+    build_compact_ir_slice(core, &opts)
+}
+
+/// 편집 적용 후 IR 슬라이스 캡처. `affected_range.after` 범위를 잘라 compact IR
+/// 로 반환한다.
+pub fn capture_after_slice(core: &DocumentCore, range: &AffectedRange) -> CompactIrSlice {
+    let opts = BuildOptions {
+        sec: range.section,
+        para_start: range.after.start,
+        para_end: Some(range.after.end),
+        edit_session_id: None,
+        page: None,
+    };
+    build_compact_ir_slice(core, &opts)
+}
+
+/// before/after compact IR slice 와 affected range 를 결합해 PatchDiff 를 구성한다.
+///
+/// `op_tag` 는 EditOperation 의 `op` 태그 문자열 (예: "replace_cell_runs", "insert_text") —
+/// 모델 응답에서 어떤 액션인지 식별 용도로 함께 싣는다.
+pub fn build_patch_diff(
+    op_tag: &str,
+    range: &AffectedRange,
+    before: CompactIrSlice,
+    after: CompactIrSlice,
+) -> PatchDiff {
+    let before_para_count = compact_slice_para_count(&before);
+    let after_para_count = compact_slice_para_count(&after);
+    let before_text_len = compact_slice_text_len(&before);
+    let after_text_len = compact_slice_text_len(&after);
+
+    // changed 판정 — paragraphs JSON 직렬 비교. defaults 박스는 *문서 전체 mode 기반* 이라
+    // 셀 한 칸 패치로는 안 바뀌어서 비교에서 제외.
+    let changed = before.paragraphs != after.paragraphs;
+
+    PatchDiff {
+        op: op_tag.to_string(),
+        location: PatchLocation {
+            section: range.section,
+            para_start_before: range.before.start,
+            para_end_before: range.before.end,
+            para_start_after: range.after.start,
+            para_end_after: range.after.end,
+            cell: range.cell.clone(),
+        },
+        before,
+        after,
+        summary: PatchSummary {
+            changed,
+            before_para_count,
+            after_para_count,
+            before_text_len,
+            after_text_len,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rhwp::document_core::ParaRange;
     use serde_json::json;
 
     #[test]
@@ -2300,5 +2446,135 @@ mod tests {
         assert_eq!(v["doc_meta"]["page"], 1);
         assert_eq!(v["doc_meta"]["anchor"]["para_start"], 0);
         assert!(v["paragraphs"].as_array().unwrap().is_empty());
+    }
+
+    // ─── Sub-4: PatchDiff / build_patch_diff 검증 ─────────────────────────────
+
+    fn dummy_slice(sec: usize, start: usize, end: usize) -> CompactIrSlice {
+        CompactIrSlice {
+            doc_meta: IrDocMeta {
+                edit_session_id: "dummy".into(),
+                page: 1,
+                total_pages: 1,
+                anchor: IrAnchor { sec, para_start: start, para_end: end },
+            },
+            paragraphs: vec![],
+            defaults: DocDefaults {
+                run: RunStyle::default(),
+                paragraph: ParagraphStyle::default(),
+            },
+        }
+    }
+
+    #[test]
+    fn patch_diff_summary_changed_false_when_identical() {
+        let range = AffectedRange {
+            section: 0,
+            before: ParaRange::single(0),
+            after: ParaRange::single(0),
+            cell: None,
+        };
+        let before = dummy_slice(0, 0, 1);
+        let after = dummy_slice(0, 0, 1);
+        let diff = build_patch_diff("replace_runs", &range, before, after);
+        assert_eq!(diff.op, "replace_runs");
+        assert!(!diff.summary.changed, "동일 슬라이스 → changed=false");
+        assert_eq!(diff.summary.before_text_len, 0);
+        assert_eq!(diff.summary.after_text_len, 0);
+    }
+
+    #[test]
+    fn patch_diff_summary_changed_true_on_text_diff() {
+        let range = AffectedRange {
+            section: 0,
+            before: ParaRange::single(0),
+            after: ParaRange::single(0),
+            cell: None,
+        };
+        let before = CompactIrSlice {
+            doc_meta: IrDocMeta {
+                edit_session_id: "x".into(), page: 1, total_pages: 1,
+                anchor: IrAnchor { sec: 0, para_start: 0, para_end: 1 },
+            },
+            paragraphs: vec![serde_json::json!({"runs": [{"text": "abc"}]})],
+            defaults: DocDefaults { run: RunStyle::default(), paragraph: ParagraphStyle::default() },
+        };
+        let after = CompactIrSlice {
+            doc_meta: IrDocMeta {
+                edit_session_id: "x".into(), page: 1, total_pages: 1,
+                anchor: IrAnchor { sec: 0, para_start: 0, para_end: 1 },
+            },
+            paragraphs: vec![serde_json::json!({"runs": [{"text": "abcXY"}]})],
+            defaults: DocDefaults { run: RunStyle::default(), paragraph: ParagraphStyle::default() },
+        };
+        let diff = build_patch_diff("insert_text", &range, before, after);
+        assert!(diff.summary.changed);
+        assert_eq!(diff.summary.before_text_len, 3);
+        assert_eq!(diff.summary.after_text_len, 5);
+    }
+
+    #[test]
+    fn patch_diff_location_carries_ranges() {
+        let range = AffectedRange {
+            section: 1,
+            before: ParaRange { start: 3, end: 4 },
+            after: ParaRange { start: 3, end: 6 },
+            cell: Some(CellFocus {
+                table_para: 3, row: 1, col: 2,
+                cell_idx: Some(7), cell_para: Some(0),
+            }),
+        };
+        let diff = build_patch_diff("insert_table", &range, dummy_slice(1, 3, 4), dummy_slice(1, 3, 6));
+        assert_eq!(diff.location.section, 1);
+        assert_eq!(diff.location.para_start_before, 3);
+        assert_eq!(diff.location.para_end_before, 4);
+        assert_eq!(diff.location.para_start_after, 3);
+        assert_eq!(diff.location.para_end_after, 6);
+        let cell = diff.location.cell.as_ref().expect("cell focus");
+        assert_eq!(cell.table_para, 3);
+        assert_eq!(cell.row, 1);
+        assert_eq!(cell.col, 2);
+    }
+
+    #[test]
+    fn patch_diff_serializes_with_camel_case() {
+        let range = AffectedRange {
+            section: 0,
+            before: ParaRange::single(0),
+            after: ParaRange::single(0),
+            cell: None,
+        };
+        let diff = build_patch_diff("replace_runs", &range, dummy_slice(0, 0, 1), dummy_slice(0, 0, 1));
+        let v = serde_json::to_value(&diff).unwrap();
+        // camelCase 직렬화 — 모델이 응답 JSON 에서 키를 읽을 때 일관성 유지.
+        assert!(v.get("op").is_some());
+        assert!(v["location"].get("paraStartBefore").is_some());
+        assert!(v["location"].get("paraEndAfter").is_some());
+        assert!(v["summary"].get("beforeTextLen").is_some());
+        assert!(v["summary"].get("afterTextLen").is_some());
+        assert!(v["summary"].get("changed").is_some());
+    }
+
+    #[test]
+    fn capture_before_slice_matches_build_compact() {
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let range = AffectedRange {
+            section: 0,
+            before: ParaRange::single(0),
+            after: ParaRange::single(0),
+            cell: None,
+        };
+        let before = capture_before_slice(&core, &range);
+        // 직접 build_compact_ir_slice 호출과 동일한 결과를 내야 한다.
+        let expected = build_compact_ir_slice(
+            &core,
+            &BuildOptions {
+                sec: 0, para_start: 0, para_end: Some(1),
+                edit_session_id: None, page: None,
+            },
+        );
+        // edit_session_id 가 자동 timestamp 라 정확히 일치는 아니지만 paragraphs 동일.
+        assert_eq!(before.paragraphs, expected.paragraphs);
     }
 }
