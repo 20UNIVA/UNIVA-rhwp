@@ -445,6 +445,98 @@ fn build_text_paragraph(core: &DocumentCore, sec: usize, para: usize) -> IrTextP
     }
 }
 
+/// 셀 안 문단 (`sec`, `parent_para`, `control_idx`, `cell_idx`, `cell_para`) 의 IR 표현 빌드.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildCellParagraph` 의 Rust 대응. 절차는
+/// `build_text_paragraph` 와 거의 같지만 두 가지가 다르다.
+///
+/// 1. *id 형식* — 본문 문단은 `p_{sec}_{para}` 이지만 셀 안 문단은 셀 좌표·문단 인덱스를 포함한
+///    `p_{sec}_{table_para}_c{ctrl_idx}_{cell_idx}_{cell_para}` 로 구별. *flatten 한 평탄 entry*
+///    가 본문 문단과 동일 컬렉션에 섞일 때 충돌 방지.
+/// 2. *cell_locator* — 모델이 셀의 *행/열* 을 알 수 있도록 `CellLocator` 를 채워둔다.
+///    `para` 필드 는 `-1` 로 두어 본문 문단의 인덱스(0..)와 구별.
+///
+/// 인덱스가 범위 밖이거나 `Control` 이 표가 아니면 `cell_para_ref = None` → 텍스트·스타일은
+/// 기본값, runs 는 빈 placeholder 1건. *함수는 panic 없이 항상 한 개의 IrTextParagraph 를 반환*.
+fn build_cell_paragraph(
+    core: &DocumentCore,
+    sec: usize,
+    parent_para: usize,
+    control_idx: usize,
+    cell_idx: usize,
+    cell_para: usize,
+    cell_row: u16,
+    cell_col: u16,
+) -> IrTextParagraph {
+    // 1) 셀 안 문단 참조 — Control::Table(t) 에서 cells[cell_idx].paragraphs[cell_para].
+    //    Control::Table 은 Box<Table> 이라 패턴 매칭에서 t 는 &Box<Table> → 자동 deref.
+    let cell_para_ref = core
+        .document()
+        .sections
+        .get(sec)
+        .and_then(|s| s.paragraphs.get(parent_para))
+        .and_then(|p| p.controls.get(control_idx))
+        .and_then(|ctrl| match ctrl {
+            rhwp::model::control::Control::Table(t) => t
+                .cells
+                .get(cell_idx)
+                .and_then(|c| c.paragraphs.get(cell_para)),
+            _ => None,
+        });
+
+    // 2) 텍스트·길이·para_shape_id 추출 — 셀 문단이 없으면 모두 기본값.
+    let (text, para_shape_id) = cell_para_ref
+        .map(|p| (p.text.clone(), p.para_shape_id))
+        .unwrap_or_default();
+    let len = text.chars().count();
+
+    // 3) 문단 스타일.
+    let para_style = core
+        .document()
+        .doc_info
+        .para_shapes
+        .get(para_shape_id as usize)
+        .map(para_shape_to_para_style)
+        .unwrap_or_default();
+
+    // 4) runs — char_shape_id_at + char_shape_to_run_style.
+    let chars: Vec<char> = text.chars().collect();
+    let runs = collect_runs(&text, len, |off| {
+        if let Some(p) = cell_para_ref {
+            let id = p.char_shape_id_at(off).unwrap_or(0) as usize;
+            let resolved = core.styles().char_styles.get(id);
+            let raw = core.document().doc_info.char_shapes.get(id);
+            if let (Some(rs), Some(rw)) = (resolved, raw) {
+                let lang_idx = chars
+                    .get(off)
+                    .copied()
+                    .map(detect_lang_category)
+                    .unwrap_or(0);
+                return char_shape_to_run_style(rs, rw, lang_idx);
+            }
+        }
+        RunStyle::default()
+    });
+
+    IrTextParagraph {
+        id: format!(
+            "p_{}_{}_c{}_{}_{}",
+            sec, parent_para, control_idx, cell_idx, cell_para
+        ),
+        sec,
+        para: -1,
+        kind: "text",
+        style: para_style,
+        runs,
+        cell_locator: Some(CellLocator {
+            table_para: parent_para,
+            row: cell_row,
+            col: cell_col,
+            cell_para,
+        }),
+    }
+}
+
 /// `build_ir_slice` 의 입력 파라미터.
 ///
 /// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildIRSlice` 의 옵션 객체와 정합. `sec`
@@ -946,6 +1038,46 @@ mod tests {
             },
         );
         assert!(slice.doc_meta.edit_session_id.starts_with("ed_"));
+    }
+
+    #[test]
+    fn build_cell_paragraph_with_cell_locator() {
+        // blank hwpx 에 표가 없을 경우 → cell_para_ref = None → 함수는 *기본값* 으로 채운 entry 반환.
+        // 그래도 cell_locator 와 id 형식 invariant 는 검증 가능. 본격 e2e 는 Phase 6.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+
+        let cell = build_cell_paragraph(&core, 0, 0, 0, 0, 0, 0, 0);
+        assert_eq!(cell.kind, "text");
+        // 셀 안 문단은 본문 문단과 구별 위해 para = -1.
+        assert_eq!(cell.para, -1);
+        // id 형식: p_{sec}_{table_para}_c{control_idx}_{cell_idx}_{cell_para}.
+        assert_eq!(cell.id, "p_0_0_c0_0_0");
+        // cell_locator 가 채워져 있어야 함.
+        let locator = cell.cell_locator.as_ref().expect("cell_locator");
+        assert_eq!(locator.table_para, 0);
+        assert_eq!(locator.row, 0);
+        assert_eq!(locator.col, 0);
+        assert_eq!(locator.cell_para, 0);
+        // 표가 없으므로 runs 는 placeholder 1건 (length=0).
+        assert_eq!(cell.runs.len(), 1);
+        assert_eq!(cell.runs[0].length, 0);
+    }
+
+    #[test]
+    fn build_cell_paragraph_id_format_with_row_col() {
+        // id 와 cell_locator 의 row/col 이 호출자가 전달한 값 그대로 들어가는지 검증.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+
+        let cell = build_cell_paragraph(&core, 0, 2, 1, 3, 0, 5, 7);
+        // id 는 cell_idx 까지 포함 — row/col 자체는 id 에 들어가지 않음.
+        assert_eq!(cell.id, "p_0_2_c1_3_0");
+        let locator = cell.cell_locator.as_ref().expect("cell_locator");
+        assert_eq!(locator.table_para, 2);
+        assert_eq!(locator.row, 5);
+        assert_eq!(locator.col, 7);
+        assert_eq!(locator.cell_para, 0);
     }
 
     #[test]
