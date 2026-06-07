@@ -335,6 +335,61 @@ pub struct CompactIrSlice {
     pub defaults: DocDefaults,
 }
 
+/// 문단의 *문자 단위 스타일* 을 받아 *인접 동일 스타일 run 을 병합* 한 `IrRun` 배열을 반환.
+///
+/// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::collectRuns` 의 Rust 대응. `style_at`
+/// 람다는 *글자 오프셋* 마다 호출되어 그 위치의 `RunStyle` 을 돌려준다 — 호출자는 본문 텍스트
+/// 의 char_shape_id_at 과 ResolvedCharStyle 을 합쳐 `char_shape_to_run_style` 호출 결과를
+/// 넣는다.
+///
+/// 빈 문단 (len=0) 에 대해서는 `char_offset=0, length=0, text="", style=default` 1건을
+/// 반환 — IR slice 가 빈 문단도 "1개 run" 으로 표현하기로 한 init.md spec 정합.
+fn collect_runs<F>(text: &str, len: usize, mut style_at: F) -> Vec<IrRun>
+where
+    F: FnMut(usize) -> RunStyle,
+{
+    if len == 0 {
+        return vec![IrRun {
+            char_offset: 0,
+            length: 0,
+            text: String::new(),
+            style: RunStyle::default(),
+        }];
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut runs: Vec<IrRun> = Vec::new();
+    let mut run_start = 0usize;
+    let mut current: Option<RunStyle> = None;
+    for offset in 0..len {
+        let style = style_at(offset);
+        match &current {
+            None => current = Some(style),
+            Some(cur) if *cur != style => {
+                let text_slice: String = chars[run_start..offset].iter().collect();
+                runs.push(IrRun {
+                    char_offset: run_start,
+                    length: offset - run_start,
+                    text: text_slice,
+                    style: cur.clone(),
+                });
+                run_start = offset;
+                current = Some(style);
+            }
+            _ => {}
+        }
+    }
+    if let Some(cur) = current {
+        let text_slice: String = chars[run_start..len].iter().collect();
+        runs.push(IrRun {
+            char_offset: run_start,
+            length: len - run_start,
+            text: text_slice,
+            style: cur,
+        });
+    }
+    runs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,6 +735,48 @@ mod tests {
         }
         let s2 = cell_to_cell_style(&cell, Some(&bs_all_none));
         assert!(s2.border.is_none(), "4면 모두 None 이면 border 키 omit");
+    }
+
+    #[test]
+    fn collect_runs_single_style() {
+        let s = RunStyle::default();
+        let runs = collect_runs("ABC", 3, |_| s.clone());
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].text, "ABC");
+        assert_eq!(runs[0].length, 3);
+        assert_eq!(runs[0].char_offset, 0);
+    }
+
+    #[test]
+    fn collect_runs_two_styles() {
+        let bold = RunStyle {
+            bold: Some(true),
+            ..Default::default()
+        };
+        let plain = RunStyle::default();
+        let runs = collect_runs(
+            "ABCDE",
+            5,
+            |off| if off < 2 { bold.clone() } else { plain.clone() },
+        );
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].text, "AB");
+        assert_eq!(runs[0].char_offset, 0);
+        assert_eq!(runs[0].length, 2);
+        assert_eq!(runs[0].style.bold, Some(true));
+        assert_eq!(runs[1].text, "CDE");
+        assert_eq!(runs[1].char_offset, 2);
+        assert_eq!(runs[1].length, 3);
+        assert!(runs[1].style.bold.is_none() || runs[1].style.bold == Some(false));
+    }
+
+    #[test]
+    fn collect_runs_empty_paragraph() {
+        let runs = collect_runs("", 0, |_| RunStyle::default());
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].length, 0);
+        assert_eq!(runs[0].char_offset, 0);
+        assert!(runs[0].text.is_empty());
     }
 
     #[test]
