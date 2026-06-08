@@ -8,6 +8,80 @@ use crate::model::event::DocumentEvent;
 use crate::model::path::{path_from_flat, PathSegment};
 use crate::model::shape::common_obj_offsets;
 
+/// [Sub-7 v3] 광고 키 → native 키 JSON 정규화.
+///
+/// SKILL.md 가 광고하는 셀 스타일 키 (`bgcolor`, `border` nested, `padding-*` kebab,
+/// `vertical-align` kebab+문자열) 를 `set_cell_properties_native` 가 받는 native 키
+/// (`fillType`+`fillColor`, `borderLeft`/Right/Top/Bottom, `paddingLeft` camelCase,
+/// `verticalAlign` u8) 로 미리 재작성한다.
+///
+/// 이미 native 키만 들어온 JSON 은 그대로 통과 — 광고 키가 발견될 때만 변환.
+/// 광고/native 키가 동시에 들어오면 *native 키가 이김* (광고 키 변환 결과를 native 키가
+/// 같은 자리에 덮어쓰기 때문 — 동일 키 insert).
+pub(crate) fn normalize_cell_style_keys(json_in: &str) -> String {
+    let mut v: serde_json::Value = match serde_json::from_str(json_in) {
+        Ok(v) => v,
+        Err(_) => return json_in.to_string(),
+    };
+    let Some(obj) = v.as_object_mut() else {
+        return json_in.to_string();
+    };
+
+    // bgcolor → fillType=solid + fillColor
+    if let Some(bg) = obj.remove("bgcolor") {
+        // 이미 fillColor 가 명시되어 있으면 그쪽이 우선 — bgcolor 는 채워주는 역할만.
+        obj.entry("fillType".to_string())
+            .or_insert(serde_json::json!("solid"));
+        obj.entry("fillColor".to_string()).or_insert(bg);
+    }
+
+    // border (nested {all/left/right/top/bottom}) → borderLeft/Right/Top/Bottom 4 방향
+    if let Some(border) = obj.remove("border") {
+        if let Some(border_obj) = border.as_object() {
+            let base = border_obj.get("all").cloned();
+            for (key_in, key_out) in [
+                ("left", "borderLeft"),
+                ("right", "borderRight"),
+                ("top", "borderTop"),
+                ("bottom", "borderBottom"),
+            ] {
+                let side = border_obj.get(key_in).cloned().or_else(|| base.clone());
+                if let Some(s) = side {
+                    // 이미 native 키가 있으면 native 우선.
+                    obj.entry(key_out.to_string()).or_insert(s);
+                }
+            }
+        }
+    }
+
+    // kebab → camelCase alias
+    for (kebab, camel) in [
+        ("vertical-align", "verticalAlign"),
+        ("padding-left", "paddingLeft"),
+        ("padding-right", "paddingRight"),
+        ("padding-top", "paddingTop"),
+        ("padding-bottom", "paddingBottom"),
+    ] {
+        if let Some(val) = obj.remove(kebab) {
+            obj.entry(camel.to_string()).or_insert(val);
+        }
+    }
+
+    // verticalAlign 값이 문자열이면 u8 로 변환 ("top"=0, "middle"|"center"=1, "bottom"=2)
+    if let Some(va) = obj.get_mut("verticalAlign") {
+        if let Some(s) = va.as_str() {
+            let u: u64 = match s {
+                "middle" | "center" => 1,
+                "bottom" => 2,
+                _ => 0,
+            };
+            *va = serde_json::json!(u);
+        }
+    }
+
+    serde_json::to_string(&v).unwrap_or_else(|_| json_in.to_string())
+}
+
 impl DocumentCore {
     pub(crate) fn get_table_mut(
         &mut self,
@@ -500,6 +574,12 @@ impl DocumentCore {
         json: &str,
     ) -> Result<String, HwpError> {
         use super::super::helpers::{json_bool, json_i16, json_u32, json_u8};
+
+        // [Sub-7 v3] 광고 키 (bgcolor/border/kebab-case) 를 native 키로 정규화.
+        // WS broadcast 페이로드가 PartialStyle 원본 형태로 wasm 에 전달되어
+        // 광고 키가 silent drop 되는 사고를 진입부에서 흡수한다.
+        let json_owned = normalize_cell_style_keys(json);
+        let json = json_owned.as_str();
 
         let table = self.get_table_mut(section_idx, parent_para_idx, control_idx)?;
         let cell = table
@@ -1900,5 +1980,124 @@ mod tests {
         assert_eq!(common.width, 9000, "width at [12..16]");
         assert_eq!(common.height, 3000, "height at [16..20]");
         assert_eq!(common.horizontal_offset, 0, "h_offset at [8..12] untouched");
+    }
+
+    // [Sub-7 v3] 광고 키 → native 키 정규화 단위 테스트
+    use super::normalize_cell_style_keys;
+
+    #[test]
+    fn normalize_bgcolor_to_fill_type_and_color() {
+        let out = normalize_cell_style_keys(r##"{"bgcolor":"#FF0000"}"##);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v.get("fillType").and_then(|x| x.as_str()), Some("solid"));
+        assert_eq!(v.get("fillColor").and_then(|x| x.as_str()), Some("#FF0000"));
+        assert!(v.get("bgcolor").is_none(), "bgcolor must be consumed");
+    }
+
+    #[test]
+    fn normalize_border_all_expands_to_four_sides() {
+        let out = normalize_cell_style_keys(
+            r##"{"border":{"all":{"color":"#000","width":1,"type":1}}}"##,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        for key in ["borderLeft", "borderRight", "borderTop", "borderBottom"] {
+            let side = v
+                .get(key)
+                .unwrap_or_else(|| panic!("{} expected", key));
+            assert_eq!(side.get("color").and_then(|x| x.as_str()), Some("#000"));
+        }
+        assert!(v.get("border").is_none());
+    }
+
+    #[test]
+    fn normalize_kebab_padding_and_vertical_align_string() {
+        let out = normalize_cell_style_keys(
+            r#"{"padding-left":10,"padding-right":20,"vertical-align":"middle"}"#,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v.get("paddingLeft").and_then(|x| x.as_i64()), Some(10));
+        assert_eq!(v.get("paddingRight").and_then(|x| x.as_i64()), Some(20));
+        assert_eq!(v.get("verticalAlign").and_then(|x| x.as_u64()), Some(1));
+    }
+
+    #[test]
+    fn normalize_native_keys_pass_through_untouched() {
+        let input = r##"{"fillType":"solid","fillColor":"#123456","paddingLeft":5,"verticalAlign":2}"##;
+        let out = normalize_cell_style_keys(input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v.get("fillType").and_then(|x| x.as_str()), Some("solid"));
+        assert_eq!(v.get("fillColor").and_then(|x| x.as_str()), Some("#123456"));
+        assert_eq!(v.get("paddingLeft").and_then(|x| x.as_i64()), Some(5));
+        assert_eq!(v.get("verticalAlign").and_then(|x| x.as_u64()), Some(2));
+    }
+
+    /// [Sub-7 v3] set_cell_properties_native + 광고 키 bgcolor 단독 호출 → 셀 fillColor 적용 검증.
+    /// WS broadcast 페이로드가 PartialStyle 그대로 wasm 에 도달했을 때의 시나리오.
+    #[test]
+    fn set_cell_properties_native_with_bgcolor_alias_applies_fill() {
+        use crate::document_core::DocumentCore;
+
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        // 2x2 표 생성
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+
+        // 표를 담은 문단 찾기 — create_table_native 가 빈 문단에 표를 넣었거나 새 문단을 만들었을 수 있음.
+        let section = &core.document.sections[0];
+        let mut table_para_idx = None;
+        let mut ctrl_idx = None;
+        for (pi, para) in section.paragraphs.iter().enumerate() {
+            for (ci, ctrl) in para.controls.iter().enumerate() {
+                if let crate::model::control::Control::Table(_) = ctrl {
+                    table_para_idx = Some(pi);
+                    ctrl_idx = Some(ci);
+                    break;
+                }
+            }
+            if table_para_idx.is_some() {
+                break;
+            }
+        }
+        let table_para_idx = table_para_idx.expect("표가 생성되어야 함");
+        let ctrl_idx = ctrl_idx.unwrap();
+
+        // 셀 0 에 bgcolor 광고 키만 전달 — 정규화 진입부가 fillType/fillColor 로 변환해야 함.
+        let res = core
+            .set_cell_properties_native(0, table_para_idx, ctrl_idx, 0, r##"{"bgcolor":"#FF0000"}"##)
+            .expect("set_cell_properties_native 가 성공해야 함");
+        assert!(res.contains("\"ok\":true"));
+
+        // 셀의 border_fill_id 가 새 BorderFill 을 가리키고, 그 BorderFill 의 채움이 빨강이어야 함.
+        let section = &core.document.sections[0];
+        let para = &section.paragraphs[table_para_idx];
+        let table = match &para.controls[ctrl_idx] {
+            crate::model::control::Control::Table(t) => t,
+            _ => panic!("Table 컨트롤 기대"),
+        };
+        let bf_id = table.cells[0].border_fill_id;
+        assert!(bf_id > 0, "신규 BorderFill 이 할당되어야 함");
+        let bf = &core.document.doc_info.border_fills[(bf_id as usize).saturating_sub(1)];
+        // Fill 의 종류·색상은 create_border_fill_from_json 에 의해 단색(solid) + 빨강으로 설정되어야 함.
+        assert_eq!(
+            bf.fill.fill_type,
+            crate::model::style::FillType::Solid,
+            "fillType Solid 기대 (bgcolor alias 흡수 후)"
+        );
+        let solid = bf.fill.solid.as_ref().expect("SolidFill 기대");
+        // CSS #FF0000 → BGR 0x000000FF
+        assert_eq!(
+            solid.background_color, 0x000000FF,
+            "단색 빨강 기대 (r=FF,g=00,b=00 → BGR 0x000000FF)"
+        );
+    }
+
+    #[test]
+    fn normalize_native_wins_over_alias() {
+        // 광고 키와 native 키가 동시 — native 우선.
+        let out = normalize_cell_style_keys(
+            r##"{"bgcolor":"#FF0000","fillColor":"#00FF00","fillType":"solid"}"##,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v.get("fillColor").and_then(|x| x.as_str()), Some("#00FF00"));
     }
 }

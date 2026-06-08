@@ -310,6 +310,20 @@ pub(crate) fn parse_char_shape_mods(json: &str) -> crate::model::style::CharShap
     if let Some(v) = json_bool(json, "strikethrough") {
         mods.strikethrough = Some(v);
     }
+    // [Sub-7 v3] 광고 alias 먼저 처리 — native 키가 함께 들어오면 native 키가 마지막에 이김.
+    // SKILL.md 가 광고하는 키 (color/highlight/font-size/font_size) 를 native 키와 동일 의미로 받는다.
+    if let Some(v) = json_color(json, "color") {
+        mods.text_color = Some(v);
+    }
+    if let Some(v) = json_color(json, "highlight") {
+        mods.shade_color = Some(v);
+    }
+    if let Some(v) = json_i32(json, "font-size") {
+        mods.base_size = Some(v);
+    }
+    if let Some(v) = json_i32(json, "font_size") {
+        mods.base_size = Some(v);
+    }
     if let Some(v) = json_i32(json, "fontSize") {
         mods.base_size = Some(v);
     }
@@ -495,6 +509,26 @@ pub(crate) fn parse_para_shape_mods(json: &str) -> crate::model::style::ParaShap
     use crate::model::style::{Alignment, HeadType, LineSpacingType, ParaShapeMods};
     let mut mods = ParaShapeMods::default();
 
+    // [Sub-7 v3] 광고 alias 먼저 처리 — native 키가 함께 들어오면 native 키가 마지막에 이김.
+    if let Some(v) = json_str(json, "align") {
+        mods.alignment = Some(match v.as_str() {
+            "left" => Alignment::Left,
+            "right" => Alignment::Right,
+            "center" => Alignment::Center,
+            "justify" => Alignment::Justify,
+            "distribute" => Alignment::Distribute,
+            _ => Alignment::Justify,
+        });
+    }
+    if let Some(v) = json_i32(json, "line-height") {
+        mods.line_spacing = Some(v);
+    }
+    if let Some(v) = json_i32(json, "line_height") {
+        mods.line_spacing = Some(v);
+    }
+    if let Some(v) = json_i32(json, "lineHeight") {
+        mods.line_spacing = Some(v);
+    }
     if let Some(v) = json_str(json, "alignment") {
         mods.alignment = Some(match v.as_str() {
             "left" => Alignment::Left,
@@ -1436,5 +1470,46 @@ mod tests {
         assert_eq!(find_logical_control_positions(&para), vec![0, 0, 0, 3]);
         assert_eq!(logical_paragraph_length(&para), 4);
         assert_eq!(navigable_text_len(&para), 4);
+    }
+
+    // [Sub-7 v3] 광고 키 alias 단위 테스트 — parse_char_shape_mods / parse_para_shape_mods.
+
+    #[test]
+    fn parse_char_shape_alias_color_sets_text_color() {
+        let mods = parse_char_shape_mods(r##"{"color":"#00FF00"}"##);
+        // css_color_to_bgr 으로 변환된 값 — r=00, g=FF, b=00 → 0x0000FF00
+        assert_eq!(mods.text_color, Some(0x0000FF00));
+    }
+
+    #[test]
+    fn parse_char_shape_alias_highlight_sets_shade_color() {
+        let mods = parse_char_shape_mods(r##"{"highlight":"#FFFF00"}"##);
+        // r=FF, g=FF, b=00 → 0x0000FFFF
+        assert_eq!(mods.shade_color, Some(0x0000FFFF));
+    }
+
+    #[test]
+    fn parse_char_shape_alias_font_size_kebab() {
+        let mods = parse_char_shape_mods(r#"{"font-size":12}"#);
+        assert_eq!(mods.base_size, Some(12));
+    }
+
+    #[test]
+    fn parse_char_shape_alias_font_size_snake() {
+        let mods = parse_char_shape_mods(r#"{"font_size":14}"#);
+        assert_eq!(mods.base_size, Some(14));
+    }
+
+    #[test]
+    fn parse_para_shape_alias_align_right() {
+        use crate::model::style::Alignment;
+        let mods = parse_para_shape_mods(r#"{"align":"right"}"#);
+        assert!(matches!(mods.alignment, Some(Alignment::Right)));
+    }
+
+    #[test]
+    fn parse_para_shape_alias_line_height_kebab() {
+        let mods = parse_para_shape_mods(r#"{"line-height":180}"#);
+        assert_eq!(mods.line_spacing, Some(180));
     }
 }
