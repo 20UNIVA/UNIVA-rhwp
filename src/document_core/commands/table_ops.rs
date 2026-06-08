@@ -551,8 +551,12 @@ impl DocumentCore {
             }
         }
 
-        // BorderFill 변경: borderLeft 등이 포함된 경우 create_border_fill_from_json으로 처리
-        let has_border = json.contains("\"borderLeft\"");
+        // BorderFill 변경: borderLeft / fillType / fillColor 중 하나라도 들어있으면
+        // create_border_fill_from_json 으로 새 BorderFill 을 생성한다.
+        // [Sub-7] 기존엔 borderLeft 만 체크해서 bgcolor 단독 변경이 silent drop 됐다.
+        let has_border = json.contains("\"borderLeft\"")
+            || json.contains("\"fillType\"")
+            || json.contains("\"fillColor\"");
         if has_border {
             let new_bf_id = self.create_border_fill_from_json(json);
 

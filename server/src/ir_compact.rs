@@ -1246,6 +1246,12 @@ pub struct PatchSummary {
     pub after_para_count: usize,
     pub before_text_len: usize,
     pub after_text_len: usize,
+    /// [Sub-7] changed=false 일 때 모델이 *놓치지 않게* 채워 보내는 경고 문자열.
+    /// payload 의 style 키가 schema (Partial*Style) 와 일치하는지, native 키 매핑이
+    /// 깨지지 않았는지 확인하라는 hint. changed=true 면 None — silent drop 사고
+    /// 예방 패턴.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_change_warning: Option<String>,
 }
 
 /// 단일 paragraph JSON 의 텍스트 길이 (셀 paragraph 도 단순 문단으로 취급).
@@ -1390,6 +1396,19 @@ pub fn build_patch_diff(
     let changed = serde_json::to_value(&before).unwrap_or(serde_json::Value::Null)
         != serde_json::to_value(&after).unwrap_or(serde_json::Value::Null);
 
+    // [Sub-7] changed=false 면 silent drop 사고일 가능성 — 모델/클라가 응답을 보고
+    // 즉시 인지하도록 경고 문자열 채움.
+    let no_change_warning = if !changed {
+        Some(
+            "before/after 동일 — payload 의 style 키가 schema (Partial*Style) 와 일치하는지 확인. \
+             오타·미지원 키는 deny_unknown_fields 로 400 반환되어야 하지만, 값이 같거나 \
+             좌표가 유효 범위를 벗어나도 no-op 가 될 수 있음."
+                .to_string(),
+        )
+    } else {
+        None
+    };
+
     PatchDiff {
         op: op_tag.to_string(),
         location: PatchLocation {
@@ -1408,6 +1427,7 @@ pub fn build_patch_diff(
             after_para_count,
             before_text_len,
             after_text_len,
+            no_change_warning,
         },
     }
 }
@@ -2773,5 +2793,59 @@ mod tests {
         };
         let range = cell_range(None);
         assert!(matches!(slice_to_target(slice, &range), PatchTarget::Paragraphs { .. }));
+    }
+
+    // ─── [Sub-7] PatchSummary.noChangeWarning 가시화 ─────────────────────────
+
+    #[test]
+    fn patch_summary_no_change_warning_present_when_unchanged() {
+        // changed=false 면 noChangeWarning 필드가 채워져야 한다 — silent drop 사고
+        // 응답에서 모델/클라가 "성공한 줄 알았는데 안 바뀜" 을 놓치지 않게.
+        let range = body_range();
+        let before = paragraphs_target(vec![json!({"runs": [{"text": "same"}]})]);
+        let after = paragraphs_target(vec![json!({"runs": [{"text": "same"}]})]);
+        let diff = build_patch_diff("set_cell_style", &range, before, after);
+        assert!(!diff.summary.changed);
+        let warn = diff.summary.no_change_warning.as_deref().expect("warning 필드 필요");
+        assert!(
+            warn.contains("schema"),
+            "warning 메시지가 schema 확인을 안내해야 함: {warn}"
+        );
+    }
+
+    #[test]
+    fn patch_summary_no_change_warning_absent_when_changed() {
+        // changed=true 면 noChangeWarning 필드는 None.
+        let range = body_range();
+        let before = paragraphs_target(vec![json!({"runs": [{"text": "a"}]})]);
+        let after = paragraphs_target(vec![json!({"runs": [{"text": "b"}]})]);
+        let diff = build_patch_diff("insert_text", &range, before, after);
+        assert!(diff.summary.changed);
+        assert!(
+            diff.summary.no_change_warning.is_none(),
+            "changed=true 일 때 warning 은 None 이어야 함"
+        );
+    }
+
+    #[test]
+    fn patch_summary_no_change_warning_serialized_in_json() {
+        // 직렬화 시 noChangeWarning camelCase 키로 응답에 노출되는지.
+        let range = body_range();
+        let before = paragraphs_target(vec![json!({"runs": [{"text": "x"}]})]);
+        let after = paragraphs_target(vec![json!({"runs": [{"text": "x"}]})]);
+        let diff = build_patch_diff("set_cell_style", &range, before, after);
+        let s = serde_json::to_string(&diff).unwrap();
+        assert!(s.contains("\"noChangeWarning\""), "응답 JSON 에 noChangeWarning 키가 있어야 함: {s}");
+    }
+
+    #[test]
+    fn patch_summary_no_change_warning_absent_in_json_when_changed() {
+        // changed=true 일 때 noChangeWarning 키가 skip_serializing_if 로 제외되는지.
+        let range = body_range();
+        let before = paragraphs_target(vec![json!({"runs": [{"text": "a"}]})]);
+        let after = paragraphs_target(vec![json!({"runs": [{"text": "b"}]})]);
+        let diff = build_patch_diff("insert_text", &range, before, after);
+        let s = serde_json::to_string(&diff).unwrap();
+        assert!(!s.contains("noChangeWarning"), "changed=true 면 키 자체가 응답에 없어야 함: {s}");
     }
 }

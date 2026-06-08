@@ -20,50 +20,132 @@ use crate::error::HwpError;
 
 /// 본문 문단의 부분 스타일. None 인 필드는 *현재 값 유지* 의미.
 /// JSON 직렬화 시 None 은 제외 (`skip_serializing_if`).
-/// 직접 `apply_para_format_native(props_json)` 의 입력으로 사용 가능.
+/// `apply_para_format_native(props_json)` 의 입력으로 *변환 후* 사용된다 —
+/// 직접 serialize 한 결과는 SKILL.md 광고 키이며 native 키와 일부 다름
+/// (`align` → `alignment`, `line_height` → `lineSpacing`). 변환은
+/// [`partial_paragraph_style_to_native_json`] 가 수행.
+///
+/// `deny_unknown_fields` — 광고되지 않은/오타 키는 400 반환 (silent drop 사고 예방).
+///
+/// 키 변형 정책: *snake_case · camelCase · kebab-case · 기존 별칭* 모두 alias 로 허용.
+/// 광고 문서 (SKILL.md) 는 kebab-case (`align`, `line-height`), 기존 e2e/클라는
+/// snake_case (`alignment`, `line_spacing`), camelCase 는 serde rename_all 기본값.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PartialParagraphStyle {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub alignment: Option<String>,   // "left"|"right"|"center"|"justify"|...
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line_spacing: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    // [Sub-7] rename: alignment → align + alias 호환 (kebab/snake/camel/기존)
+    #[serde(
+        default,
+        alias = "alignment",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub align: Option<String>,   // "left"|"right"|"center"|"justify"|"distribute"
+    // [Sub-7] rename: line_spacing → line_height + alias 호환
+    #[serde(
+        default,
+        alias = "lineSpacing",
+        alias = "line_spacing",
+        alias = "line_height",
+        alias = "line-height",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub line_height: Option<f64>,
+    #[serde(default, alias = "margin_left", alias = "margin-left", skip_serializing_if = "Option::is_none")]
     pub margin_left: Option<i16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "margin_right", alias = "margin-right", skip_serializing_if = "Option::is_none")]
     pub margin_right: Option<i16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub indent: Option<i16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "spacing_before", alias = "spacing-before", skip_serializing_if = "Option::is_none")]
     pub spacing_before: Option<i16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "spacing_after", alias = "spacing-after", skip_serializing_if = "Option::is_none")]
     pub spacing_after: Option<i16>,
 }
 
 /// 셀의 부분 스타일. None 인 필드는 *현재 값 유지*.
-/// `set_cell_properties_native(json)` 의 입력으로 사용 가능.
+/// `set_cell_properties_native(json)` 의 입력으로 *변환 후* 사용된다 —
+/// 변환은 [`partial_cell_style_to_native_json`] 가 수행 (bgcolor → fillType+fillColor,
+/// border.all → 4 방향 펼침, vertical_align 문자열 → u8 등).
+///
+/// `deny_unknown_fields` — 광고되지 않은/오타 키는 400 반환.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PartialCellStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vertical_align: Option<String>,   // "top"|"middle"|"bottom"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "vertical_align",
+        alias = "vertical-align",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub vertical_align: Option<String>,   // "top"|"middle"|"center"|"bottom"
+    #[serde(default, alias = "border_fill_id", skip_serializing_if = "Option::is_none")]
     pub border_fill_id: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "is_header", skip_serializing_if = "Option::is_none")]
     pub is_header: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "cell_protect", skip_serializing_if = "Option::is_none")]
     pub cell_protect: Option<bool>,
-    // padding/text_direction 은 Sub-3 에서 추가
+
+    // ─── [Sub-7] 신규 ──────────────────────────────────────────────────────
+    /// 셀 배경 색 — CSS hex "#RRGGBB". native 직렬화 시 `fillType=solid` + `fillColor=hex`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bgcolor: Option<String>,
+    /// 4 방향 테두리. `all` 우선 적용 후 left/right/top/bottom 으로 개별 override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border: Option<BorderSpec>,
+    #[serde(default, alias = "padding_left", alias = "padding-left", skip_serializing_if = "Option::is_none")]
+    pub padding_left: Option<i16>,
+    #[serde(default, alias = "padding_right", alias = "padding-right", skip_serializing_if = "Option::is_none")]
+    pub padding_right: Option<i16>,
+    #[serde(default, alias = "padding_top", alias = "padding-top", skip_serializing_if = "Option::is_none")]
+    pub padding_top: Option<i16>,
+    #[serde(default, alias = "padding_bottom", alias = "padding-bottom", skip_serializing_if = "Option::is_none")]
+    pub padding_bottom: Option<i16>,
+}
+
+/// 셀 테두리 4 방향 묶음. `all` 지정 시 4 방향 일괄, 그 외 키는 해당 방향만 override.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BorderSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all: Option<BorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<BorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<BorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<BorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<BorderLine>,
+}
+
+/// 한 방향 테두리 한 줄 사양.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BorderLine {
+    /// CSS hex "#RRGGBB".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// 선 두께. HWP 단위 또는 mm × 100 (native fn 약속에 의존).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    /// 선 종류 — 1=solid, 2=dotted, ... (native 약속).
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub line_type: Option<u8>,
 }
 
 /// run 의 부분 char 스타일. None 인 필드 유지.
-/// `apply_char_format_native(props_json)` 입력으로 사용 가능.
+/// `apply_char_format_native(props_json)` 입력으로 *변환 후* 사용된다 —
+/// 변환은 [`partial_run_style_to_native_json`] 가 수행 (font_size → fontSize,
+/// color → textColor (hex 문자열 그대로), highlight → shadeColor,
+/// font_name → fontId (DocumentCore lookup 필요 — apply 분기에서 별도 주입)).
+///
+/// `deny_unknown_fields` — 광고되지 않은/오타 키는 400 반환.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PartialRunStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bold: Option<bool>,
@@ -72,11 +154,44 @@ pub struct PartialRunStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub underline: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text_color: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_size: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strikethrough: Option<bool>,
+
+    // [Sub-7] rename: base_size → font_size + alias 호환 (camelCase 변환과 snake_case 모두)
+    #[serde(
+        default,
+        alias = "baseSize",
+        alias = "base_size",
+        alias = "fontSize",
+        alias = "font_size",
+        alias = "font-size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub font_size: Option<u16>,
+
+    // [Sub-7] rename: text_color (u32) → color (CSS hex 문자열) + alias 호환
+    //   기존 u32 호출처는 e2e 외부에 *없음* (server/rhwp-studio grep 0건) — 안전한 타입 교체.
+    #[serde(
+        default,
+        alias = "textColor",
+        alias = "text_color",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub color: Option<String>,
+
+    /// 형광펜 색. CSS hex "#RRGGBB". native 의 `shadeColor` 키로 직렬화.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<String>,
+
+    /// 폰트 이름. apply 분기에서 `DocumentCore::find_or_create_font_id_native` 로
+    /// fontId 변환 후 native JSON 의 `fontId` 키로 보낸다 — 직렬화 함수 단계에선
+    /// `fontName` 키를 임시 보관, apply 가 후처리.
+    #[serde(
+        default,
+        alias = "font_name",
+        alias = "font-name",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub font_name: Option<String>,
 }
 
 /// run = 텍스트 한 조각 + (선택) 부분 스타일.
@@ -247,6 +362,235 @@ pub enum EditOperation {
 }
 
 fn one_count() -> usize { 1 }
+
+// ─── Sub-7: Partial*Style → native fn JSON 변환 ─────────────────────────────
+//
+// SKILL.md 광고 키 (camelCase 친화적) 와 native fn 이 받는 키 (parse_* helper 들이
+// 인식하는 키 — `parse_cell_props_native` / `parse_char_shape_mods` /
+// `parse_para_shape_mods` 참조) 가 일치하지 않는 경우의 정합 layer.
+//
+// 직접 `serde_json::to_string(style)` 하면 `align` / `font_size` / `color` /
+// `bgcolor` / `border.all` 같은 *광고 키* 가 native 키 (각각 `alignment` /
+// `fontSize` / `textColor` / `fillType+fillColor` / `borderLeft/Right/Top/Bottom`)
+// 와 안 맞아 *silent drop* 사고가 발생.
+
+/// PartialCellStyle → `set_cell_properties_native` 입력 JSON.
+///
+/// 변환 규칙:
+/// - `bgcolor: "#RRGGBB"` → `fillType: "solid"` + `fillColor: "#RRGGBB"`
+/// - `border.all` → 4 방향(`borderLeft`/`Right`/`Top`/`Bottom`) 일괄 적용, 그 외 개별 키는 override
+/// - `vertical_align: "top"|"middle"|"center"|"bottom"` → u8 (0/1/1/2)
+/// - 나머지: camelCase 그대로
+pub(crate) fn partial_cell_style_to_native_json(style: &PartialCellStyle) -> String {
+    use serde_json::{Map, Value};
+    let mut obj: Map<String, Value> = Map::new();
+
+    if let Some(v) = style.width {
+        obj.insert("width".into(), Value::from(v));
+    }
+    if let Some(v) = style.height {
+        obj.insert("height".into(), Value::from(v));
+    }
+    if let Some(ref s) = style.vertical_align {
+        let u: u8 = match s.as_str() {
+            "middle" | "center" => 1,
+            "bottom" => 2,
+            _ => 0,   // "top" 기본
+        };
+        obj.insert("verticalAlign".into(), Value::from(u));
+    }
+    if let Some(v) = style.border_fill_id {
+        obj.insert("borderFillId".into(), Value::from(v));
+    }
+    if let Some(v) = style.is_header {
+        obj.insert("isHeader".into(), Value::from(v));
+    }
+    if let Some(v) = style.cell_protect {
+        obj.insert("cellProtect".into(), Value::from(v));
+    }
+    if let Some(ref bg) = style.bgcolor {
+        obj.insert("fillType".into(), Value::from("solid"));
+        obj.insert("fillColor".into(), Value::from(bg.clone()));
+    }
+    if let Some(ref border) = style.border {
+        // all 먼저 4 방향에 일괄 → 개별 override
+        let base = border.all.as_ref();
+        for (key, side) in [
+            ("borderLeft", border.left.as_ref().or(base)),
+            ("borderRight", border.right.as_ref().or(base)),
+            ("borderTop", border.top.as_ref().or(base)),
+            ("borderBottom", border.bottom.as_ref().or(base)),
+        ] {
+            if let Some(b) = side {
+                obj.insert(key.into(), border_line_to_json(b));
+            }
+        }
+    }
+    if let Some(v) = style.padding_left {
+        obj.insert("paddingLeft".into(), Value::from(v));
+    }
+    if let Some(v) = style.padding_right {
+        obj.insert("paddingRight".into(), Value::from(v));
+    }
+    if let Some(v) = style.padding_top {
+        obj.insert("paddingTop".into(), Value::from(v));
+    }
+    if let Some(v) = style.padding_bottom {
+        obj.insert("paddingBottom".into(), Value::from(v));
+    }
+
+    Value::Object(obj).to_string()
+}
+
+fn border_line_to_json(b: &BorderLine) -> serde_json::Value {
+    use serde_json::{Map, Value};
+    let mut m: Map<String, Value> = Map::new();
+    if let Some(ref c) = b.color {
+        m.insert("color".into(), Value::from(c.clone()));
+    }
+    if let Some(w) = b.width {
+        m.insert("width".into(), Value::from(w));
+    }
+    if let Some(t) = b.line_type {
+        m.insert("type".into(), Value::from(t));
+    }
+    Value::Object(m)
+}
+
+/// PartialRunStyle → `apply_char_format_native` 입력 JSON.
+///
+/// 변환 규칙:
+/// - `font_size` → `fontSize`
+/// - `color: "#RRGGBB"` → `textColor: "#RRGGBB"` (helpers.rs::json_color 가 CSS hex → BGR 처리)
+/// - `highlight: "#RRGGBB"` → `shadeColor: "#RRGGBB"`
+/// - `font_name` → 변환 단계에서는 보관만 (native 는 `fontId` u16 요구) — apply 분기에서
+///   `find_or_create_font_id_native` 호출 후 `fontId` 키로 추가 주입.
+///   본 함수는 `fontName` 도 함께 출력 (native 가 인식하진 않지만 hint 용도),
+///   apply 후처리에서 fontId 가 함께 들어가 native 가 사용.
+pub(crate) fn partial_run_style_to_native_json(style: &PartialRunStyle) -> String {
+    use serde_json::{Map, Value};
+    let mut obj: Map<String, Value> = Map::new();
+    if let Some(v) = style.bold {
+        obj.insert("bold".into(), Value::from(v));
+    }
+    if let Some(v) = style.italic {
+        obj.insert("italic".into(), Value::from(v));
+    }
+    if let Some(v) = style.underline {
+        obj.insert("underline".into(), Value::from(v));
+    }
+    if let Some(v) = style.strikethrough {
+        obj.insert("strikethrough".into(), Value::from(v));
+    }
+    if let Some(v) = style.font_size {
+        obj.insert("fontSize".into(), Value::from(v));
+    }
+    if let Some(ref c) = style.color {
+        obj.insert("textColor".into(), Value::from(c.clone()));
+    }
+    if let Some(ref h) = style.highlight {
+        obj.insert("shadeColor".into(), Value::from(h.clone()));
+    }
+    // font_name 은 apply 단계에서 fontId 로 변환되어 별도 주입 — 여기선 출력 안 함.
+    Value::Object(obj).to_string()
+}
+
+/// `font_name` 이 있으면 DocumentCore 의 폰트 테이블에서 ID 를 조회/등록 후
+/// native JSON 에 `fontId` 키를 주입. 다른 키는 그대로 유지.
+///
+/// 입력 `native_json` 은 [`partial_run_style_to_native_json`] 출력 (object).
+pub(crate) fn inject_font_id_into_run_style_json(
+    core: &mut DocumentCore,
+    native_json: &str,
+    font_name: Option<&str>,
+) -> Result<String, HwpError> {
+    let Some(name) = font_name else {
+        return Ok(native_json.to_string());
+    };
+    if name.is_empty() {
+        return Ok(native_json.to_string());
+    }
+    let font_id = core.find_or_create_font_id_native(name);
+    if font_id < 0 {
+        return Err(HwpError::RenderError(format!(
+            "font_name 변환 실패: {name}"
+        )));
+    }
+    let mut value: serde_json::Value = serde_json::from_str(native_json)
+        .map_err(|e| HwpError::RenderError(format!("native_json 재파싱: {e}")))?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "fontId".into(),
+            serde_json::Value::from(font_id as u16),
+        );
+    }
+    Ok(value.to_string())
+}
+
+/// PartialParagraphStyle → `apply_para_format_native` 입력 JSON.
+///
+/// 변환 규칙:
+/// - `align` → `alignment`
+/// - `line_height` → `lineSpacing`
+/// - 나머지 camelCase 그대로 (`marginLeft`/`marginRight`/`indent`/`spacingBefore`/`spacingAfter`)
+pub(crate) fn partial_paragraph_style_to_native_json(style: &PartialParagraphStyle) -> String {
+    use serde_json::{Map, Value};
+    let mut obj: Map<String, Value> = Map::new();
+    if let Some(ref a) = style.align {
+        obj.insert("alignment".into(), Value::from(a.clone()));
+    }
+    if let Some(v) = style.line_height {
+        // parse_para_shape_mods 는 lineSpacing 을 i32 로 읽음. f64 → i32 변환.
+        obj.insert(
+            "lineSpacing".into(),
+            Value::from(v.round() as i32),
+        );
+    }
+    if let Some(v) = style.margin_left {
+        obj.insert("marginLeft".into(), Value::from(v));
+    }
+    if let Some(v) = style.margin_right {
+        obj.insert("marginRight".into(), Value::from(v));
+    }
+    if let Some(v) = style.indent {
+        obj.insert("indent".into(), Value::from(v));
+    }
+    if let Some(v) = style.spacing_before {
+        obj.insert("spacingBefore".into(), Value::from(v));
+    }
+    if let Some(v) = style.spacing_after {
+        obj.insert("spacingAfter".into(), Value::from(v));
+    }
+    Value::Object(obj).to_string()
+}
+
+/// RunSpec 배열을 *native JSON 으로 변환* 한 결과를 만든다 —
+/// 각 run 의 `style` 필드는 [`partial_run_style_to_native_json`] 로 native 키로 매핑.
+///
+/// `font_name` 키가 들어 있으면 DocumentCore 에 lookup/등록 후 `fontId` 도 함께 주입.
+pub(crate) fn runs_to_native_json(
+    core: &mut DocumentCore,
+    runs: &[RunSpec],
+) -> Result<String, HwpError> {
+    let mut arr = Vec::with_capacity(runs.len());
+    for run in runs {
+        let mut obj = serde_json::Map::new();
+        obj.insert("text".into(), serde_json::Value::from(run.text.clone()));
+        if let Some(ref style) = run.style {
+            let style_json = partial_run_style_to_native_json(style);
+            let style_with_font = inject_font_id_into_run_style_json(
+                core,
+                &style_json,
+                style.font_name.as_deref(),
+            )?;
+            let style_value: serde_json::Value = serde_json::from_str(&style_with_font)
+                .map_err(|e| HwpError::RenderError(format!("style 재파싱: {e}")))?;
+            obj.insert("style".into(), style_value);
+        }
+        arr.push(serde_json::Value::Object(obj));
+    }
+    Ok(serde_json::Value::Array(arr).to_string())
+}
 
 // ─── Sub-4: 영향 범위 헬퍼 (patch diff 캡처용) ────────────────────────────────
 
@@ -511,13 +855,14 @@ impl DocumentCore {
                 self.merge_paragraph_native(*section, *para)?;
             }
             EditOperation::ReplaceRuns { section, para, runs } => {
-                let runs_json = serde_json::to_string(runs)
-                    .map_err(|e| HwpError::RenderError(format!("runs 직렬화: {e}")))?;
+                // [Sub-7] PartialRunStyle → native JSON 변환 (font_size → fontSize, color → textColor,
+                // highlight → shadeColor, font_name → fontId lookup).
+                let runs_json = runs_to_native_json(self, runs)?;
                 self.replace_runs_native(*section, *para, &runs_json)?;
             }
             EditOperation::SetParagraphStyle { section, para, style } => {
-                let props_json = serde_json::to_string(style)
-                    .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
+                // [Sub-7] PartialParagraphStyle → native JSON (align → alignment, line_height → lineSpacing).
+                let props_json = partial_paragraph_style_to_native_json(style);
                 self.apply_para_format_native(*section, *para, &props_json)?;
             }
             EditOperation::DeleteRange { section, para_start, char_start, para_end, char_end } => {
@@ -527,8 +872,8 @@ impl DocumentCore {
                 for i in 0..*count {
                     self.insert_paragraph_native(*section, *after_para + i)?;
                     if let Some(s) = style {
-                        let props_json = serde_json::to_string(s)
-                            .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
+                        // [Sub-7] PartialParagraphStyle → native JSON 변환.
+                        let props_json = partial_paragraph_style_to_native_json(s);
                         self.apply_para_format_native(*section, *after_para + i + 1, &props_json)?;
                     }
                 }
@@ -558,8 +903,9 @@ impl DocumentCore {
                     Some(idx) => *idx,
                     None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
                 };
-                let json = serde_json::to_string(style)
-                    .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
+                // [Sub-7] PartialCellStyle → native JSON (bgcolor → fillType+fillColor,
+                // border.all → 4 방향 펼침, vertical_align 문자열 → u8).
+                let json = partial_cell_style_to_native_json(style);
                 self.set_cell_properties_native(*section, *table_para, ctrl_idx, resolved_cell_idx, &json)?;
             }
             EditOperation::MergeCells { section, table_para, row_start, col_start, row_end, col_end } => {
@@ -576,8 +922,8 @@ impl DocumentCore {
                     Some(idx) => *idx,
                     None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
                 };
-                let runs_json = serde_json::to_string(runs)
-                    .map_err(|e| HwpError::RenderError(format!("runs 직렬화: {e}")))?;
+                // [Sub-7] runs 의 PartialRunStyle 들도 native 키로 변환.
+                let runs_json = runs_to_native_json(self, runs)?;
                 self.replace_cell_runs_native(*section, *table_para, ctrl_idx, resolved_cell_idx, *cell_para, &runs_json)?;
             }
             EditOperation::InsertTextInCell { section, table_para, row, col, cell_idx, cell_para, offset, text, style } => {
@@ -591,8 +937,11 @@ impl DocumentCore {
                     *section, *table_para, ctrl_idx, resolved_cell_idx, *cell_para, *offset, text,
                 )?;
                 if let Some(s) = style {
-                    let json = serde_json::to_string(s)
-                        .map_err(|e| HwpError::RenderError(format!("style 직렬화: {e}")))?;
+                    // [Sub-7] PartialRunStyle → native JSON + font_name → fontId 주입.
+                    let json = partial_run_style_to_native_json(s);
+                    let json = inject_font_id_into_run_style_json(
+                        self, &json, s.font_name.as_deref(),
+                    )?;
                     self.apply_char_format_in_cell_native(
                         *section, *table_para, ctrl_idx, resolved_cell_idx, *cell_para,
                         *offset, *offset + text_len, &json,
@@ -820,9 +1169,11 @@ mod tests {
 
     #[test]
     fn test_partial_paragraph_style_serialize_skip_none() {
+        // [Sub-7] alignment → align rename. 직렬화 키는 camelCase `align`,
+        // alias 로 `alignment` 도 deserialize 호환.
         let partial = PartialParagraphStyle {
-            alignment: Some("right".to_string()),
-            line_spacing: None,
+            align: Some("right".to_string()),
+            line_height: None,
             margin_left: None,
             margin_right: None,
             indent: None,
@@ -830,7 +1181,7 @@ mod tests {
             spacing_after: None,
         };
         let json = serde_json::to_string(&partial).unwrap();
-        assert_eq!(json, r#"{"alignment":"right"}"#);
+        assert_eq!(json, r#"{"align":"right"}"#);
     }
 
     #[test]
@@ -879,7 +1230,7 @@ mod tests {
             section: 0,
             para: 0,
             style: PartialParagraphStyle {
-                alignment: Some("right".to_string()),
+                align: Some("right".to_string()),
                 ..Default::default()
             },
         };
@@ -1251,5 +1602,249 @@ mod tests {
         let r = op.affected_range();
         assert_eq!(r.before.start, 0);
         assert_eq!(r.after.start, 0);
+    }
+
+    // ─── [Sub-7] Partial*Style schema 정합 / 변환 함수 단위 테스트 ──────────────
+
+    #[test]
+    fn partial_cell_style_deserializes_bgcolor() {
+        // 광고 키 bgcolor 가 deserialize 되는지 확인 — Sub-7 이전엔 silent drop.
+        let json = r##"{"bgcolor":"#FFC0CB"}"##;
+        let s: PartialCellStyle = serde_json::from_str(json).unwrap();
+        assert_eq!(s.bgcolor.as_deref(), Some("#FFC0CB"));
+    }
+
+    #[test]
+    fn partial_cell_style_deny_unknown_fields_rejects_typo() {
+        // deny_unknown_fields — 오타(bgClor) 는 400 에러로 반환되어야 함.
+        let json = r##"{"bgClor":"#FFFFFF"}"##;
+        let res: Result<PartialCellStyle, _> = serde_json::from_str(json);
+        assert!(res.is_err(), "오타 키는 거부되어야 함");
+    }
+
+    #[test]
+    fn partial_cell_style_to_native_json_includes_fill_type() {
+        // bgcolor 지정 시 native 키 fillType=solid + fillColor 가 함께 출력.
+        let s = PartialCellStyle {
+            bgcolor: Some("#ABCDEF".to_string()),
+            ..Default::default()
+        };
+        let native = partial_cell_style_to_native_json(&s);
+        assert!(native.contains(r#""fillType":"solid""#), "native={native}");
+        assert!(native.contains(r##""fillColor":"#ABCDEF""##), "native={native}");
+    }
+
+    #[test]
+    fn partial_cell_style_border_all_expands_to_4dir() {
+        // border.all 지정 시 4 방향 (borderLeft/Right/Top/Bottom) 모두 직렬화.
+        let s = PartialCellStyle {
+            border: Some(BorderSpec {
+                all: Some(BorderLine {
+                    color: Some("#000000".to_string()),
+                    width: Some(10),
+                    line_type: Some(1),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let native = partial_cell_style_to_native_json(&s);
+        for k in ["borderLeft", "borderRight", "borderTop", "borderBottom"] {
+            assert!(native.contains(&format!(r#""{k}":"#)), "{k} 부재: {native}");
+        }
+    }
+
+    #[test]
+    fn partial_cell_style_border_individual_overrides_all() {
+        // all 적용 후 left 만 override 한 경우 left 의 색이 우선.
+        let s = PartialCellStyle {
+            border: Some(BorderSpec {
+                all: Some(BorderLine {
+                    color: Some("#000000".to_string()),
+                    width: Some(10),
+                    line_type: Some(1),
+                }),
+                left: Some(BorderLine {
+                    color: Some("#FF0000".to_string()),
+                    width: Some(20),
+                    line_type: Some(2),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let native = partial_cell_style_to_native_json(&s);
+        // left = 빨강, 나머지 = 검정
+        assert!(native.contains(r##""borderLeft":{"color":"#FF0000""##), "{native}");
+        assert!(native.contains(r##""borderTop":{"color":"#000000""##), "{native}");
+    }
+
+    #[test]
+    fn partial_cell_style_vertical_align_string_to_u8() {
+        for (s, expected) in [("top", 0u8), ("middle", 1), ("center", 1), ("bottom", 2)] {
+            let style = PartialCellStyle {
+                vertical_align: Some(s.to_string()),
+                ..Default::default()
+            };
+            let native = partial_cell_style_to_native_json(&style);
+            assert!(
+                native.contains(&format!(r#""verticalAlign":{expected}"#)),
+                "verticalAlign={s} expected={expected}, got {native}"
+            );
+        }
+    }
+
+    #[test]
+    fn partial_run_style_color_alias_text_color() {
+        // 광고 키 color, 기존 alias textColor / text_color 모두 deserialize.
+        let a: PartialRunStyle = serde_json::from_str(r##"{"color":"#FF0000"}"##).unwrap();
+        let b: PartialRunStyle = serde_json::from_str(r##"{"textColor":"#FF0000"}"##).unwrap();
+        let c: PartialRunStyle = serde_json::from_str(r##"{"text_color":"#FF0000"}"##).unwrap();
+        assert_eq!(a.color.as_deref(), Some("#FF0000"));
+        assert_eq!(b.color.as_deref(), Some("#FF0000"));
+        assert_eq!(c.color.as_deref(), Some("#FF0000"));
+    }
+
+    #[test]
+    fn partial_run_style_font_size_alias_base_size() {
+        // 광고 키 fontSize, 기존 alias baseSize / base_size 모두 deserialize.
+        let a: PartialRunStyle = serde_json::from_str(r#"{"fontSize":14}"#).unwrap();
+        let b: PartialRunStyle = serde_json::from_str(r#"{"baseSize":14}"#).unwrap();
+        let c: PartialRunStyle = serde_json::from_str(r#"{"base_size":14}"#).unwrap();
+        assert_eq!(a.font_size, Some(14));
+        assert_eq!(b.font_size, Some(14));
+        assert_eq!(c.font_size, Some(14));
+    }
+
+    #[test]
+    fn partial_run_style_to_native_json_highlight_to_shade_color() {
+        // 광고 키 highlight 가 native 키 shadeColor 로 변환.
+        let s = PartialRunStyle {
+            highlight: Some("#FFFF00".to_string()),
+            ..Default::default()
+        };
+        let native = partial_run_style_to_native_json(&s);
+        assert!(native.contains(r##""shadeColor":"#FFFF00""##), "{native}");
+        assert!(!native.contains("highlight"), "highlight 키는 native 출력에 없어야 함: {native}");
+    }
+
+    #[test]
+    fn partial_run_style_to_native_json_color_to_text_color() {
+        let s = PartialRunStyle {
+            color: Some("#00FF00".to_string()),
+            font_size: Some(12),
+            ..Default::default()
+        };
+        let native = partial_run_style_to_native_json(&s);
+        assert!(native.contains(r##""textColor":"#00FF00""##), "{native}");
+        assert!(native.contains(r#""fontSize":12"#), "{native}");
+    }
+
+    #[test]
+    fn partial_run_style_deny_unknown_fields_rejects_typo() {
+        let res: Result<PartialRunStyle, _> = serde_json::from_str(r##"{"colorr":"#FF0000"}"##);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn partial_paragraph_style_align_alias() {
+        // 광고 키 align, 기존 alias alignment 모두 deserialize.
+        let a: PartialParagraphStyle = serde_json::from_str(r#"{"align":"right"}"#).unwrap();
+        let b: PartialParagraphStyle = serde_json::from_str(r#"{"alignment":"right"}"#).unwrap();
+        assert_eq!(a.align.as_deref(), Some("right"));
+        assert_eq!(b.align.as_deref(), Some("right"));
+    }
+
+    #[test]
+    fn partial_paragraph_style_line_height_alias_line_spacing() {
+        let a: PartialParagraphStyle = serde_json::from_str(r#"{"lineHeight":200.0}"#).unwrap();
+        let b: PartialParagraphStyle = serde_json::from_str(r#"{"lineSpacing":200.0}"#).unwrap();
+        let c: PartialParagraphStyle = serde_json::from_str(r#"{"line_spacing":200.0}"#).unwrap();
+        assert_eq!(a.line_height, Some(200.0));
+        assert_eq!(b.line_height, Some(200.0));
+        assert_eq!(c.line_height, Some(200.0));
+    }
+
+    #[test]
+    fn partial_paragraph_style_to_native_json_align_to_alignment() {
+        let s = PartialParagraphStyle {
+            align: Some("center".to_string()),
+            line_height: Some(150.0),
+            ..Default::default()
+        };
+        let native = partial_paragraph_style_to_native_json(&s);
+        assert!(native.contains(r#""alignment":"center""#), "{native}");
+        assert!(native.contains(r#""lineSpacing":150"#), "{native}");
+    }
+
+    #[test]
+    fn apply_set_cell_style_bgcolor_round_trip() {
+        // SetCellStyle + bgcolor 적용 후 cell 의 border_fill_id 가 바뀌어야 한다 —
+        // bgcolor 변환이 fillType=solid + fillColor 를 native 에 보내면
+        // create_border_fill_from_json 가 새 BorderFill 을 만들어 cell.border_fill_id 갱신.
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+
+        let bfid_before = {
+            let para = &core.document.sections[0].paragraphs[1];
+            match &para.controls[0] {
+                crate::model::control::Control::Table(t) => t.cells[0].border_fill_id,
+                _ => panic!("Table 컨트롤 없음"),
+            }
+        };
+
+        let op = EditOperation::SetCellStyle {
+            section: 0,
+            table_para: 1,
+            row: 0,
+            col: 0,
+            cell_idx: None,
+            style: PartialCellStyle {
+                bgcolor: Some("#FFC0CB".to_string()),
+                ..Default::default()
+            },
+        };
+        core.apply_edit_op(&op).unwrap();
+
+        let bfid_after = {
+            let para = &core.document.sections[0].paragraphs[1];
+            match &para.controls[0] {
+                crate::model::control::Control::Table(t) => t.cells[0].border_fill_id,
+                _ => panic!("Table 컨트롤 없음"),
+            }
+        };
+        assert_ne!(
+            bfid_before, bfid_after,
+            "bgcolor 변경이 새 BorderFill 을 생성하고 cell.border_fill_id 를 바꿔야 한다"
+        );
+    }
+
+    #[test]
+    fn apply_set_paragraph_style_align_via_advertised_key() {
+        // 광고 키 align 으로 SetParagraphStyle 가 정상 적용되는지.
+        let mut core = core_with_text("hello");
+        let op = EditOperation::SetParagraphStyle {
+            section: 0,
+            para: 0,
+            style: PartialParagraphStyle {
+                align: Some("right".to_string()),
+                ..Default::default()
+            },
+        };
+        core.apply_edit_op(&op).unwrap();
+        let result = core.get_para_properties_at_native(0, 0).unwrap();
+        assert!(result.contains(r#""alignment":"right""#), "{result}");
+    }
+
+    #[test]
+    fn legacy_alignment_alias_still_applies_via_json_path() {
+        // 기존 e2e 호환: JSON 으로 {"alignment":"right"} 보내도 align 으로 받아 정상 적용.
+        let mut core = core_with_text("hi");
+        let op_json = r#"{"op":"set_paragraph_style","section":0,"para":0,"style":{"alignment":"left"}}"#;
+        let op: EditOperation = serde_json::from_str(op_json).unwrap();
+        core.apply_edit_op(&op).unwrap();
+        let result = core.get_para_properties_at_native(0, 0).unwrap();
+        assert!(result.contains(r#""alignment":"left""#), "{result}");
     }
 }
