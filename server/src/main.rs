@@ -366,6 +366,8 @@ async fn apply_ops(
             events::ServerEvent::Ops {
                 seq,
                 ops: vec![op.clone()],
+                // HTTP 경로 — 외부 호출이라 발신자 식별 없음.
+                origin_client_id: None,
             },
         );
     }
@@ -479,12 +481,17 @@ async fn save_document(
 /// 1. core.export_hwpx_native() → before_blob
 /// 2. core.apply_edit_op(&op)
 /// 3. store.append_op_stash(file_id, seq, op_json, before_blob)
-/// 4. events.publish(ServerEvent::Ops { seq, ops: [op] })
+/// 4. events.publish(ServerEvent::Ops { seq, ops: [op], origin_client_id })
+///
+/// `origin_client_id` — 그 op 의 *원래 발신자 브라우저 식별자*. WS 경로면 클라가 보낸
+/// `client_id` 를 그대로 흘려보내고, HTTP `/workbench` 같은 외부 경로는 `None` 으로
+/// 호출한다. 브라우저가 broadcast 의 self echo 를 식별·skip 하는 데 쓰인다.
 pub(crate) async fn apply_op_with_stash(
     state: &AppState,
     file_id: &str,
     session: Arc<Mutex<Session>>,
     op: rhwp::document_core::EditOperation,
+    origin_client_id: Option<String>,
 ) -> Result<(i64, Option<ir_compact::PatchDiff>), AppError> {
     // affected_range — apply 전후 IR 슬라이스 캡처 범위.
     let range = op.affected_range();
@@ -532,6 +539,7 @@ pub(crate) async fn apply_op_with_stash(
         events::ServerEvent::Ops {
             seq,
             ops: vec![op_json],
+            origin_client_id: origin_client_id.clone(),
         },
     );
 
@@ -577,7 +585,7 @@ async fn workbench(
                 offset,
                 text,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             let info = {
                 let s = session.lock().unwrap();
                 session_info(&file_id, &s)
@@ -603,7 +611,7 @@ async fn workbench(
                 para: payload.para,
                 runs: payload.runs,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -625,7 +633,7 @@ async fn workbench(
                 para: payload.para,
                 style: payload.style,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -651,7 +659,7 @@ async fn workbench(
                 para_end: payload.para_end,
                 char_end: payload.char_end,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -678,7 +686,7 @@ async fn workbench(
                 count: payload.count,
                 style: payload.style,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -700,7 +708,7 @@ async fn workbench(
                 para: payload.para,
                 element_type: payload.element_type,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -724,7 +732,7 @@ async fn workbench(
                 rows: payload.rows,
                 cols: payload.cols,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -758,7 +766,7 @@ async fn workbench(
                 cell_idx: Some(cell_idx),
                 style: payload.style,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -786,7 +794,7 @@ async fn workbench(
                 row_end: payload.row_end,
                 col_end: payload.col_end,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -822,7 +830,7 @@ async fn workbench(
                 cell_para: payload.cell_para,
                 runs: payload.runs,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -863,7 +871,7 @@ async fn workbench(
                 text: payload.text,
                 style: payload.style,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),
@@ -903,7 +911,7 @@ async fn workbench(
                 cell_para_end: payload.cell_para_end,
                 char_end: payload.char_end,
             };
-            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op).await?;
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
                 seq,
                 applied: "ops".to_string(),

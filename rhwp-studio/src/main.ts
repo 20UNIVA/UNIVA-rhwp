@@ -121,6 +121,14 @@ function buildSessionClient(fileId: string): SessionClient {
         console.warn('[main] ServerEvent shape 미일치 — 무시:', ev);
         return;
       }
+      // [Sub-6] WS broadcast self-echo skip — 자기 clientId 가 발행한 ops 는
+      // 이미 로컬 wasm 에 적용됨. 다시 적용하면 600ms 디바운스 단위마다 *복제* 발생.
+      // origin_client_id 가 *다른 값* 이거나 *누락* (HTTP /workbench 등) 이면 그대로 적용.
+      if (ev.kind === 'ops'
+          && typeof (ev as { origin_client_id?: string }).origin_client_id === 'string'
+          && (ev as { origin_client_id?: string }).origin_client_id === sessionClient?.getClientId()) {
+        return;
+      }
       if (ev.kind === 'ops') {
         if (!Array.isArray(ev.ops)) {
           console.warn('[main] ops 필드 누락 — 무시');

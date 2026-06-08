@@ -102,14 +102,16 @@ async fn handle_client_text(
     let msg: ClientMessage =
         serde_json::from_str(text).map_err(|e| format!("ClientMessage JSON 파싱 실패: {e}"))?;
     match msg {
-        ClientMessage::Ops { ops } => {
+        ClientMessage::Ops { ops, client_id } => {
             // [4-2 fix] 각 op 를 EditOperation 으로 파싱 후 apply_op_with_stash 호출.
             // 모든 ops 가 op_stash 영속 + broadcast 통일 — 사용자 키 입력도 undo 대상.
+            // [Sub-6] client_id 를 origin 으로 그대로 흘려보낸다 — broadcast 자신에게
+            // echo 되는 메시지를 발신자가 식별·skip 할 수 있도록 라벨링.
             use rhwp::document_core::EditOperation;
             for op_value in ops {
                 let op: EditOperation = serde_json::from_value(op_value)
                     .map_err(|e| format!("EditOperation 파싱 실패: {e}"))?;
-                apply_op_with_stash(state, file_id, session.clone(), op)
+                apply_op_with_stash(state, file_id, session.clone(), op, client_id.clone())
                     .await
                     .map_err(|e| format!("apply_op_with_stash: {}", e.msg))?;
             }

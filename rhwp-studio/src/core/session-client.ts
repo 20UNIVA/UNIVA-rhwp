@@ -17,7 +17,11 @@ export interface MirrorSink {
 
 /** WS 텍스트 프레임 본문 — 서버 → 클라 */
 export type ServerEvent =
-  | { kind: 'ops'; seq: number; ops: EditOpJson[] }
+  // [Sub-6] `origin_client_id` — *원래 발신한 브라우저의 식별자*. WS broadcast 가
+  // 발신자 자신에게도 echo 되는 구조에서, main.ts 가 자기 clientId 와 같으면 skip 한다.
+  // HTTP `/workbench` 같은 외부 경로는 발신자 식별 없음 → 직렬화 시 키 자체가 누락
+  // (서버 `skip_serializing_if`).
+  | { kind: 'ops'; seq: number; ops: EditOpJson[]; origin_client_id?: string }
   | { kind: 'workbench'; seq: number; action: string; payload: unknown }
   | { kind: 'snapshot_restored'; seq: number; snapshot_base64: string }
   | { kind: 'complete'; seq: number };
@@ -92,6 +96,10 @@ export class SessionClient implements MirrorSink {
   private readonly onServerEvent?: (ev: ServerEvent) => void;
   private readonly reconnectDelaysMs: number[];
 
+  // [Sub-6] *이 SessionClient 인스턴스의 고유 식별자*. 서버가 broadcast 페이로드의
+  // `origin_client_id` 에 그대로 실어 — 자기 발신을 echo 로 받으면 main.ts 가 skip.
+  private readonly clientId: string = crypto.randomUUID();
+
   private ws: WebSocket | null = null;
   private disposed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -136,6 +144,11 @@ export class SessionClient implements MirrorSink {
     this.installUnloadFlush();
   }
 
+  /** [Sub-6] main.ts 의 onServerEvent self-echo skip 가드가 비교용으로 읽음. */
+  getClientId(): string {
+    return this.clientId;
+  }
+
   queueOp(op: EditOperation): void {
     this.queue.push(op);
     this.scheduleOpFlush();
@@ -161,7 +174,8 @@ export class SessionClient implements MirrorSink {
     if (this.queue.length === 0) return Promise.resolve();
     const ops = this.queue;
     this.queue = [];
-    const msg = JSON.stringify({ kind: 'ops', ops });
+    // [Sub-6] client_id 동봉 — 서버가 broadcast 의 origin_client_id 에 그대로 실음.
+    const msg = JSON.stringify({ kind: 'ops', client_id: this.clientId, ops });
     this.sendOrBuffer(msg);
     return Promise.resolve();
   }
