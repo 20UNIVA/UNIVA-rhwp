@@ -875,6 +875,17 @@ impl DocumentCore {
                         rhe[4..6].copy_from_slice(&1u16.to_le_bytes()); // n_line_segs=1
                         cp.raw_header_extra = rhe;
                     }
+                    // [Sub-7 v2 Fix A] 셀 paragraph 의 char_shapes 보정 — Cell::new_empty 는
+                    // 빈 Vec 으로 초기화하지만 raw_header_extra 는 *n_char_shapes=1* 로 기록한다.
+                    // 본문 paragraph 와 동일하게 최소 1개의 CharShapeRef 가 있어야
+                    // apply_char_shape_range 가 정상 동작하고 ir_compact 의 char_shape_id_at
+                    // 가 default 이상의 ID 를 반환할 수 있다.
+                    if cp.char_shapes.is_empty() {
+                        cp.char_shapes.push(crate::model::paragraph::CharShapeRef {
+                            start_pos: 0,
+                            char_shape_id: default_char_shape_id,
+                        });
+                    }
                     // line_segs 보정: new_empty()의 기본 LineSeg는 line_height=0이므로 항상 교체
                     let seg_w = (col_width as i32) - 141 - 141; // 셀 폭 - 좌우 패딩
                     cp.line_segs = vec![LineSeg {

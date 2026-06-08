@@ -949,6 +949,17 @@ impl Paragraph {
             return;
         }
 
+        // [Sub-7 v2 Fix A] 빈 char_shapes 방어 — apply_char_shape_range 의 본 루프는
+        // 기존 CharShapeRef 들을 순회하면서 분할/교체한다. char_shapes 가 비어 있으면 루프 0회
+        // 로 끝나 *어떤 새 ref 도 추가되지 않는* no-op 가 된다 (Sub-7 v2 사고 A 의 직접 원인).
+        // 셀 paragraph 가 비어있던 옛 데이터를 만나면 최소 1개의 baseline ref 를 박아 둔다.
+        if self.char_shapes.is_empty() {
+            self.char_shapes.push(CharShapeRef {
+                start_pos: 0,
+                char_shape_id: 0,
+            });
+        }
+
         // char offset → UTF-16 위치 변환
         let utf16_start = if start_char_offset < self.char_offsets.len() {
             self.char_offsets[start_char_offset]

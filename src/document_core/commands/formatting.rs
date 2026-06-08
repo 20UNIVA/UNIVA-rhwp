@@ -955,6 +955,82 @@ impl DocumentCore {
         Ok("{\"ok\":true}".to_string())
     }
 
+    /// [Sub-7 v2 Fix B] 글자 서식 적용 — *base char_shape_id 를 호출자가 지정*. replace_runs
+    /// 류 (한 paragraph 안에 여러 run 을 순차 삽입) 에서 *직전 run 의 char_shape 가 다음 run 의
+    /// base 로 cascade 되는 사고* 를 막기 위해 사용한다. apply_char_format_native 는
+    /// `char_shape_id_at(start)` 를 base 로 쓰지만, 이 함수는 호출자가 미리 보관한 *paragraph
+    /// 의 원래 default* 를 base 로 받아 매 run 마다 동일한 출발점에서 partial mods 를 적용한다.
+    pub fn apply_char_format_native_with_base(
+        &mut self,
+        sec_idx: usize,
+        para_idx: usize,
+        start_offset: usize,
+        end_offset: usize,
+        base_char_shape_id: u32,
+        props_json: &str,
+    ) -> Result<String, HwpError> {
+        if sec_idx >= self.document.sections.len() {
+            return Err(HwpError::RenderError(format!("구역 {} 범위 초과", sec_idx)));
+        }
+        if para_idx >= self.document.sections[sec_idx].paragraphs.len() {
+            return Err(HwpError::RenderError(format!(
+                "문단 {} 범위 초과",
+                para_idx
+            )));
+        }
+
+        let mut mods = parse_char_shape_mods(props_json);
+        if json_has_border_keys(props_json) {
+            let bf_id = self.create_border_fill_from_json(props_json);
+            mods.border_fill_id = Some(bf_id);
+        }
+
+        let new_id = self.document.find_or_create_char_shape(base_char_shape_id, &mods);
+        self.document.sections[sec_idx].paragraphs[para_idx].apply_char_shape_range(
+            start_offset,
+            end_offset,
+            new_id,
+        );
+
+        // base_size 변경 시 reflow (apply_char_format_native 와 동일 로직)
+        if mods.base_size.is_some() {
+            let styles = resolve_styles(&self.document.doc_info, self.dpi);
+            let section = &self.document.sections[sec_idx];
+            let page_def = &section.section_def.page_def;
+            let column_def = DocumentCore::find_initial_column_def(&section.paragraphs);
+            let layout = PageLayoutInfo::from_page_def(page_def, &column_def, self.dpi);
+            let col_width = layout
+                .column_areas
+                .first()
+                .map(|a| a.width)
+                .unwrap_or(layout.body_area.width);
+            let para_shape_id = self.document.sections[sec_idx].paragraphs[para_idx].para_shape_id;
+            let para_style = styles.para_styles.get(para_shape_id as usize);
+            let margin_left = para_style.map(|s| s.margin_left).unwrap_or(0.0);
+            let margin_right = para_style.map(|s| s.margin_right).unwrap_or(0.0);
+            let available_width = (col_width - margin_left - margin_right).max(1.0);
+            self.document.sections[sec_idx].paragraphs[para_idx]
+                .line_segs
+                .clear();
+            reflow_line_segs(
+                &mut self.document.sections[sec_idx].paragraphs[para_idx],
+                available_width,
+                &styles,
+                self.dpi,
+            );
+        }
+
+        self.document.sections[sec_idx].raw_stream = None;
+        self.rebuild_section(sec_idx);
+        self.event_log.push(DocumentEvent::CharFormatChanged {
+            section: sec_idx,
+            para: para_idx,
+            start: start_offset,
+            end: end_offset,
+        });
+        Ok("{\"ok\":true}".to_string())
+    }
+
     /// 글자 서식 적용 (네이티브) — 셀 내 문단
     pub fn apply_char_format_in_cell_native(
         &mut self,
@@ -1027,6 +1103,84 @@ impl DocumentCore {
             reflow_line_segs(cell_para, available_width, &styles, dpi);
 
             // 표 dirty 마킹 — 셀 높이 재계산 필요
+            if let Control::Table(ref mut t) =
+                self.document.sections[sec_idx].paragraphs[parent_para_idx].controls[control_idx]
+            {
+                t.dirty = true;
+            }
+        }
+
+        self.document.sections[sec_idx].raw_stream = None;
+        self.rebuild_section(sec_idx);
+        self.event_log.push(DocumentEvent::CharFormatChanged {
+            section: sec_idx,
+            para: parent_para_idx,
+            start: start_offset,
+            end: end_offset,
+        });
+        Ok("{\"ok\":true}".to_string())
+    }
+
+    /// [Sub-7 v2 Fix B] 글자 서식 적용 — 셀 내 문단, *base char_shape_id 호출자 지정*.
+    /// `replace_cell_runs` 가 직전 run 의 char_shape 를 cascade 하지 않도록, paragraph 의
+    /// 원래 default 를 base 로 받아 매 run partial mods 를 동일 base 에서 합성한다.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_char_format_in_cell_native_with_base(
+        &mut self,
+        sec_idx: usize,
+        parent_para_idx: usize,
+        control_idx: usize,
+        cell_idx: usize,
+        cell_para_idx: usize,
+        start_offset: usize,
+        end_offset: usize,
+        base_char_shape_id: u32,
+        props_json: &str,
+    ) -> Result<String, HwpError> {
+        let mut mods = parse_char_shape_mods(props_json);
+        if json_has_border_keys(props_json) {
+            let bf_id = self.create_border_fill_from_json(props_json);
+            mods.border_fill_id = Some(bf_id);
+        }
+
+        let new_id = self.document.find_or_create_char_shape(base_char_shape_id, &mods);
+
+        let cell_para = self.get_cell_paragraph_mut(
+            sec_idx,
+            parent_para_idx,
+            control_idx,
+            cell_idx,
+            cell_para_idx,
+        )?;
+        cell_para.apply_char_shape_range(start_offset, end_offset, new_id);
+
+        if mods.base_size.is_some() {
+            let dpi = self.dpi;
+            let styles = resolve_styles(&self.document.doc_info, dpi);
+            let section = &self.document.sections[sec_idx];
+            let page_def = &section.section_def.page_def;
+            let column_def = DocumentCore::find_initial_column_def(&section.paragraphs);
+            let layout = PageLayoutInfo::from_page_def(page_def, &column_def, dpi);
+            let col_width = layout
+                .column_areas
+                .first()
+                .map(|a| a.width)
+                .unwrap_or(layout.body_area.width);
+            let cell_para = self.get_cell_paragraph_mut(
+                sec_idx,
+                parent_para_idx,
+                control_idx,
+                cell_idx,
+                cell_para_idx,
+            )?;
+            let para_shape_id = cell_para.para_shape_id;
+            let para_style = styles.para_styles.get(para_shape_id as usize);
+            let margin_left = para_style.map(|s| s.margin_left).unwrap_or(0.0);
+            let margin_right = para_style.map(|s| s.margin_right).unwrap_or(0.0);
+            let available_width = (col_width - margin_left - margin_right).max(1.0);
+            cell_para.line_segs.clear();
+            reflow_line_segs(cell_para, available_width, &styles, dpi);
+
             if let Control::Table(ref mut t) =
                 self.document.sections[sec_idx].paragraphs[parent_para_idx].controls[control_idx]
             {
