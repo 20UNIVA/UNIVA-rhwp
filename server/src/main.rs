@@ -1089,7 +1089,9 @@ async fn ir_slice_handler(
             para_end: Some(para_end),
             edit_session_id: Some(format!("cli_{}", file_id)),
             // Sub-3 v2 — page query 지정 시 paginator 결과로 sec/start/end 가 덮어써짐.
-            page: q.page,
+            // m400 sub-2 — page 인자 1-based 정합. 사용자·모델 직관 (1 페이지 = page 1) 정합.
+            // page = 1 → 첫 페이지 (내부 0-based 인덱스 0). page = 0 또는 미지정 → 전체.
+            page: q.page.and_then(|p| if p >= 1 { Some(p - 1) } else { None }),
         };
         let slice = ir_compact::build_compact_ir_slice(&s.core, &opts);
         // anchor 값은 page 매핑 후의 *실제* sec/para_start/para_end — top-level 호환 필드도
