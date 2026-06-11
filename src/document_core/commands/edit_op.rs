@@ -359,6 +359,18 @@ pub enum EditOperation {
         cell_para_end: usize,
         char_end: usize,
     },
+
+    // ─── Sub-8: 강제 쪽 나누기 (Ctrl+Enter 동등) ───────────────────────────────
+
+    /// 강제 쪽 나누기. `insert_page_break_native` 위임.
+    /// 동작: `(section, para)` 의 `offset` 자리에서 문단 분할 + 새 문단 (`para+1`) 에
+    /// `ColumnBreakType::Page` 설정 + `recompose_section` + `paginate_if_needed`.
+    /// 분할 결과 새 페이지가 시작되는 문단이 `para+1` 자리에 들어간다.
+    InsertPageBreak {
+        section: usize,
+        para: usize,
+        offset: usize,
+    },
 }
 
 fn one_count() -> usize { 1 }
@@ -779,6 +791,12 @@ impl EditOperation {
                     cell_para: Some(*cell_para_start),
                 }),
             },
+            EditOperation::InsertPageBreak { section, para, .. } => AffectedRange {
+                section: *section,
+                before: ParaRange::single(*para),
+                after: ParaRange { start: *para, end: *para + 2 },
+                cell: None,
+            },
         }
     }
 }
@@ -959,6 +977,9 @@ impl DocumentCore {
                     Some((*table_para, ctrl_idx, resolved_cell_idx)),
                 )?;
             }
+            EditOperation::InsertPageBreak { section, para, offset } => {
+                self.insert_page_break_native(*section, *para, *offset)?;
+            }
         }
         Ok(())
     }
@@ -1030,6 +1051,9 @@ impl DocumentCore {
             }
             EditOperation::DeleteRangeInCell { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::InsertPageBreak { .. } => {
+                unreachable!("Sub-8 variant uses snapshot stash for inverse");
             }
         }
         Ok(())
@@ -1587,6 +1611,16 @@ mod tests {
     }
 
     #[test]
+    fn affected_range_insert_page_break_grows_after() {
+        let op = EditOperation::InsertPageBreak { section: 0, para: 3, offset: 5 };
+        let r = op.affected_range();
+        assert_eq!(r.section, 0);
+        assert_eq!(r.before, ParaRange::single(3));
+        assert_eq!(r.after, ParaRange { start: 3, end: 5 });
+        assert!(r.cell.is_none());
+    }
+
+    #[test]
     fn affected_range_merge_paragraph_consumes_prev() {
         let op = EditOperation::MergeParagraph { section: 0, para: 5, prev_len: 4 };
         let r = op.affected_range();
@@ -1817,6 +1851,33 @@ mod tests {
         assert_ne!(
             bfid_before, bfid_after,
             "bgcolor 변경이 새 BorderFill 을 생성하고 cell.border_fill_id 를 바꿔야 한다"
+        );
+    }
+
+    #[test]
+    fn apply_insert_page_break_splits_and_sets_column_type() {
+        use crate::model::paragraph::ColumnBreakType;
+        // 본문 한 문단 들어 있는 빈 문서.
+        let mut core = core_with_text("한 줄");
+        let before_count = core.document.sections[0].paragraphs.len();
+
+        let op = EditOperation::InsertPageBreak {
+            section: 0,
+            para: 0,
+            offset: 1,
+        };
+        core.apply_edit_op(&op).unwrap();
+
+        let secs = &core.document.sections;
+        assert_eq!(
+            secs[0].paragraphs.len(),
+            before_count + 1,
+            "문단이 둘로 분할되어야 한다"
+        );
+        assert_eq!(
+            secs[0].paragraphs[1].column_type,
+            ColumnBreakType::Page,
+            "분할된 새 문단 (para+1) 에 page break 가 설정되어야 한다"
         );
     }
 
