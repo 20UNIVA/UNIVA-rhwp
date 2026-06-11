@@ -694,6 +694,28 @@ async fn workbench(
                 diff,
             }))
         }
+        "insert_page_break" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                para: usize,
+                offset: usize,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::InsertPageBreak {
+                section: payload.section,
+                para: payload.para,
+                offset: payload.offset,
+            };
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+                diff,
+            }))
+        }
         "delete_element" => {
             #[derive(serde::Deserialize)]
             struct Payload {
