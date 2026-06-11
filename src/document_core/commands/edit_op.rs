@@ -824,15 +824,29 @@ impl DocumentCore {
                     section_idx, table_para_idx
                 ))
             })?;
-        let table = match para.controls.get(control_idx) {
-            Some(crate::model::control::Control::Table(t)) => t,
-            _ => {
-                return Err(HwpError::RenderError(format!(
-                    "find_cell_idx: control_idx={} 가 Table 아님",
-                    control_idx
-                )))
-            }
-        };
+        // control_idx 자리 우선 시도. 실패하면 paragraph 안의 *첫 Table control* 자동 검색.
+        // 호출자가 control_idx=0 하드코딩 자리에서 paragraph 가 SectionDef/ColumnDef 같은 다른
+        // control 을 먼저 가질 때 (섹션의 첫 문단 자리) 자동 우회. m400 sub-1.
+        let table = para
+            .controls
+            .get(control_idx)
+            .and_then(|c| match c {
+                crate::model::control::Control::Table(t) => Some(t.as_ref()),
+                _ => None,
+            })
+            .or_else(|| {
+                para.controls.iter().find_map(|c| match c {
+                    crate::model::control::Control::Table(t) => Some(t.as_ref()),
+                    _ => None,
+                })
+            })
+            .ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "find_cell_idx: table_para={} 에 Table control 없음 (controls_len={})",
+                    table_para_idx,
+                    para.controls.len()
+                ))
+            })?;
         table
             .cells
             .iter()
@@ -1907,5 +1921,69 @@ mod tests {
         core.apply_edit_op(&op).unwrap();
         let result = core.get_para_properties_at_native(0, 0).unwrap();
         assert!(result.contains(r#""alignment":"left""#), "{result}");
+    }
+
+    /// m400 sub-1 — 섹션 첫 문단의 controls 가 `[SectionDef, Table]` 모양일 때,
+    /// 호출자가 control_idx=0 하드코딩으로 들어와도 fallback 으로 Table 자동 검색해야 한다.
+    /// sim-1781219787 paragraphs[0] 의 1×1 표 셀 배경색 변경 사고 자리.
+    #[test]
+    fn find_cell_idx_falls_back_for_section_def_paragraph() {
+        use crate::model::control::Control;
+        use crate::model::document::{Section, SectionDef};
+        use crate::model::paragraph::Paragraph;
+        use crate::model::table::{Cell, Table};
+
+        let mut core = DocumentCore::new_empty();
+        let mut section = Section::default();
+        let mut para = Paragraph::default();
+        // 섹션 첫 문단 모양 — SectionDef 가 controls 앞 자리에 박혀 있음
+        para.controls.push(Control::SectionDef(Box::new(SectionDef::default())));
+        let mut cell = Cell::default();
+        cell.row = 0;
+        cell.col = 0;
+        let mut table = Table::default();
+        table.row_count = 1;
+        table.col_count = 1;
+        table.cells.push(cell);
+        para.controls.push(Control::Table(Box::new(table)));
+        section.paragraphs.push(para);
+        core.document.sections.push(section);
+
+        // 옛 동작: control_idx=0 자리 = SectionDef → "control_idx=0 가 Table 아님" 사고
+        // 새 동작: fallback 으로 controls 안 Table 자동 검색 → 셀 (0,0) 자리 = idx 0
+        let cell_idx = core.find_cell_idx(0, 0, 0, 0, 0).unwrap();
+        assert_eq!(cell_idx, 0);
+    }
+
+    /// m400 sub-1 — 섹션 내부 문단의 controls 가 `[Table]` 한 자리 자리, control_idx=0 자리가
+    /// Table 자리. fallback 도입 후 *옛 동작 그대로 유지* 되어야 한다 (회귀 검증).
+    #[test]
+    fn find_cell_idx_direct_for_table_only_paragraph() {
+        use crate::model::control::Control;
+        use crate::model::document::Section;
+        use crate::model::paragraph::Paragraph;
+        use crate::model::table::{Cell, Table};
+
+        let mut core = DocumentCore::new_empty();
+        let mut section = Section::default();
+        let mut para = Paragraph::default();
+        let mut table = Table::default();
+        table.row_count = 2;
+        table.col_count = 3;
+        for r in 0..2u16 {
+            for c in 0..3u16 {
+                let mut cell = Cell::default();
+                cell.row = r;
+                cell.col = c;
+                table.cells.push(cell);
+            }
+        }
+        para.controls.push(Control::Table(Box::new(table)));
+        section.paragraphs.push(para);
+        core.document.sections.push(section);
+
+        // control_idx=0 자리가 Table — 직접 매핑
+        assert_eq!(core.find_cell_idx(0, 0, 0, 0, 0).unwrap(), 0);
+        assert_eq!(core.find_cell_idx(0, 0, 0, 1, 2).unwrap(), 5);
     }
 }
