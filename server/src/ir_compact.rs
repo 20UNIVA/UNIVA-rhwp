@@ -694,7 +694,7 @@ fn build_paragraph(core: &DocumentCore, sec: usize, para: usize) -> Vec<IrParagr
 /// 옛 ts `rhwp-studio/src/llm-replay/ir-builder.ts::buildIRSlice` 의 옵션 객체와 정합. `sec`
 /// 은 섹션 인덱스, `para_start..para_end` 는 *반열림 구간*. `para_end == None` 이면 섹션의
 /// 마지막 문단까지, `edit_session_id == None` 이면 현재 시각 (ms) 기반 자동 생성.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BuildOptions {
     pub sec: usize,
     pub para_start: usize,
@@ -806,11 +806,24 @@ pub fn build_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> IrSlice {
         paragraphs.extend(build_paragraph(core, sec, p));
     }
 
+    // m500 — paginator 결과로 실제 페이지 수 계산. rendering.rs:2715 패턴 정합.
+    // 빈 paginator (paginator 미실행 / 빈 문서) 자리는 1 fallback.
+    let total_pages: u32 = core
+        .pagination()
+        .iter()
+        .map(|p| p.pages.len() as u32)
+        .sum::<u32>()
+        .max(1);
+    // opts.page 는 *0-based 내부 인덱스* (BuildOptions 문서 정합).
+    // 응답 doc_meta.page 는 *1-based 표시* — page=1 이 첫 페이지.
+    // m400 sub-2 의 main.rs 변환 (외부 1-based → 내부 0-based) 과 정합.
+    let page_display: u32 = opts.page.map(|p| p + 1).unwrap_or(1);
+
     IrSlice {
         doc_meta: IrDocMeta {
             edit_session_id,
-            page: 1,
-            total_pages: 1,
+            page: page_display,
+            total_pages,
             anchor: IrAnchor {
                 sec,
                 para_start: start,
@@ -2847,5 +2860,43 @@ mod tests {
         let diff = build_patch_diff("insert_text", &range, before, after);
         let s = serde_json::to_string(&diff).unwrap();
         assert!(!s.contains("noChangeWarning"), "changed=true 면 키 자체가 응답에 없어야 함: {s}");
+    }
+
+    /// m500 — paginator 미실행 / 빈 paginator 자리 fallback. core.pagination() 이 빈 자리에서
+    /// total_pages 가 0 떨어지지 않고 1 fallback 인지 확인.
+    #[test]
+    fn doc_meta_total_pages_falls_back_to_one_for_empty_paginator() {
+        let core = DocumentCore::new_empty();
+        let opts = BuildOptions::default();
+        let slice = build_ir_slice(&core, &opts);
+        assert_eq!(slice.doc_meta.total_pages, 1, "빈 paginator → 1 fallback");
+        // opts.page None → page_display = 1 (전체 의미의 default)
+        assert_eq!(slice.doc_meta.page, 1);
+    }
+
+    /// m500 — opts.page = Some(0) (내부 0-based 첫 페이지) 입력 시 doc_meta.page = 1 표시 (1-based).
+    /// m400 sub-2 의 main.rs 변환 (외부 1-based → 내부 0-based) 과 정합.
+    #[test]
+    fn doc_meta_page_one_based_display_when_opts_page_zero() {
+        let core = DocumentCore::new_empty();
+        let opts = BuildOptions {
+            page: Some(0),
+            ..Default::default()
+        };
+        let slice = build_ir_slice(&core, &opts);
+        // opts.page = 0 (내부 0-based 첫 페이지) → doc_meta.page = 1 (외부 1-based 표시)
+        assert_eq!(slice.doc_meta.page, 1);
+    }
+
+    /// m500 — opts.page = Some(2) (내부 0-based 세번째 페이지) → doc_meta.page = 3 (1-based 표시).
+    #[test]
+    fn doc_meta_page_one_based_display_when_opts_page_two() {
+        let core = DocumentCore::new_empty();
+        let opts = BuildOptions {
+            page: Some(2),
+            ..Default::default()
+        };
+        let slice = build_ir_slice(&core, &opts);
+        assert_eq!(slice.doc_meta.page, 3);
     }
 }
