@@ -1,6 +1,9 @@
 //! 표/셀 CRUD + 속성 조회·수정 관련 native 메서드
 
-use super::super::helpers::{border_line_type_to_u8_val, color_ref_to_css, navigate_path_to_table};
+use super::super::helpers::{
+    border_line_type_to_u8_val, color_ref_to_css, navigate_path_to_table,
+    resolve_table_ctrl_idx,
+};
 use crate::document_core::DocumentCore;
 use crate::error::HwpError;
 use crate::model::control::Control;
@@ -394,12 +397,20 @@ impl DocumentCore {
                 HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", parent_para_idx))
             })?;
 
-        let table = match para.controls.get(control_idx) {
-            Some(Control::Table(t)) => t,
+        let resolved_ci = resolve_table_ctrl_idx(para, control_idx).ok_or_else(|| {
+            HwpError::RenderError(format!(
+                "문단 {} 에 Table control 없음 (controls_len={})",
+                parent_para_idx,
+                para.controls.len()
+            ))
+        })?;
+        let table = match &para.controls[resolved_ci] {
+            Control::Table(t) => t,
             _ => {
-                return Err(HwpError::RenderError(
-                    "지정된 컨트롤이 표가 아닙니다".to_string(),
-                ))
+                return Err(HwpError::RenderError(format!(
+                    "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                    resolved_ci
+                )))
             }
         };
 
@@ -430,12 +441,20 @@ impl DocumentCore {
                 HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", parent_para_idx))
             })?;
 
-        let table = match para.controls.get(control_idx) {
-            Some(Control::Table(t)) => t,
+        let resolved_ci = resolve_table_ctrl_idx(para, control_idx).ok_or_else(|| {
+            HwpError::RenderError(format!(
+                "문단 {} 에 Table control 없음 (controls_len={})",
+                parent_para_idx,
+                para.controls.len()
+            ))
+        })?;
+        let table = match &para.controls[resolved_ci] {
+            Control::Table(t) => t,
             _ => {
-                return Err(HwpError::RenderError(
-                    "지정된 컨트롤이 표가 아닙니다".to_string(),
-                ))
+                return Err(HwpError::RenderError(format!(
+                    "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                    resolved_ci
+                )))
             }
         };
 
@@ -530,12 +549,20 @@ impl DocumentCore {
                 HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", parent_para_idx))
             })?;
 
-        let table = match para.controls.get(control_idx) {
-            Some(Control::Table(t)) => t,
+        let resolved_ci = resolve_table_ctrl_idx(para, control_idx).ok_or_else(|| {
+            HwpError::RenderError(format!(
+                "문단 {} 에 Table control 없음 (controls_len={})",
+                parent_para_idx,
+                para.controls.len()
+            ))
+        })?;
+        let table = match &para.controls[resolved_ci] {
+            Control::Table(t) => t,
             _ => {
-                return Err(HwpError::RenderError(
-                    "지정된 컨트롤이 표가 아닙니다".to_string(),
-                ))
+                return Err(HwpError::RenderError(format!(
+                    "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                    resolved_ci
+                )))
             }
         };
 
@@ -1055,12 +1082,20 @@ impl DocumentCore {
                 HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", parent_para_idx))
             })?;
 
-        let table = match para.controls.get(control_idx) {
-            Some(Control::Table(t)) => t,
+        let resolved_ci = resolve_table_ctrl_idx(para, control_idx).ok_or_else(|| {
+            HwpError::RenderError(format!(
+                "문단 {} 에 Table control 없음 (controls_len={})",
+                parent_para_idx,
+                para.controls.len()
+            ))
+        })?;
+        let table = match &para.controls[resolved_ci] {
+            Control::Table(t) => t,
             _ => {
-                return Err(HwpError::RenderError(
-                    "지정된 컨트롤이 표가 아닙니다".to_string(),
-                ))
+                return Err(HwpError::RenderError(format!(
+                    "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                    resolved_ci
+                )))
             }
         };
 
@@ -1697,21 +1732,16 @@ impl DocumentCore {
             )));
         }
         let para = &mut section.paragraphs[parent_para_idx];
-        if control_idx >= para.controls.len() {
-            return Err(HwpError::RenderError(format!(
-                "컨트롤 인덱스 {} 범위 초과",
-                control_idx
-            )));
-        }
-        // 표 컨트롤인지 확인
-        if !matches!(
-            &para.controls[control_idx],
-            crate::model::control::Control::Table(_)
-        ) {
-            return Err(HwpError::RenderError(
-                "지정된 컨트롤이 표가 아닙니다".to_string(),
-            ));
-        }
+        // 표 컨트롤 자리 자동 해소 — control_idx 가 SectionDef/ColumnDef 같은 비-Table 을
+        // 가리키면 문단 안 첫 Table control 로 fallback (resolve_table_ctrl_idx 의 의도).
+        // 호출자 (DeleteElement Table arm) 가 control_idx=0 하드코딩하는 자리 흡수.
+        let control_idx = resolve_table_ctrl_idx(para, control_idx).ok_or_else(|| {
+            HwpError::RenderError(format!(
+                "문단 {} 에 Table control 없음 (controls_len={})",
+                parent_para_idx,
+                para.controls.len()
+            ))
+        })?;
 
         // 컨트롤이 차지하는 갭의 시작 위치를 찾아 char_offsets 조정
         // serialize_para_text와 동일한 로직으로 control_idx번째 컨트롤의 위치를 찾는다

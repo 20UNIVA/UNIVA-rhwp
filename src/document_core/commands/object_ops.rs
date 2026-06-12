@@ -1,6 +1,6 @@
 //! 그림 속성/삽입/삭제 + 표 생성 + 셀 bbox 관련 native 메서드
 
-use super::super::helpers::get_textbox_from_shape;
+use super::super::helpers::{get_textbox_from_shape, resolve_table_ctrl_idx};
 use crate::document_core::DocumentCore;
 use crate::error::HwpError;
 use crate::model::control::Control;
@@ -4090,12 +4090,21 @@ impl DocumentCore {
             let para = section.paragraphs.get(parent_para_idx).ok_or_else(|| {
                 HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", parent_para_idx))
             })?;
-            let table = match para.controls.get(control_idx) {
-                Some(Control::Table(t)) => t,
+            // control_idx 자리가 비-Table 이면 문단 안 첫 Table 로 fallback.
+            let resolved_ci = resolve_table_ctrl_idx(para, control_idx).ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "문단 {} 에 Table control 없음 (controls_len={})",
+                    parent_para_idx,
+                    para.controls.len()
+                ))
+            })?;
+            let table = match &para.controls[resolved_ci] {
+                Control::Table(t) => t,
                 _ => {
-                    return Err(HwpError::RenderError(
-                        "지정된 컨트롤이 표가 아닙니다".to_string(),
-                    ))
+                    return Err(HwpError::RenderError(format!(
+                        "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                        resolved_ci
+                    )))
                 }
             };
             let cell = table
@@ -4149,12 +4158,21 @@ impl DocumentCore {
             let para = section.paragraphs.get_mut(parent_para_idx).ok_or_else(|| {
                 HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", parent_para_idx))
             })?;
-            let table = match para.controls.get_mut(control_idx) {
+            // control_idx 자리가 비-Table 이면 문단 안 첫 Table 로 fallback.
+            let resolved_ci = resolve_table_ctrl_idx(para, control_idx).ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "문단 {} 에 Table control 없음 (controls_len={})",
+                    parent_para_idx,
+                    para.controls.len()
+                ))
+            })?;
+            let table = match para.controls.get_mut(resolved_ci) {
                 Some(Control::Table(t)) => t,
                 _ => {
-                    return Err(HwpError::RenderError(
-                        "지정된 컨트롤이 표가 아닙니다".to_string(),
-                    ))
+                    return Err(HwpError::RenderError(format!(
+                        "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                        resolved_ci
+                    )))
                 }
             };
             let cell = table

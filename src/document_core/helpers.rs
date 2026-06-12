@@ -191,11 +191,31 @@ pub(crate) fn get_textbox_from_shape_mut(
     drawing.text_box.as_mut()
 }
 
+/// 문단 안 `control_idx` 자리 우선 시도. Table 이 아니거나 인덱스가 범위 밖이면
+/// 문단 안 *첫 Table control* 자동 검색.
+///
+/// 호출자가 control_idx=0 하드코딩 자리에서 paragraph 가 SectionDef/ColumnDef
+/// 같은 다른 control 을 먼저 가질 때 (섹션의 첫 문단 자리) 자동 우회.
+/// `find_cell_idx` (edit_op.rs §SetCellStyle 분기에서 사용) 의 fallback 과 동일 의도.
+///
+/// 반환: 문단 안 Table control 의 실제 인덱스. 문단 안에 Table 이 *전혀 없으면* `None`.
+pub(crate) fn resolve_table_ctrl_idx(para: &Paragraph, ctrl_idx: usize) -> Option<usize> {
+    if matches!(para.controls.get(ctrl_idx), Some(Control::Table(_))) {
+        return Some(ctrl_idx);
+    }
+    para.controls
+        .iter()
+        .position(|c| matches!(c, Control::Table(_)))
+}
+
 /// 문단 목록에서 DocumentPath를 따라 중첩 표에 대한 가변 참조를 얻는다.
 ///
 /// 경로 형식:
 /// - 종단: `[Paragraph(pi), Control(ci)]` → 해당 표 반환
 /// - 중첩: `[Paragraph(pi), Control(ci), Cell(r,c), ...rest]` → 셀 내 재귀
+///
+/// `ci` 자리가 SectionDef/ColumnDef 같은 비-Table control 을 가리키면 자동으로
+/// 문단 안 첫 Table control 로 fallback (`resolve_table_ctrl_idx`).
 pub(crate) fn navigate_path_to_table<'a>(
     paragraphs: &'a mut Vec<Paragraph>,
     path: &[PathSegment],
@@ -205,14 +225,18 @@ pub(crate) fn navigate_path_to_table<'a>(
             let para = paragraphs
                 .get_mut(*pi)
                 .ok_or_else(|| HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", pi)))?;
-            match para.controls.get_mut(*ci) {
+            let resolved_ci = resolve_table_ctrl_idx(para, *ci).ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "문단 {} 에 Table control 없음 (controls_len={})",
+                    pi,
+                    para.controls.len()
+                ))
+            })?;
+            match para.controls.get_mut(resolved_ci) {
                 Some(Control::Table(t)) => Ok(t),
-                Some(_) => Err(HwpError::RenderError(
-                    "지정된 컨트롤이 표가 아닙니다".to_string(),
-                )),
-                None => Err(HwpError::RenderError(format!(
-                    "컨트롤 인덱스 {} 범위 초과",
-                    ci
+                _ => Err(HwpError::RenderError(format!(
+                    "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                    resolved_ci
                 ))),
             }
         }
@@ -221,19 +245,23 @@ pub(crate) fn navigate_path_to_table<'a>(
             let para = paragraphs
                 .get_mut(*pi)
                 .ok_or_else(|| HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", pi)))?;
-            match para.controls.get_mut(*ci) {
+            let resolved_ci = resolve_table_ctrl_idx(para, *ci).ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "문단 {} 에 Table control 없음 (controls_len={})",
+                    pi,
+                    para.controls.len()
+                ))
+            })?;
+            match para.controls.get_mut(resolved_ci) {
                 Some(Control::Table(t)) => {
                     let cell = t.cell_at_mut(*row, *col).ok_or_else(|| {
                         HwpError::RenderError(format!("셀({},{}) 접근 실패", row, col))
                     })?;
                     navigate_path_to_table(&mut cell.paragraphs, rest)
                 }
-                Some(_) => Err(HwpError::RenderError(
-                    "지정된 컨트롤이 표가 아닙니다".to_string(),
-                )),
-                None => Err(HwpError::RenderError(format!(
-                    "컨트롤 인덱스 {} 범위 초과",
-                    ci
+                _ => Err(HwpError::RenderError(format!(
+                    "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                    resolved_ci
                 ))),
             }
         }
