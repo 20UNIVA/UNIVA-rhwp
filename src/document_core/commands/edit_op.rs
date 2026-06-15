@@ -11,10 +11,24 @@
 //! 붙여넣기/객체 삽입/표 행·열 편집 등 역연산을 연산으로 표현할 수 없는 작업은
 //! 본 프로토콜이 아니라 **전체 스냅샷 동기화**로 처리한다(서버 `PUT /snapshot`).
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::document_core::DocumentCore;
 use crate::error::HwpError;
+
+// font-size 자리: 외부 인터페이스 = pt 실수, 내부 저장 = 1/100 pt 정수 (u16).
+// 호출자가 `15.5` 를 보내면 1550 으로 저장. ir-slice 응답도 pt 실수로 노출 (ir_compact.rs)
+// 라 *요청·응답 단위가 모두 pt 실수* 로 통일된다.
+fn deserialize_font_size_pt<'de, D>(deserializer: D) -> Result<Option<u16>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<f64>::deserialize(deserializer)?;
+    Ok(opt.map(|pt| {
+        let internal = (pt * 100.0).round();
+        internal.clamp(0.0, u16::MAX as f64) as u16
+    }))
+}
 
 // ─── Sub-2: Partial 타입 (옵셔널 필드만 직렬화) ─────────────────
 
@@ -156,7 +170,9 @@ pub struct PartialRunStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strikethrough: Option<bool>,
 
-    // [Sub-7] rename: base_size → font_size + alias 호환 (camelCase 변환과 snake_case 모두)
+    // [Sub-7] rename: base_size → font_size + alias 호환 (camelCase 변환과 snake_case 모두).
+    // 외부 인터페이스는 *pt 단위 실수* — `15.5` 가 그대로 15.5 pt 로 해석된다.
+    // deserialize_font_size_pt 가 1/100 pt 정수 (u16) 로 변환해 저장.
     #[serde(
         default,
         alias = "baseSize",
@@ -164,6 +180,7 @@ pub struct PartialRunStyle {
         alias = "fontSize",
         alias = "font_size",
         alias = "font-size",
+        deserialize_with = "deserialize_font_size_pt",
         skip_serializing_if = "Option::is_none"
     )]
     pub font_size: Option<u16>,
@@ -1230,6 +1247,48 @@ mod tests {
         assert!(run.style.is_some());
     }
 
+    /// font-size 외부 인터페이스는 pt 실수. 서버 내부에서 1/100 pt 정수 (u16) 로 변환된다.
+    #[test]
+    fn test_font_size_pt_to_internal_u16() {
+        // 15.5 pt → 1550 (1/100 pt)
+        let json = r#"{"font-size": 15.5}"#;
+        let style: PartialRunStyle = serde_json::from_str(json).unwrap();
+        assert_eq!(style.font_size, Some(1550));
+
+        // 정수 15 → 1500
+        let json = r#"{"font-size": 15}"#;
+        let style: PartialRunStyle = serde_json::from_str(json).unwrap();
+        assert_eq!(style.font_size, Some(1500));
+
+        // alias fontSize 도 동일 변환
+        let json = r#"{"fontSize": 12.5}"#;
+        let style: PartialRunStyle = serde_json::from_str(json).unwrap();
+        assert_eq!(style.font_size, Some(1250));
+
+        // alias base_size + 0 (최소 경계)
+        let json = r#"{"base_size": 0}"#;
+        let style: PartialRunStyle = serde_json::from_str(json).unwrap();
+        assert_eq!(style.font_size, Some(0));
+
+        // 반올림 — 14.567 pt → 1457 (1/100 pt round)
+        let json = r#"{"font-size": 14.567}"#;
+        let style: PartialRunStyle = serde_json::from_str(json).unwrap();
+        assert_eq!(style.font_size, Some(1457));
+
+        // 미지정 시 None
+        let json = r#"{"bold": true}"#;
+        let style: PartialRunStyle = serde_json::from_str(json).unwrap();
+        assert_eq!(style.font_size, None);
+    }
+
+    /// font-size 가 문자열일 때는 reject (422).
+    #[test]
+    fn test_font_size_string_rejected() {
+        let json = r#"{"font-size": "15pt"}"#;
+        let result: Result<PartialRunStyle, _> = serde_json::from_str(json);
+        assert!(result.is_err(), "문자열 font-size 는 reject 되어야 함");
+    }
+
     #[test]
     fn test_element_type_serialize() {
         assert_eq!(serde_json::to_string(&ElementType::Paragraph).unwrap(), r#""paragraph""#);
@@ -1756,12 +1815,13 @@ mod tests {
     #[test]
     fn partial_run_style_font_size_alias_base_size() {
         // 광고 키 fontSize, 기존 alias baseSize / base_size 모두 deserialize.
+        // 외부 인터페이스 = pt 실수, 내부 저장 = 1/100 pt 정수 (u16). 14 pt → 1400.
         let a: PartialRunStyle = serde_json::from_str(r#"{"fontSize":14}"#).unwrap();
         let b: PartialRunStyle = serde_json::from_str(r#"{"baseSize":14}"#).unwrap();
         let c: PartialRunStyle = serde_json::from_str(r#"{"base_size":14}"#).unwrap();
-        assert_eq!(a.font_size, Some(14));
-        assert_eq!(b.font_size, Some(14));
-        assert_eq!(c.font_size, Some(14));
+        assert_eq!(a.font_size, Some(1400));
+        assert_eq!(b.font_size, Some(1400));
+        assert_eq!(c.font_size, Some(1400));
     }
 
     #[test]
