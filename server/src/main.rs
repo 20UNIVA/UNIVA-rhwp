@@ -25,8 +25,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Path, Query, State},
-    http::{header, StatusCode},
+    async_trait,
+    extract::{FromRequestParts, Path, Query, State},
+    http::{header, request::Parts, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
     Json, Router,
@@ -83,11 +84,43 @@ pub(crate) struct Session {
     pub(crate) filename: String,
     /// 다음에 부여할 op/snapshot seq.
     pub(crate) next_seq: i64,
+    /// 이 세션을 만든 사용자 식별자. storage 호출 시 vfinder 의 `X-Vfinder-User`
+    /// 헤더로 박는다. 누락된 자리에서 만들어진 세션은 storage 동작이 실패한다.
+    pub(crate) user_id: String,
 }
 
 /// format 기반 기본 파일명.
 fn default_filename(file_id: &str, format: &str) -> String {
     format!("{file_id}.{format}")
+}
+
+/// 요청에서 추출되는 사용자 식별자 — `X-Rhwp-User` 헤더, 누락 시 `RHWP_DEFAULT_USER`
+/// 환경변수 폴백. 둘 다 비면 400.
+///
+/// 폴백은 *agent 부모창 연동 전까지* 의 임시 자리. agent 가 모든 요청에 헤더를 박는
+/// 약속이 정착되면 폴백을 제거해 강결합으로 굳힌다 (`docs/13-rhwp-vfinder-storage-integration.md` §10).
+pub(crate) struct RhwpUser(pub(crate) String);
+
+#[async_trait]
+impl<S: Send + Sync> FromRequestParts<S> for RhwpUser {
+    type Rejection = AppError;
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(v) = parts.headers.get("X-Rhwp-User") {
+            if let Ok(s) = v.to_str() {
+                if !s.is_empty() {
+                    return Ok(RhwpUser(s.to_string()));
+                }
+            }
+        }
+        if let Ok(s) = std::env::var("RHWP_DEFAULT_USER") {
+            if !s.is_empty() {
+                return Ok(RhwpUser(s));
+            }
+        }
+        Err(AppError::bad_request(
+            "사용자 식별자 누락 — X-Rhwp-User 헤더 또는 RHWP_DEFAULT_USER 환경변수 필요",
+        ))
+    }
 }
 
 // ─── 요청/응답 DTO ────────────────────────────────────
@@ -117,6 +150,27 @@ struct CreateDocReq {
 struct ExportQuery {
     /// "hwp" | "hwpx". 미지정 시 세션 생성 시 포맷을 따른다.
     fmt: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveAsReq {
+    /// vfinder 의 부모 폴더 (root 기준 절대경로). save-as iframe 에서 사용자가 고른 자리.
+    path: String,
+    /// 새 파일명 (확장자 포함). save-as iframe 의 이름 입력 칸 자리.
+    name: String,
+    /// 이름 충돌 시 *덮어쓰기* 선택 자리. false 면 vfinder 가 `(1)` suffix 정책으로 신규 저장.
+    #[serde(default)]
+    overwrite: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveAsResp {
+    /// vfinder 가 새로 발급한 file_id.
+    file_id: String,
+    /// 실제로 저장된 경로 (suffix 가 박혔으면 그 모양 그대로).
+    path: String,
 }
 
 #[derive(Deserialize)]
@@ -225,8 +279,17 @@ fn restore_core(p: &PersistedSession) -> Result<DocumentCore, AppError> {
     Ok(core)
 }
 
-/// 메모리 세션을 얻거나, 없으면 sqlite → (그래도 없으면) minio download 순으로 복원하여 등록한다.
-pub(crate) async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Arc<Mutex<Session>>, AppError> {
+/// 메모리 세션을 얻거나, 없으면 sqlite → (그래도 없으면) 외부 저장소 download 순으로
+/// 복원하여 등록한다.
+///
+/// `user_id` — 외부 저장소(vfinder) 의 `X-Vfinder-User` 헤더로 박는 자리. 메모리/sqlite
+/// 캐시 hit 자리에서는 *기존 세션 user* 를 그대로 쓰고, 미스 자리에서만 인자 user 가 세션
+/// 의 user 자리로 박힌다.
+pub(crate) async fn get_or_restore(
+    state: &AppState,
+    file_id: &str,
+    user_id: &str,
+) -> Result<Arc<Mutex<Session>>, AppError> {
     // 1) 메모리
     {
         let guard = state.sessions.lock().unwrap();
@@ -243,6 +306,7 @@ pub(crate) async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Ar
             format: persisted.format,
             filename,
             next_seq: persisted.last_seq + 1,
+            user_id: user_id.to_string(),
         }));
         state
             .sessions
@@ -251,11 +315,11 @@ pub(crate) async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Ar
             .insert(file_id.to_string(), session.clone());
         return Ok(session);
     }
-    // 3) minio download 폴백 (외부가 fileId만 지정하고 진입한 경우)
+    // 3) 외부 저장소 download 폴백 (외부가 fileId만 지정하고 진입한 경우)
     if state.storage.enabled() {
         let bytes = state
             .storage
-            .download(file_id)
+            .download(file_id, user_id)
             .await
             .map_err(|e| AppError::not_found(format!("세션·저장소 모두 없음: {file_id} ({e})")))?;
         let core = build_core(&bytes)?;
@@ -265,6 +329,7 @@ pub(crate) async fn get_or_restore(state: &AppState, file_id: &str) -> Result<Ar
             format: "hwp".to_string(),
             filename: default_filename(file_id, "hwp"),
             next_seq: 1,
+            user_id: user_id.to_string(),
         }));
         state
             .sessions
@@ -296,6 +361,7 @@ async fn health() -> &'static str {
 
 async fn create_session(
     State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
     Json(req): Json<CreateReq>,
 ) -> Result<Json<SessionInfo>, AppError> {
     let bytes = STANDARD
@@ -312,6 +378,7 @@ async fn create_session(
         format,
         filename,
         next_seq: 1,
+        user_id,
     };
     let info = session_info(&req.file_id, &session);
     state
@@ -322,10 +389,11 @@ async fn create_session(
     Ok(Json(info))
 }
 
-/// 파일을 minio에 업로드하여 file_id를 발급받고, 그 file_id로 세션을 생성한다.
+/// 파일을 외부 저장소에 업로드하여 file_id를 발급받고, 그 file_id로 세션을 생성한다.
 /// fileId가 없는 신규 문서(빈 문서 포함)의 진입점.
 async fn create_document(
     State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
     Json(req): Json<CreateDocReq>,
 ) -> Result<Json<SessionInfo>, AppError> {
     let bytes = STANDARD
@@ -342,10 +410,10 @@ async fn create_document(
     }
     .to_string();
 
-    // 2) minio upload → file_id (신규: file_id 미지정)
+    // 2) 외부 저장소 upload → file_id (신규: file_id 미지정, target_path 도 미지정 — 서버 기본 자리)
     let file_id = state
         .storage
-        .upload(bytes.clone(), &filename, None)
+        .upload(bytes.clone(), &filename, None, None, false, &user_id)
         .await
         .map_err(|e| AppError::internal(format!("저장소 업로드 실패: {e}")))?
         .file_id;
@@ -357,6 +425,7 @@ async fn create_document(
         format,
         filename,
         next_seq: 1,
+        user_id,
     };
     let info = session_info(&file_id, &session);
     state
@@ -369,10 +438,11 @@ async fn create_document(
 
 async fn apply_ops(
     State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
     Path(file_id): Path<String>,
     Json(ops): Json<Vec<serde_json::Value>>,
 ) -> Result<Json<SessionInfo>, AppError> {
-    let session = get_or_restore(&state, &file_id).await?;
+    let session = get_or_restore(&state, &file_id, &user_id).await?;
     let mut s = session.lock().unwrap();
 
     let ops_json = serde_json::to_string(&ops)
@@ -400,10 +470,11 @@ async fn apply_ops(
 
 async fn put_snapshot(
     State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
     Path(file_id): Path<String>,
     Json(req): Json<SnapshotReq>,
 ) -> Result<Json<SessionInfo>, AppError> {
-    let session = get_or_restore(&state, &file_id).await?;
+    let session = get_or_restore(&state, &file_id, &user_id).await?;
     let bytes = STANDARD
         .decode(req.file_base64.as_bytes())
         .map_err(|e| AppError::bad_request(format!("base64 디코드 실패: {e}")))?;
@@ -419,10 +490,11 @@ async fn put_snapshot(
 
 async fn get_ir(
     State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
     Path(file_id): Path<String>,
     Query(q): Query<IrQuery>,
 ) -> Result<Response, AppError> {
-    let session = get_or_restore(&state, &file_id).await?;
+    let session = get_or_restore(&state, &file_id, &user_id).await?;
     let s = session.lock().unwrap();
     // page 미지정 → 전체, page=n → 해당 페이지 문단만(절대 인덱스 유지 → 편집 op 그대로 유효)
     let json = s
@@ -438,10 +510,11 @@ async fn get_ir(
 /// minio에 업로드한다. 본 서버는 바이트 제공까지만 책임진다.
 async fn export(
     State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
     Path(file_id): Path<String>,
     Query(q): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
-    let session = get_or_restore(&state, &file_id).await?;
+    let session = get_or_restore(&state, &file_id, &user_id).await?;
     let s = session.lock().unwrap();
     let doc = s.core.document();
     let fmt = q.fmt.as_deref().unwrap_or(&s.format);
@@ -474,11 +547,13 @@ async fn export(
 /// (에디터 "저장" 버튼이 호출. 외부 upload API에 file_id 포함 → 해당 위치 덮어씀)
 async fn save_document(
     State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
     Path(file_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let session = get_or_restore(&state, &file_id).await?;
-    // lock 안에서 동기 직렬화 → guard drop 후 await upload (MutexGuard는 await 경계를 넘지 않음)
-    let (bytes, filename) = {
+    let session = get_or_restore(&state, &file_id, &user_id).await?;
+    // lock 안에서 동기 직렬화 → guard drop 후 await upload (MutexGuard는 await 경계를 넘지 않음).
+    // session 의 user 를 함께 추출 — *세션 주인* 의 user 로 storage 호출.
+    let (bytes, filename, session_user) = {
         let s = session.lock().unwrap();
         let doc = s.core.document();
         let bytes = match s.format.as_str() {
@@ -487,11 +562,11 @@ async fn save_document(
             _ => rhwp::serialize_document(doc)
                 .map_err(|e| AppError::internal(format!("hwp 직렬화 실패: {e:?}")))?,
         };
-        (bytes, s.filename.clone())
+        (bytes, s.filename.clone(), s.user_id.clone())
     };
     let res = state
         .storage
-        .upload(bytes, &filename, Some(&file_id))
+        .upload(bytes, &filename, Some(&file_id), None, false, &session_user)
         .await
         .map_err(|e| AppError::internal(format!("저장(덮어쓰기) 실패: {e}")))?;
     Ok(Json(json!({
@@ -499,6 +574,47 @@ async fn save_document(
         "minioKey": res.minio_key,
         "updated": res.updated,
     })))
+}
+
+/// 다른 이름으로 저장 — 현재 세션 문서를 *vfinder 의 새 자리* 에 *신규 file_id* 로 저장.
+/// 호출자는 save-as iframe 결과(`path` 폴더 + `name` 이름 + `overwrite` 옵션)를 그대로 박는다.
+/// 응답의 새 `fileId` 로 클라이언트가 `?fileId=` URL 을 갱신 — 그 시점부터 같은 세션이
+/// *새 file_id* 자리에 묶인다.
+async fn save_as(
+    State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
+    Path(file_id): Path<String>,
+    Json(req): Json<SaveAsReq>,
+) -> Result<Json<SaveAsResp>, AppError> {
+    let session = get_or_restore(&state, &file_id, &user_id).await?;
+    let (bytes, session_user) = {
+        let s = session.lock().unwrap();
+        let doc = s.core.document();
+        let bytes = match s.format.as_str() {
+            "hwpx" => rhwp::serializer::serialize_hwpx(doc)
+                .map_err(|e| AppError::internal(format!("hwpx 직렬화 실패: {e:?}")))?,
+            _ => rhwp::serialize_document(doc)
+                .map_err(|e| AppError::internal(format!("hwp 직렬화 실패: {e:?}")))?,
+        };
+        (bytes, s.user_id.clone())
+    };
+
+    // file_id=None → 신규 발급. target_path 자리에 사용자가 고른 폴더. overwrite 자리에 선택값.
+    let res = state
+        .storage
+        .upload(bytes, &req.name, None, Some(&req.path), req.overwrite, &session_user)
+        .await
+        .map_err(|e| AppError::internal(format!("save-as 실패: {e}")))?;
+
+    // 응답 path 자리 — *vfinder 가 응답에 minio_key 자리에 실 저장 path 를 박을 수도* 있고
+    // 아닐 수도 있다. 둘 다 대비 — vfinder 응답의 minio_key 가 비면 호출 인자로 조립.
+    let stored_path = res
+        .minio_key
+        .unwrap_or_else(|| format!("{}/{}", req.path.trim_end_matches('/'), req.name));
+    Ok(Json(SaveAsResp {
+        file_id: res.file_id,
+        path: stored_path,
+    }))
 }
 
 /// 단일 EditOperation 을 적용하면서 sqlite op_stash 영속 + broadcast 한 묶음.
@@ -573,10 +689,11 @@ pub(crate) async fn apply_op_with_stash(
 
 async fn workbench(
     State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
     Path(file_id): Path<String>,
     Json(req): Json<WorkbenchReq>,
 ) -> Result<Json<WorkbenchResp>, AppError> {
-    let session = get_or_restore(&state, &file_id).await?;
+    let session = get_or_restore(&state, &file_id, &user_id).await?;
 
     match req.action.as_str() {
         "insert_text" => {
@@ -1364,6 +1481,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/ir", get(get_ir))
         .route("/sessions/:id/export", get(export))
         .route("/sessions/:id/save", post(save_document))
+        .route("/sessions/:id/save-as", post(save_as))
         .route("/sessions/:id/workbench", post(workbench))
         .route("/sessions/:id/undo", post(undo_handler))
         .route("/sessions/:id/audit", get(audit_handler))

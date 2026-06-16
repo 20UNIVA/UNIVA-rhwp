@@ -27,8 +27,14 @@ pub async fn ws_upgrade(
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, file_id: String) {
-    // 세션 확보(없으면 sqlite 복원 or minio 폴백 — 비활성이면 에러 후 close)
-    let session = match get_or_restore(&state, &file_id).await {
+    // WebSocket 은 브라우저가 임의 헤더를 박지 못해 user 자리에 *환경변수 폴백* 만 박는다.
+    // 세션이 메모리/sqlite 에 이미 있으면 user 는 무의미 (cache hit). storage download 까지
+    // 가야 하는 자리에서만 의미가 있고, 그 자리에서 폴백이 비면 vfinder 가 거절한다.
+    // 향후 쿼리·세션 토큰 결합 시 정착 (`docs/13-rhwp-vfinder-storage-integration.md` §10).
+    let ws_user = std::env::var("RHWP_DEFAULT_USER").unwrap_or_default();
+
+    // 세션 확보(없으면 sqlite 복원 or 외부 저장소 폴백 — 비활성이면 에러 후 close)
+    let session = match get_or_restore(&state, &file_id, &ws_user).await {
         Ok(s) => s,
         Err(err) => {
             tracing::warn!("ws: 세션 확보 실패 fid={} err={:?}", file_id, err.msg);
