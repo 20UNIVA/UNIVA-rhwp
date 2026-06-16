@@ -685,6 +685,59 @@ const commandServices: CommandServices = {
         return true;
       }
     : undefined,
+  // SSR + iframe 환경에서 *파일 열기* — vfinder picker iframe 흐름.
+  // 부모창과 postMessage 약속:
+  //   studio → parent : { type: 'rhwp:open-request', kind: 'file' }
+  //   parent → studio : { type: 'rhwp:open-target', fileId, name }
+  //                     또는 { type: 'rhwp:open-cancel' }
+  // 받으면 URL ?fileId= 갱신 + iframe in-place reload — 새 file_id 로 *처음부터 진입*
+  // 자리. dirty 확인은 명령 자리에서 이미 거친 상태.
+  openViaVfinder: SSR_MODE && window.parent !== window
+    ? async () => {
+        // 1) 부모창에 open 요청 발사 + 응답 대기
+        const target = await new Promise<{ fileId: string; name: string } | null>((resolve) => {
+          let resolved = false;
+          const cleanup = () => {
+            window.removeEventListener('message', onMessage);
+            window.clearTimeout(timer);
+          };
+          const finish = (value: { fileId: string; name: string } | null) => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            resolve(value);
+          };
+          const onMessage = (ev: MessageEvent) => {
+            const data = ev.data as
+              | { type?: string; fileId?: string; name?: string }
+              | null;
+            if (!data || typeof data !== 'object') return;
+            if (data.type === 'rhwp:open-target' &&
+                typeof data.fileId === 'string' &&
+                typeof data.name === 'string') {
+              finish({ fileId: data.fileId, name: data.name });
+            } else if (data.type === 'rhwp:open-cancel') {
+              finish(null);
+            }
+          };
+          window.addEventListener('message', onMessage);
+          const timer = window.setTimeout(() => finish(null), 5 * 60 * 1000);
+          window.parent.postMessage(
+            { type: 'rhwp:open-request', kind: 'file' },
+            '*',
+          );
+        });
+
+        if (!target) return false;
+
+        // 2) URL 갱신 + iframe reload — 새 file_id 로 *처음부터 진입*.
+        //    iframe 만 reload 되고 부모창은 그대로 유지된다.
+        const url = new URL(window.location.href);
+        url.searchParams.set('fileId', target.fileId);
+        window.location.replace(url.toString());
+        return true;
+      }
+    : undefined,
 };
 
 const dispatcher = new CommandDispatcher(registry, commandServices, eventBus);

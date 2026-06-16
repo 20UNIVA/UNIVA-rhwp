@@ -236,6 +236,20 @@ export const fileCommands: CommandDef[] = [
     id: 'file:open',
     label: '열기',
     async execute(services) {
+      // SSR + iframe 환경: vfinder picker 흐름이 우선. cross-origin sub frame 자리에서
+      // 브라우저가 showOpenFilePicker 자체를 차단하므로 로컬 폴백이 무의미.
+      if (services.openViaVfinder) {
+        try {
+          const canReplace = await confirmSaveBeforeReplacingDocument(services);
+          if (!canReplace) return;
+          if (await services.openViaVfinder()) {
+            console.log('[file:open] vfinder 진입 트리거 발사');
+            return;
+          }
+        } catch (e) {
+          console.warn('[file:open] vfinder 진입 실패 — 로컬 흐름으로 폴백', e);
+        }
+      }
       try {
         const canReplace = await confirmSaveBeforeReplacingDocument(services);
         if (!canReplace) return;

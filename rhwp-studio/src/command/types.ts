@@ -84,4 +84,16 @@ export interface CommandServices {
    * file system access 흐름으로 진행.
    */
   saveAsViaVfinder?: () => Promise<boolean>;
+  /**
+   * vfinder iframe 흐름으로 *파일 열기*.
+   *
+   * 동작: 부모창에 `rhwp:open-request` postMessage 발사 → 부모창이 vfinder picker
+   * iframe (mode=picker, kind=file) 띄움 → 사용자가 파일 고르면 부모창이
+   * `rhwp:open-target { fileId, name }` 으로 forward → URL `?fileId=` 갱신 후
+   * 페이지 in-place 재진입 (iframe 만 reload).
+   *
+   * 반환 true = 사용자가 파일 골랐고 진입 트리거 발사. false = 취소·실패. 미설정이면
+   * 기존 로컬 showOpenFilePicker 흐름으로 진행 (cross-origin sub frame 에서는 차단됨).
+   */
+  openViaVfinder?: () => Promise<boolean>;
 }
