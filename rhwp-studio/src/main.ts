@@ -22,6 +22,7 @@ import { ContextMenu } from '@/ui/context-menu';
 import { CommandPalette } from '@/ui/command-palette';
 import { showValidationModalIfNeeded } from '@/ui/validation-modal';
 import { showToast } from '@/ui/toast';
+import { mountVfinderModal } from '@/view/vfinder-modal';
 import { initRhwpDev } from '@/core/rhwp-dev';
 import { getActionDef } from '@/hwpctl/action-registry';
 import { HwpCtrl, ParameterSet } from '@/hwpctl/index';
@@ -82,6 +83,9 @@ const SSR_BASE_URL =
 const SSR_URL_FILE_ID = SSR_PARAMS.get('fileId');
 /** SSR 모드 활성 조건 — fileId/ssrBase/ssr 중 하나라도 있으면. */
 const SSR_MODE = SSR_PARAMS.has('fileId') || SSR_PARAMS.has('ssrBase') || SSR_PARAMS.has('ssr');
+/** URL `?user=` 자리에서 추출. vfinder modal 의 X-Vfinder-User 헤더 자리에 박힘.
+ *  미설정이면 vfinder 서버의 VFINDER_DEFAULT_USER_ID 환경변수 폴백. */
+const SSR_USER_ID = SSR_PARAMS.get('user') ?? undefined;
 
 /**
  * 현재 세션 fileId를 주소창 URL(`?fileId=`)에 반영한다(history.replaceState).
@@ -597,62 +601,42 @@ const commandServices: CommandServices = {
         return true;
       }
     : undefined,
-  // SSR + iframe 환경에서 *다른 이름으로 저장* — vfinder save-as iframe 흐름.
-  // 부모창과 postMessage 약속:
-  //   studio → parent : { type: 'rhwp:save-as-request', suggestedName }
-  //   parent → studio : { type: 'rhwp:save-as-target', path, name, overwrite }
-  //   studio → parent : { type: 'rhwp:saved-as', fileId, path }
-  // 부모창은 그 사이에 vfinder save-as iframe 을 띄우고 사용자 선택을 중계한다.
-  saveAsViaVfinder: SSR_MODE && window.parent !== window
+  // SSR 환경에서 *다른 이름으로 저장* — rhwp studio 자체 modal 안에 vfinder save-as
+  // iframe 을 띄우는 자리. agent 부모창 자리와 무관하게 동작 — *iframe 안 iframe* 흐름.
+  // rhwp 와 vfinder 가 같은 host 라 same-origin 룰로 자연 통과.
+  saveAsViaVfinder: SSR_MODE
     ? async () => {
         if (!currentSsrFileId) return false;
         // 디바운스 큐에 남은 편집 먼저 반영
         await sessionClient?.flushOps();
 
-        // 1) 부모창에 save-as 요청 발사 + 응답 대기
+        // 1) modal 띄움 + 사용자 선택 대기
         const target = await new Promise<
           { path: string; name: string; overwrite: boolean } | null
         >((resolve) => {
-          let resolved = false;
-          const cleanup = () => {
-            window.removeEventListener('message', onMessage);
-            window.clearTimeout(timer);
-          };
-          const finish = (
-            value: { path: string; name: string; overwrite: boolean } | null,
-          ) => {
-            if (resolved) return;
-            resolved = true;
-            cleanup();
-            resolve(value);
-          };
-          const onMessage = (ev: MessageEvent) => {
-            // origin 검증 — 부모창의 origin 만 허용. 동일 ssr origin 이면 통과.
-            // (부모창이 동일 origin 인 자리는 ev.origin === window.location.origin)
-            const data = ev.data as
-              | { type?: string; path?: string; name?: string; overwrite?: boolean }
-              | null;
-            if (!data || typeof data !== 'object') return;
-            if (data.type === 'rhwp:save-as-target' &&
-                typeof data.path === 'string' &&
-                typeof data.name === 'string') {
-              finish({
-                path: data.path,
-                name: data.name,
-                overwrite: data.overwrite === true,
-              });
-            } else if (data.type === 'rhwp:save-as-cancel') {
-              finish(null);
-            }
-          };
-          window.addEventListener('message', onMessage);
-          // 5분 안에 응답 없으면 타임아웃 — 사용자가 부모창을 닫았거나 잊었을 자리.
-          const timer = window.setTimeout(() => finish(null), 5 * 60 * 1000);
-          // request 발사 (target origin '*' — 부모창이 누구든 받음. 부모창이 origin 검증 책임).
-          window.parent.postMessage(
-            { type: 'rhwp:save-as-request', suggestedName: wasm.fileName },
-            '*',
-          );
+          let settled = false;
+          const handle = mountVfinderModal({
+            mode: 'save-as',
+            suggestedName: wasm.fileName,
+            userId: SSR_USER_ID,
+            onSaveAs: (result) => {
+              if (settled) return;
+              settled = true;
+              resolve(result);
+            },
+            onCancel: () => {
+              if (settled) return;
+              settled = true;
+              resolve(null);
+            },
+          });
+          // 5분 타임아웃 — modal 이 열려 있는 자리에서 사용자가 잊었을 자리.
+          window.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            handle.close();
+            resolve(null);
+          }, 5 * 60 * 1000);
         });
 
         if (!target) return false;
@@ -666,7 +650,10 @@ const commandServices: CommandServices = {
             body: JSON.stringify(target),
           },
         );
-        if (!res.ok) throw new Error(`save-as HTTP ${res.status}`);
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          throw new Error(`save-as HTTP ${res.status}: ${body}`);
+        }
         const body = (await res.json()) as { fileId: string; path: string };
 
         // 3) 새 fileId 로 URL 갱신 — 이후 새로고침·공유 자리에서 새 id 로 진입.
@@ -676,64 +663,52 @@ const commandServices: CommandServices = {
         currentSsrFileId = body.fileId;
         wasm.fileName = target.name;
 
-        // 4) 부모창에 완료 발사
-        window.parent.postMessage(
-          { type: 'rhwp:saved-as', fileId: body.fileId, path: body.path },
-          '*',
-        );
-
         return true;
       }
     : undefined,
-  // SSR + iframe 환경에서 *파일 열기* — vfinder picker iframe 흐름.
-  // 부모창과 postMessage 약속:
-  //   studio → parent : { type: 'rhwp:open-request', kind: 'file' }
-  //   parent → studio : { type: 'rhwp:open-target', fileId, name }
-  //                     또는 { type: 'rhwp:open-cancel' }
-  // 받으면 URL ?fileId= 갱신 + iframe in-place reload — 새 file_id 로 *처음부터 진입*
-  // 자리. dirty 확인은 명령 자리에서 이미 거친 상태.
-  openViaVfinder: SSR_MODE && window.parent !== window
+  // SSR 환경에서 *파일 열기* — rhwp studio 자체 modal 안에 vfinder picker iframe.
+  // 사용자가 파일 고르면 URL ?fileId= 갱신 + iframe in-place 재진입 (window.location.replace).
+  // 새 file_id 의 세션이 서버 메모리에 없으면 get_or_restore 가 storage.download 로 자동 복원.
+  openViaVfinder: SSR_MODE
     ? async () => {
-        // 1) 부모창에 open 요청 발사 + 응답 대기
-        const target = await new Promise<{ fileId: string; name: string } | null>((resolve) => {
-          let resolved = false;
-          const cleanup = () => {
-            window.removeEventListener('message', onMessage);
-            window.clearTimeout(timer);
-          };
-          const finish = (value: { fileId: string; name: string } | null) => {
-            if (resolved) return;
-            resolved = true;
-            cleanup();
-            resolve(value);
-          };
-          const onMessage = (ev: MessageEvent) => {
-            const data = ev.data as
-              | { type?: string; fileId?: string; name?: string }
-              | null;
-            if (!data || typeof data !== 'object') return;
-            if (data.type === 'rhwp:open-target' &&
-                typeof data.fileId === 'string' &&
-                typeof data.name === 'string') {
-              finish({ fileId: data.fileId, name: data.name });
-            } else if (data.type === 'rhwp:open-cancel') {
-              finish(null);
-            }
-          };
-          window.addEventListener('message', onMessage);
-          const timer = window.setTimeout(() => finish(null), 5 * 60 * 1000);
-          window.parent.postMessage(
-            { type: 'rhwp:open-request', kind: 'file' },
-            '*',
-          );
-        });
+        // 1) modal 띄움 + 사용자 선택 대기
+        const picked = await new Promise<{ fileId: string; name: string } | null>(
+          (resolve) => {
+            let settled = false;
+            const handle = mountVfinderModal({
+              mode: 'picker',
+              kind: 'file',
+              userId: SSR_USER_ID,
+              onPick: (items) => {
+                if (settled) return;
+                settled = true;
+                const first = items[0];
+                if (!first || !first.file_id) {
+                  resolve(null);
+                  return;
+                }
+                resolve({ fileId: first.file_id, name: first.name });
+              },
+              onCancel: () => {
+                if (settled) return;
+                settled = true;
+                resolve(null);
+              },
+            });
+            window.setTimeout(() => {
+              if (settled) return;
+              settled = true;
+              handle.close();
+              resolve(null);
+            }, 5 * 60 * 1000);
+          },
+        );
 
-        if (!target) return false;
+        if (!picked) return false;
 
         // 2) URL 갱신 + iframe reload — 새 file_id 로 *처음부터 진입*.
-        //    iframe 만 reload 되고 부모창은 그대로 유지된다.
         const url = new URL(window.location.href);
-        url.searchParams.set('fileId', target.fileId);
+        url.searchParams.set('fileId', picked.fileId);
         window.location.replace(url.toString());
         return true;
       }
