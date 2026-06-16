@@ -583,7 +583,7 @@ const commandServices: CommandServices = {
   getContext,
   getInputHandler: () => inputHandler,
   getViewportManager: () => canvasView?.getViewportManager() ?? null,
-  // SSR 모드면 저장을 서버 minio 덮어쓰기로 라우팅.
+  // SSR 모드면 저장을 서버 외부 저장소 덮어쓰기로 라우팅.
   saveToServer: SSR_MODE
     ? async () => {
         if (!currentSsrFileId) return false;
@@ -594,6 +594,94 @@ const commandServices: CommandServices = {
           { method: 'POST' },
         );
         if (!res.ok) throw new Error(`save HTTP ${res.status}`);
+        return true;
+      }
+    : undefined,
+  // SSR + iframe 환경에서 *다른 이름으로 저장* — vfinder save-as iframe 흐름.
+  // 부모창과 postMessage 약속:
+  //   studio → parent : { type: 'rhwp:save-as-request', suggestedName }
+  //   parent → studio : { type: 'rhwp:save-as-target', path, name, overwrite }
+  //   studio → parent : { type: 'rhwp:saved-as', fileId, path }
+  // 부모창은 그 사이에 vfinder save-as iframe 을 띄우고 사용자 선택을 중계한다.
+  saveAsViaVfinder: SSR_MODE && window.parent !== window
+    ? async () => {
+        if (!currentSsrFileId) return false;
+        // 디바운스 큐에 남은 편집 먼저 반영
+        await sessionClient?.flushOps();
+
+        // 1) 부모창에 save-as 요청 발사 + 응답 대기
+        const target = await new Promise<
+          { path: string; name: string; overwrite: boolean } | null
+        >((resolve) => {
+          let resolved = false;
+          const cleanup = () => {
+            window.removeEventListener('message', onMessage);
+            window.clearTimeout(timer);
+          };
+          const finish = (
+            value: { path: string; name: string; overwrite: boolean } | null,
+          ) => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            resolve(value);
+          };
+          const onMessage = (ev: MessageEvent) => {
+            // origin 검증 — 부모창의 origin 만 허용. 동일 ssr origin 이면 통과.
+            // (부모창이 동일 origin 인 자리는 ev.origin === window.location.origin)
+            const data = ev.data as
+              | { type?: string; path?: string; name?: string; overwrite?: boolean }
+              | null;
+            if (!data || typeof data !== 'object') return;
+            if (data.type === 'rhwp:save-as-target' &&
+                typeof data.path === 'string' &&
+                typeof data.name === 'string') {
+              finish({
+                path: data.path,
+                name: data.name,
+                overwrite: data.overwrite === true,
+              });
+            } else if (data.type === 'rhwp:save-as-cancel') {
+              finish(null);
+            }
+          };
+          window.addEventListener('message', onMessage);
+          // 5분 안에 응답 없으면 타임아웃 — 사용자가 부모창을 닫았거나 잊었을 자리.
+          const timer = window.setTimeout(() => finish(null), 5 * 60 * 1000);
+          // request 발사 (target origin '*' — 부모창이 누구든 받음. 부모창이 origin 검증 책임).
+          window.parent.postMessage(
+            { type: 'rhwp:save-as-request', suggestedName: wasm.fileName },
+            '*',
+          );
+        });
+
+        if (!target) return false;
+
+        // 2) /save-as 호출
+        const res = await fetch(
+          `${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/save-as`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(target),
+          },
+        );
+        if (!res.ok) throw new Error(`save-as HTTP ${res.status}`);
+        const body = (await res.json()) as { fileId: string; path: string };
+
+        // 3) 새 fileId 로 URL 갱신 — 이후 새로고침·공유 자리에서 새 id 로 진입.
+        const url = new URL(window.location.href);
+        url.searchParams.set('fileId', body.fileId);
+        window.history.replaceState({}, '', url.toString());
+        currentSsrFileId = body.fileId;
+        wasm.fileName = target.name;
+
+        // 4) 부모창에 완료 발사
+        window.parent.postMessage(
+          { type: 'rhwp:saved-as', fileId: body.fileId, path: body.path },
+          '*',
+        );
+
         return true;
       }
     : undefined,
