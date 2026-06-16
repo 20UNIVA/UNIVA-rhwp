@@ -49,6 +49,30 @@ pub(crate) struct AppState {
     pub(crate) store: Arc<Store>,
     pub(crate) storage: Arc<Storage>,
     pub(crate) events: events::EventsHub,
+    /// 브라우저 (rhwp-studio WASM) 가 자기 화면 paginate 결과를 *역공급* 한 page → para 매핑.
+    /// 측정기 격차 (native EmbeddedTextMeasurer ↔ WASM Canvas) 로 native paginator 가
+    /// 브라우저 화면과 다른 페이지 경계를 그릴 때, ir-slice 가 *사용자가 본 화면* 을
+    /// 진실로 삼게 해 주는 우회 경로. file_id 단위 보관.
+    pub(crate) page_maps: Arc<Mutex<HashMap<String, ClientPageMap>>>,
+}
+
+/// 클라이언트 (브라우저 WASM) 가 paginate 후 POST 한 page → (sec, para_start, para_end) 묶음.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct ClientPageEntry {
+    /// 1-based 페이지 번호 (사용자·모델 직관 정합).
+    pub(crate) page: u32,
+    pub(crate) sec: usize,
+    pub(crate) para_start: usize,
+    pub(crate) para_end: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ClientPageMap {
+    pub(crate) entries: Vec<ClientPageEntry>,
+    pub(crate) total_pages: u32,
+    /// 브라우저가 이 map 을 만들 때 *마지막으로 적용한* op seq. 응답 staleness 판단용
+    /// (현재는 항상 사용 — 미세 stale 가 측정기 격차보다 작음).
+    pub(crate) seq: i64,
 }
 
 /// 메모리에 보유되는 단일 세션.
@@ -1051,6 +1075,35 @@ struct IrSliceQuery {
 
 /// 섹션 일부 paragraph 만 IR JSON 으로 반환.
 /// mode: "raw" — paragraph 의 상세 필드, "compact" — 텍스트+모양 id, "auto" — 5000자 미만 raw, 이상 compact.
+/// 브라우저 (rhwp-studio WASM) 가 자기 paginate 결과를 *역공급* 하는 요청.
+///
+/// 본문: `{ "seq": <i64>, "total_pages": <u32>, "pages": [{page, sec, para_start, para_end}, ...] }`
+/// — 이미 적용된 마지막 op seq 와 함께 페이지별 (sec, para_start, para_end) 매핑을 동봉.
+///
+/// `seq` 는 현재 staleness 판정에 *직접 쓰이지 않는다* — 측정기 격차 (native ↔ WASM) 가
+/// 통상 한두 단락 어긋남이라 *살짝 stale 한 map* 이라도 native paginator 보다 항상 가깝다.
+/// 멀티 클라이언트 / 편집 race 가 본격 문제가 되면 그 때 seq 비교 가드를 도입한다.
+#[derive(Deserialize)]
+struct PageMapReq {
+    seq: i64,
+    total_pages: u32,
+    pages: Vec<ClientPageEntry>,
+}
+
+async fn put_page_map(
+    State(state): State<AppState>,
+    Path(file_id): Path<String>,
+    Json(req): Json<PageMapReq>,
+) -> StatusCode {
+    let map = ClientPageMap {
+        entries: req.pages,
+        total_pages: req.total_pages,
+        seq: req.seq,
+    };
+    state.page_maps.lock().unwrap().insert(file_id, map);
+    StatusCode::NO_CONTENT
+}
+
 async fn ir_slice_handler(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
@@ -1083,6 +1136,22 @@ async fn ir_slice_handler(
     };
 
     if resolved_mode == "compact" {
+        // 브라우저 (rhwp-studio WASM) 가 역공급한 client page map 우선 조회.
+        // page 인자가 들어왔을 때만 의미 있음 — 전체 슬라이스는 측정기 격차 영향 없음.
+        let (page_override_range, total_pages_override) = match q.page {
+            Some(p) if p >= 1 => {
+                let map_lock = state.page_maps.lock().unwrap();
+                map_lock.get(&file_id).and_then(|m| {
+                    m.entries
+                        .iter()
+                        .find(|e| e.page == p)
+                        .map(|e| ((e.sec, e.para_start, e.para_end), m.total_pages))
+                })
+                .map(|(triple, total)| (Some(triple), Some(total)))
+                .unwrap_or((None, None))
+            }
+            _ => (None, None),
+        };
         let opts = ir_compact::BuildOptions {
             sec,
             para_start,
@@ -1092,6 +1161,8 @@ async fn ir_slice_handler(
             // m400 sub-2 — page 인자 1-based 정합. 사용자·모델 직관 (1 페이지 = page 1) 정합.
             // page = 1 → 첫 페이지 (내부 0-based 인덱스 0). page = 0 또는 미지정 → 전체.
             page: q.page.and_then(|p| if p >= 1 { Some(p - 1) } else { None }),
+            page_override_range,
+            total_pages_override,
         };
         let slice = ir_compact::build_compact_ir_slice(&s.core, &opts);
         // anchor 값은 page 매핑 후의 *실제* sec/para_start/para_end — top-level 호환 필드도
@@ -1298,6 +1369,7 @@ fn router(state: AppState) -> Router {
         .route("/sessions/:id/audit", get(audit_handler))
         .route("/sessions/:id/diff", get(diff_handler))
         .route("/sessions/:id/ir-slice", get(ir_slice_handler))
+        .route("/sessions/:id/page-map", post(put_page_map))
         .route("/sessions/:id/ws", get(ws::ws_upgrade))
         .route("/sessions/:id", delete(delete_session))
         .layer(CorsLayer::permissive())
@@ -1357,6 +1429,7 @@ async fn main() {
         store: Arc::new(store),
         storage: Arc::new(storage),
         events: events::EventsHub::new(),
+        page_maps: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let addr = std::env::var("RHWP_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:7710".to_string());

@@ -245,6 +245,25 @@ export class WasmBridge {
     return this.doc?.pageCount() ?? 0;
   }
 
+  /**
+   * 현재 paginate 결과를 page → (sec, para_start, para_end) 묶음으로 반환한다.
+   *
+   * 측정기 격차 우회용 — 서버 native paginator (EmbeddedTextMeasurer) 와 WASM
+   * paginator (Canvas measureText) 가 페이지 경계를 다르게 그릴 때, 브라우저가 자기
+   * 결과를 서버로 *역공급* 해서 ir-slice 가 *사용자가 본 화면* 을 진실로 삼게 만든다.
+   */
+  getPageMap(): { total_pages: number; pages: Array<{ page: number; sec: number; para_start: number; para_end: number }> } {
+    if (!this.doc) return { total_pages: 1, pages: [] };
+    const raw = (this.doc as { getPageMap?: () => string }).getPageMap?.();
+    if (!raw) return { total_pages: this.pageCount, pages: [] };
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('[WasmBridge] getPageMap 파싱 실패:', e);
+      return { total_pages: this.pageCount, pages: [] };
+    }
+  }
+
   getSectionCount(): number {
     return this.doc?.getSectionCount() ?? 0;
   }

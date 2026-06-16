@@ -219,6 +219,62 @@ impl HwpDocument {
         self.core.page_count()
     }
 
+    /// 현재 paginate 결과를 page → (sec, para_start, para_end) 매핑 JSON 으로 직렬화한다.
+    ///
+    /// 반환 형식 (인덴트 없는 컴팩트 JSON):
+    /// ```json
+    /// { "total_pages": N, "pages": [
+    ///   {"page":1,"sec":0,"para_start":0,"para_end":31},
+    ///   ...
+    /// ]}
+    /// ```
+    /// `page` 는 *1-based* (사용자·모델 직관 정합). `para_end` 는 *exclusive*.
+    /// `core.pagination()` 의 `PageItem.para_index` 를 페이지마다 모아 min/max+1.
+    /// rhwp-studio 가 paginate 직후 이 결과를 서버의 `/sessions/:id/page-map` 에 POST 해서
+    /// native paginator (EmbeddedTextMeasurer 기반) 와 WASM paginator (Canvas measureText)
+    /// 의 측정기 격차를 우회하는 *역공급* 진입점.
+    #[wasm_bindgen(js_name = getPageMap)]
+    pub fn get_page_map(&self) -> String {
+        use crate::renderer::pagination::PageItem;
+        let mut entries: Vec<serde_json::Value> = Vec::new();
+        let mut total: u32 = 0;
+        for pr in self.core.pagination().iter() {
+            for page in &pr.pages {
+                total += 1;
+                let mut pis: Vec<usize> = Vec::new();
+                for col in &page.column_contents {
+                    for item in &col.items {
+                        let pi = match item {
+                            PageItem::FullParagraph { para_index } => *para_index,
+                            PageItem::PartialParagraph { para_index, .. } => *para_index,
+                            PageItem::Table { para_index, .. } => *para_index,
+                            PageItem::PartialTable { para_index, .. } => *para_index,
+                            PageItem::Shape { para_index, .. } => *para_index,
+                        };
+                        pis.push(pi);
+                    }
+                }
+                if pis.is_empty() {
+                    continue;
+                }
+                let sec = page.section_index;
+                let start = *pis.iter().min().unwrap();
+                let end = *pis.iter().max().unwrap() + 1;
+                entries.push(serde_json::json!({
+                    "page": total,
+                    "sec": sec,
+                    "para_start": start,
+                    "para_end": end,
+                }));
+            }
+        }
+        serde_json::json!({
+            "total_pages": total.max(1),
+            "pages": entries,
+        })
+        .to_string()
+    }
+
     /// 특정 페이지를 SVG 문자열로 렌더링한다.
     #[wasm_bindgen(js_name = renderPageSvg)]
     pub fn render_page_svg(&self, page_num: u32) -> Result<String, JsValue> {

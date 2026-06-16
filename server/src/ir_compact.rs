@@ -704,6 +704,13 @@ pub struct BuildOptions {
     /// 페이지 `n` 의 paragraph 범위로 sec/para_start/para_end 를 *덮어쓴다*. 범위 외이거나
     /// 페이지에 paragraph 가 없으면 sec/para_start/para_end 폴백.
     pub page: Option<u32>,
+    /// 브라우저 (rhwp-studio WASM) 가 직접 계산한 page → (sec, para_start, para_end) 매핑.
+    /// `Some` 이고 `page` 도 `Some` 이면 native `page_to_para_range` 를 *건너뛰고* 이 값을 사용한다.
+    /// 측정기 격차 (native EmbeddedTextMeasurer ↔ WASM Canvas) 로 페이지 경계가 어긋날 때
+    /// *사용자가 본 화면* 을 진실로 삼기 위한 우회 경로.
+    pub page_override_range: Option<(usize, usize, usize)>,
+    /// 클라이언트 page map 의 총 페이지 수. `Some` 이면 응답 `doc_meta.total_pages` 에 사용.
+    pub total_pages_override: Option<u32>,
 }
 
 /// 페이지 번호 → `(sec, para_start, para_end)` 매핑.
@@ -760,8 +767,11 @@ pub fn page_to_para_range(
 /// 반환. `edit_session_id` 미지정 시 `std::time::SystemTime::now()` 기반 ms 타임스탬프로 채움.
 pub fn build_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> IrSlice {
     // Sub-3 v2: page 지정 시 paginator 결과로 sec/start/end 덮어씀. 범위 외 / 빈 페이지면 fallback.
+    // 클라이언트가 사전 계산한 page_override_range 가 있으면 native paginator 를 건너뛴다.
     let (sec, start, end) = if let Some(p) = opts.page {
-        if let Some(triple) = page_to_para_range(core, p) {
+        if let Some(triple) = opts.page_override_range {
+            triple
+        } else if let Some(triple) = page_to_para_range(core, p) {
             triple
         } else {
             let sec = opts.sec;
@@ -808,12 +818,14 @@ pub fn build_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> IrSlice {
 
     // m500 — paginator 결과로 실제 페이지 수 계산. rendering.rs:2715 패턴 정합.
     // 빈 paginator (paginator 미실행 / 빈 문서) 자리는 1 fallback.
-    let total_pages: u32 = core
-        .pagination()
-        .iter()
-        .map(|p| p.pages.len() as u32)
-        .sum::<u32>()
-        .max(1);
+    // 클라이언트 page map 이 함께 들어왔으면 그 쪽 총 페이지 수를 우선 사용.
+    let total_pages: u32 = opts.total_pages_override.unwrap_or_else(|| {
+        core.pagination()
+            .iter()
+            .map(|p| p.pages.len() as u32)
+            .sum::<u32>()
+            .max(1)
+    });
     // opts.page 는 *0-based 내부 인덱스* (BuildOptions 문서 정합).
     // 응답 doc_meta.page 는 *1-based 표시* — page=1 이 첫 페이지.
     // m400 sub-2 의 main.rs 변환 (외부 1-based → 내부 0-based) 과 정합.
@@ -1369,6 +1381,8 @@ pub fn capture_before_target(core: &DocumentCore, range: &AffectedRange) -> Patc
             para_end: Some(range.before.end),
             edit_session_id: None,
             page: None,
+            page_override_range: None,
+            total_pages_override: None,
         },
     );
     slice_to_target(slice, range)
@@ -1384,6 +1398,8 @@ pub fn capture_after_target(core: &DocumentCore, range: &AffectedRange) -> Patch
             para_end: Some(range.after.end),
             edit_session_id: None,
             page: None,
+            page_override_range: None,
+            total_pages_override: None,
         },
     );
     slice_to_target(slice, range)
@@ -1886,6 +1902,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: Some("test".into()),
                 page: None,
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         assert_eq!(slice.doc_meta.anchor.sec, 0);
@@ -1910,6 +1928,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: None,
                 page: None,
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         assert!(slice.doc_meta.edit_session_id.starts_with("ed_"));
@@ -2128,6 +2148,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: Some("t".into()),
                 page: None,
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         // paragraphs[] 에 table kind 가 적어도 1건.
@@ -2198,6 +2220,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: Some("t".into()),
                 page: None,
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         let total = core.document().sections[0].paragraphs.len();
@@ -2229,6 +2253,8 @@ mod tests {
             doc_meta: IrDocMeta {
                 edit_session_id: "t".into(),
                 page: 1,
+                page_override_range: None,
+                total_pages_override: None,
                 total_pages: 1,
                 anchor: IrAnchor {
                     sec: 0,
@@ -2389,6 +2415,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: None,
                 page: None,
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         let v = serde_json::to_value(&slice).unwrap();
@@ -2427,6 +2455,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: None,
                 page: None,
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         let v = serde_json::to_value(&slice).unwrap();
@@ -2477,6 +2507,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: Some("t".into()),
                 page: None,
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         let v = serde_json::to_value(&slice).unwrap();
@@ -2546,6 +2578,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: Some("t".into()),
                 page: Some(0),
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         // 어느 경로든 anchor.sec 가 0 — blank 문서는 섹션이 1 개뿐.
@@ -2565,6 +2599,8 @@ mod tests {
                 para_end: None,
                 edit_session_id: Some("t".into()),
                 page: Some(999),
+                page_override_range: None,
+                total_pages_override: None,
             },
         );
         // fallback 은 opts.sec / para_start / para_end 사용 — sec=0, para_start=0.
@@ -2581,6 +2617,8 @@ mod tests {
             doc_meta: IrDocMeta {
                 edit_session_id: "sim-1".into(),
                 page: 1,
+                page_override_range: None,
+                total_pages_override: None,
                 total_pages: 1,
                 anchor: IrAnchor { sec: 0, para_start: 0, para_end: 0 },
             },
@@ -2881,6 +2919,8 @@ mod tests {
         let core = DocumentCore::new_empty();
         let opts = BuildOptions {
             page: Some(0),
+            page_override_range: None,
+            total_pages_override: None,
             ..Default::default()
         };
         let slice = build_ir_slice(&core, &opts);
@@ -2894,6 +2934,8 @@ mod tests {
         let core = DocumentCore::new_empty();
         let opts = BuildOptions {
             page: Some(2),
+            page_override_range: None,
+            total_pages_override: None,
             ..Default::default()
         };
         let slice = build_ir_slice(&core, &opts);

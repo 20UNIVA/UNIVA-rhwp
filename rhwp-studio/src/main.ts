@@ -61,6 +61,13 @@ let sessionClient: SessionClient | null = null;
 let currentSsrFileId: string | null = null;
 /** 현재 세션이 "빈 문서로 시작"되었는지(열기 시 미편집이면 닫기 위함). */
 let currentIsBlank = false;
+/**
+ * 브라우저가 마지막으로 적용한 op seq. WS `ServerEvent::Ops` 도착마다 갱신.
+ * 서버로 page map 을 POST 할 때 staleness 판정용으로 함께 송신.
+ */
+let lastAppliedSeq = 0;
+/** page map POST debounce 타이머 핸들. */
+let pageMapPostTimer: ReturnType<typeof setTimeout> | null = null;
 
 const SSR_PARAMS = new URLSearchParams(location.search);
 /**
@@ -89,6 +96,44 @@ function syncUrlFileId(fileId: string): void {
   } catch {
     /* URL 갱신 실패는 치명적이지 않음 */
   }
+}
+
+/**
+ * 현재 wasm paginate 결과를 page → (sec, para_start, para_end) 묶음으로 서버에 POST.
+ *
+ * 측정기 격차 우회 — 서버 native paginator (EmbeddedTextMeasurer) 와 WASM Canvas
+ * 측정기가 페이지 경계를 다르게 그릴 때, 브라우저 결과를 *진실* 로 삼게 한다.
+ *
+ * 디바운스 600ms — 연속 편집 중에 매번 POST 하지 않는다. `document-changed` 마다 호출되며
+ * 마지막 호출 후 600ms 무이벤트 자리에서 한 번 발사.
+ */
+function schedulePageMapPost(): void {
+  if (!currentSsrFileId) return;
+  if (pageMapPostTimer) clearTimeout(pageMapPostTimer);
+  pageMapPostTimer = setTimeout(() => {
+    pageMapPostTimer = null;
+    if (!currentSsrFileId) return;
+    let map;
+    try {
+      map = wasm.getPageMap();
+    } catch (e) {
+      console.warn('[main] getPageMap 실패:', e);
+      return;
+    }
+    if (!map.pages || map.pages.length === 0) return;
+    const body = JSON.stringify({
+      seq: lastAppliedSeq,
+      total_pages: map.total_pages,
+      pages: map.pages,
+    });
+    fetch(`${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/page-map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).catch((e) => {
+      console.warn('[main] page-map POST 실패:', e);
+    });
+  }, 600);
 }
 
 /** Uint8Array → base64 (청크 처리). */
@@ -336,6 +381,10 @@ function buildSessionClient(fileId: string): SessionClient {
         // CanvasView 가 'document-changed' 만 듣고 refreshPages 한다 — IR 만 바꾸고 emit 안 하면
         // 화면이 새로고침 전까지 옛 그림 그대로. InputHandler 도 wasm 편집 직후 같은 이벤트 발행.
         if (appliedCount > 0) {
+          // 적용된 마지막 op seq 추적 — page map POST 시 staleness 판정용.
+          if (typeof ev.seq === 'number' && ev.seq > lastAppliedSeq) {
+            lastAppliedSeq = ev.seq;
+          }
           eventBus.emit('document-changed');
         }
       } else if (ev.kind === 'workbench') {
@@ -404,6 +453,8 @@ async function createSsrSession(bytes: Uint8Array, fileId: string): Promise<void
     syncUrlFileId(fileId);
     if (inputHandler) inputHandler.mirrorSink = client;
     console.info(`[SSR] 세션 생성됨: fileId=${fileId}`);
+    // 첫 페이지 맵 역공급 — 첫 ir-slice 호출 전까지 native paginator 가 안 쓰이도록.
+    schedulePageMapPost();
   } catch (e) {
     console.warn('[SSR] 세션 생성 실패 — 로컬 편집으로 계속', e);
   }
@@ -422,6 +473,8 @@ function attachSsrMirror(fileId: string): void {
   syncUrlFileId(fileId);
   if (inputHandler) inputHandler.mirrorSink = client;
   console.info(`[SSR] 세션 미러링 연결됨: fileId=${fileId}`);
+  // 첫 페이지 맵 역공급 — 새로고침으로 attach 한 경우, 화면 로드 후 즉시 서버 정합.
+  schedulePageMapPost();
 }
 
 /** 문서 바이트를 서버에 업로드(POST /documents)하여 발급된 fileId를 반환한다. */
@@ -915,6 +968,8 @@ function setupEventListeners(): void {
 
   eventBus.on('document-changed', (reason) => {
     documentState.markDirty(typeof reason === 'string' ? reason : 'document-changed');
+    // 측정기 격차 우회 — 페이지 경계가 *브라우저 진실* 이 되도록 서버에 역공급.
+    schedulePageMapPost();
   });
 
   eventBus.on('document-dirty-changed', () => {
