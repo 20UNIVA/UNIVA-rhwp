@@ -20,9 +20,14 @@ else
   echo "WARNING: deploy/.env.example 없음 — 패키지에 .env 미포함 (VM 에서 직접 .env 작성 필요)"
 fi
 # 환경별 .env.*.example — 있는 환경만 복사. 모두 있으면 run.sh dev/testing/staging/prod 모두 가능.
+# .env.{env} 실 사용 파일도 같이 — bake-app.sh / template_add_app.sh 의 .env.{env} 검증
+# 통과용. 빌드 머신에 .env.dev 등이 박혀 있어야 그 환경으로 띄울 수 있다.
 for env in dev testing staging prod; do
   if [ -f "$ROOT/deploy/.env.$env.example" ]; then
     cp "$ROOT/deploy/.env.$env.example" "$OUT/.env.$env.example"
+  fi
+  if [ -f "$ROOT/deploy/.env.$env" ]; then
+    cp "$ROOT/deploy/.env.$env" "$OUT/.env.$env"
   fi
 done
 # systemd 유닛 — 있다면 복사 (rdocx 패턴 정합).
