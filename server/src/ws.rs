@@ -127,11 +127,11 @@ async fn handle_client_text(
             let bytes = STANDARD
                 .decode(file_base64.as_bytes())
                 .map_err(|e| format!("base64 디코드 실패: {e}"))?;
-            let doc = rhwp::parse_document(&bytes)
+            // [Plan A.1] DocumentCore::from_bytes 사용 — build_core 와 동일 이유로
+            // reflow_zero_height_paragraphs 등 후처리 통일.
+            let new_core = rhwp::DocumentCore::from_bytes(&bytes)
                 .map_err(|e| format!("스냅샷 파싱 실패: {e}"))?;
             let mut s = session.lock().unwrap();
-            let mut new_core = rhwp::DocumentCore::new_empty();
-            new_core.set_document(doc);
             s.core = new_core;
             let seq = s.next_seq;
             state

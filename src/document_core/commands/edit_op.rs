@@ -19,15 +19,30 @@ use crate::error::HwpError;
 // font-size 자리: 외부 인터페이스 = pt 실수, 내부 저장 = 1/100 pt 정수 (u16).
 // 호출자가 `15.5` 를 보내면 1550 으로 저장. ir-slice 응답도 pt 실수로 노출 (ir_compact.rs)
 // 라 *요청·응답 단위가 모두 pt 실수* 로 통일된다.
+//
+// 입력 범위는 *0 ~ 655.35 pt* — u16 으로 표현 가능한 한컴 spec 상한. 그 밖의 값은
+// 호출자의 단위 혼동 (예: raw 0.01pt 정수 1400 을 *1400 pt* 로 잘못 보냄) 일 가능성이
+// 높아 *silent saturate 대신 명시적 에러* 로 거부한다. 종전 silent clamp 가 char_shape
+// base_size 에 65535 sentinel 을 박아 paragraph line_height 가 페이지 본문 영역의 *47배*
+// 까지 부풀어 paginate 결과를 비정상으로 만든 사고가 있었다 — 단위 혼동을 silent 로
+// 묻어두지 않는 게 안전.
 fn deserialize_font_size_pt<'de, D>(deserializer: D) -> Result<Option<u16>, D::Error>
 where
     D: Deserializer<'de>,
 {
+    use serde::de::Error;
     let opt = Option::<f64>::deserialize(deserializer)?;
-    Ok(opt.map(|pt| {
-        let internal = (pt * 100.0).round();
-        internal.clamp(0.0, u16::MAX as f64) as u16
-    }))
+    opt.map(|pt| {
+        if !pt.is_finite() || pt < 0.0 || pt > 655.35 {
+            return Err(D::Error::custom(format!(
+                "fontSize 가 허용 범위 (0 ~ 655.35 pt) 를 벗어남: {pt}. \
+                 *pt 단위 실수* 로 보내야 함 (예: 14.0 = 14pt). \
+                 raw 0.01pt 정수 (예: 1400) 가 아닙니다."
+            )));
+        }
+        Ok((pt * 100.0).round() as u16)
+    })
+    .transpose()
 }
 
 // ─── Sub-2: Partial 타입 (옵셔널 필드만 직렬화) ─────────────────

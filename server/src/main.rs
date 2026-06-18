@@ -256,11 +256,14 @@ impl From<rusqlite::Error> for AppError {
 
 /// 파일 바이트를 파싱하여 레이아웃 준비된 `DocumentCore` 를 만든다.
 fn build_core(bytes: &[u8]) -> Result<DocumentCore, AppError> {
-    let doc = rhwp::parse_document(bytes)
-        .map_err(|e| AppError::unprocessable(format!("문서 파싱 실패: {e}")))?;
-    let mut core = DocumentCore::new_empty();
-    core.set_document(doc);
-    Ok(core)
+    // [Plan A.1] DocumentCore::from_bytes 단일 진입점 사용 — wasm 빌드(studio)와
+    // 동일한 후처리 (reflow_zero_height_paragraphs / normalize_hwpx_paragraphs /
+    // clear_initial_field_texts) 를 거치도록 통일. 종전 set_document 경로는 이 4단계를
+    // 건너뛰어 TAC 표 paragraph 의 line_height 가 표 높이 미반영 (1000 유지) 상태로
+    // server 메모리에 박혀, wasm paginate(4페이지) 와 server paginate(3페이지) 격차의
+    // root cause 가 되었다.
+    DocumentCore::from_bytes(bytes)
+        .map_err(|e| AppError::unprocessable(format!("문서 파싱 실패: {e}")))
 }
 
 /// 영속 데이터로부터 코어를 복원한다(base/snapshot + 이후 ops 재적용).
@@ -1208,16 +1211,15 @@ struct PageMapReq {
 }
 
 async fn put_page_map(
-    State(state): State<AppState>,
-    Path(file_id): Path<String>,
-    Json(req): Json<PageMapReq>,
+    State(_state): State<AppState>,
+    Path(_file_id): Path<String>,
+    Json(_req): Json<PageMapReq>,
 ) -> StatusCode {
-    let map = ClientPageMap {
-        entries: req.pages,
-        total_pages: req.total_pages,
-        seq: req.seq,
-    };
-    state.page_maps.lock().unwrap().insert(file_id, map);
+    // [Plan A] page_maps 폐기 — wasm 가 보내는 매핑을 *보관하지 않는다*.
+    // ir-slice 가 server 자기 paginate 결과만 사용하므로 매핑 저장이 무용.
+    // 호환성을 위해 endpoint 와 응답 코드는 유지 (wasm 측 fetch 실패 회피).
+    // 종전 race: wasm 의 paginate 진행 중 부분 매핑이 600ms debounce 로 POST 되어
+    // server 에 영구 박힘 → ir-slice 가 *잘린 IR* 반환 → 모델이 paragraph 일부만 받음.
     StatusCode::NO_CONTENT
 }
 
@@ -1253,22 +1255,19 @@ async fn ir_slice_handler(
     };
 
     if resolved_mode == "compact" {
-        // 브라우저 (rhwp-studio WASM) 가 역공급한 client page map 우선 조회.
-        // page 인자가 들어왔을 때만 의미 있음 — 전체 슬라이스는 측정기 격차 영향 없음.
-        let (page_override_range, total_pages_override) = match q.page {
-            Some(p) if p >= 1 => {
-                let map_lock = state.page_maps.lock().unwrap();
-                map_lock.get(&file_id).and_then(|m| {
-                    m.entries
-                        .iter()
-                        .find(|e| e.page == p)
-                        .map(|e| ((e.sec, e.para_start, e.para_end), m.total_pages))
-                })
-                .map(|(triple, total)| (Some(triple), Some(total)))
-                .unwrap_or((None, None))
-            }
-            _ => (None, None),
-        };
+        // [Plan A] page_maps (브라우저 wasm 역공급 매핑) 폐기 — 항상 server 자기 paginate
+        // 결과만 단일 진실 소스로 사용한다.
+        //
+        // 종전: 측정기 격차 우회용으로 wasm 매핑을 우선 사용. 다만 wasm 의 paginate 가
+        // *진행 중 부분 결과*를 600ms debounce 로 POST 하는 race 가 있어 *부분 매핑* 이
+        // server 에 영구 박힐 위험이 있었다. 한 paragraph 가 매핑에서 누락되면 ir-slice
+        // 응답이 *잘려서* 모델이 paragraph 일부만 받는 사고가 일어났다.
+        //
+        // 현재 [text_measurement.rs PR #1026] 이후 wasm 측정도 *내장 메트릭 + 휴리스틱*
+        // 만 사용 (Canvas measureText 호출 자리 0건) — native EmbeddedTextMeasurer 와
+        // 사실상 동일. 측정기 격차가 사실상 사라졌으므로 page_maps 우회가 불필요.
+        let (page_override_range, total_pages_override): (Option<(usize, usize, usize)>, Option<u32>) =
+            (None, None);
         let opts = ir_compact::BuildOptions {
             sec,
             para_start,
