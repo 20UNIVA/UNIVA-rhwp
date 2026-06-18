@@ -68,8 +68,32 @@ export interface CommandServices {
   /** ViewportManager 접근 (문서 미로드 시 null) */
   getViewportManager: () => ViewportManager | null;
   /**
-   * SSR 세션 저장(서버 minio 덮어쓰기). 설정 시 file:save 가 로컬 저장 대신 이것을 우선 시도한다.
+   * SSR 세션 저장(서버 외부 저장소 덮어쓰기). 설정 시 file:save 가 로컬 저장 대신 이것을 우선 시도한다.
    * 반환 true = 서버 저장 성공. 미설정/false 면 기존 로컬 저장으로 진행.
    */
   saveToServer?: () => Promise<boolean>;
+  /**
+   * vfinder iframe 흐름으로 *다른 이름으로 저장*.
+   *
+   * 동작: 부모창에 `rhwp:save-as-request` postMessage 발사 → 부모창이 vfinder save-as
+   * iframe 띄움 → 사용자가 폴더·이름 고르면 부모창이 `rhwp:save-as-target` 으로 forward
+   * → 그 인자로 `POST /sessions/:id/save-as` 호출 → 응답의 새 fileId 로 URL 갱신 +
+   * 부모창에 `rhwp:saved-as` 발사.
+   *
+   * 반환 true = 성공 (사용자가 저장 완료). false = 취소·실패. 미설정이면 기존 로컬
+   * file system access 흐름으로 진행.
+   */
+  saveAsViaVfinder?: () => Promise<boolean>;
+  /**
+   * vfinder iframe 흐름으로 *파일 열기*.
+   *
+   * 동작: 부모창에 `rhwp:open-request` postMessage 발사 → 부모창이 vfinder picker
+   * iframe (mode=picker, kind=file) 띄움 → 사용자가 파일 고르면 부모창이
+   * `rhwp:open-target { fileId, name }` 으로 forward → URL `?fileId=` 갱신 후
+   * 페이지 in-place 재진입 (iframe 만 reload).
+   *
+   * 반환 true = 사용자가 파일 골랐고 진입 트리거 발사. false = 취소·실패. 미설정이면
+   * 기존 로컬 showOpenFilePicker 흐름으로 진행 (cross-origin sub frame 에서는 차단됨).
+   */
+  openViaVfinder?: () => Promise<boolean>;
 }

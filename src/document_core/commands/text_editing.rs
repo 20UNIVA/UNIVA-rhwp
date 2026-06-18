@@ -747,6 +747,178 @@ impl DocumentCore {
         }
     }
 
+    /// `(sec, para)` 본문 문단의 runs 를 *runs_json* 으로 통째 교체.
+    ///
+    /// runs_json 형식: `[{"text": "...", "style": {bold?, italic?, ...}}, ...]`.
+    /// 기존 문단 내용은 모두 제거 후 새 runs 로 재구성. CharShape 는
+    /// 각 run 의 style 을 [`apply_char_format_native`] 가 받아들이는
+    /// CharShapeMods JSON 형식으로 해석.
+    pub fn replace_runs_native(
+        &mut self,
+        section_idx: usize,
+        para_idx: usize,
+        runs_json: &str,
+    ) -> Result<String, HwpError> {
+        // 1. 기존 문단의 텍스트 길이 측정
+        let para_len = self.document.sections[section_idx]
+            .paragraphs[para_idx]
+            .text
+            .chars()
+            .count();
+
+        // [Sub-7 v2 Fix B] paragraph 의 원래 default char_shape_id 를 미리 보관 — 매 run 마다
+        // *동일한 base 에서 partial mods 를 적용* 하기 위함. 옛 동작은 두 번째 이후 run 이
+        // 직전 run 의 char_shape 를 base 로 cascade 했으나, replace 의 의미상 매 run 은
+        // 깨끗한 default 에서 출발하는 게 자연스럽다 (사고 B).
+        let base_char_shape_id = self.document.sections[section_idx].paragraphs[para_idx]
+            .char_shapes
+            .first()
+            .map(|cs| cs.char_shape_id)
+            .unwrap_or(0);
+
+        // 2. 기존 텍스트 통째 삭제
+        if para_len > 0 {
+            self.delete_text_native(section_idx, para_idx, 0, para_len)?;
+        }
+
+        // 3. runs_json 파싱
+        let runs: Vec<serde_json::Value> = serde_json::from_str(runs_json)
+            .map_err(|e| HwpError::InvalidFile(format!("runs_json 파싱 실패: {e}")))?;
+
+        // 4. 각 run 순회 — 텍스트 삽입 후 char_format 적용
+        let mut cursor = 0usize;
+        for run in runs {
+            let text = run.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            if text.is_empty() {
+                continue;
+            }
+            let len = text.chars().count();
+            self.insert_text_native(section_idx, para_idx, cursor, text)?;
+
+            // style 이 있고 빈 객체가 아닐 때만 char_format 적용
+            if let Some(style) = run.get("style") {
+                if style.is_object() && !style.as_object().unwrap().is_empty() {
+                    let style_json = serde_json::to_string(style)
+                        .map_err(|e| HwpError::InvalidFile(format!("style 직렬화: {e}")))?;
+                    // [Sub-7 v2 Fix B] base 를 명시 — char_shape_id_at(start) 의 cascade 회피
+                    self.apply_char_format_native_with_base(
+                        section_idx,
+                        para_idx,
+                        cursor,
+                        cursor + len,
+                        base_char_shape_id,
+                        &style_json,
+                    )?;
+                }
+            }
+
+            cursor += len;
+        }
+
+        Ok(super::super::helpers::json_ok_with(&format!(
+            "\"paraIdx\":{},\"runsCount\":{}",
+            para_idx, cursor
+        )))
+    }
+
+    /// 셀 내 문단의 runs 를 통째 교체. (sec, table_para, ctrl, cell, cell_para) 좌표.
+    pub fn replace_cell_runs_native(
+        &mut self,
+        section_idx: usize,
+        table_para_idx: usize,
+        control_idx: usize,
+        cell_idx: usize,
+        cell_para_idx: usize,
+        runs_json: &str,
+    ) -> Result<String, HwpError> {
+        // 1. 기존 셀 문단 텍스트 길이 측정 (immutable ref helper 활용)
+        let cell_para_ref = self
+            .get_cell_paragraph_ref(
+                section_idx,
+                table_para_idx,
+                control_idx,
+                cell_idx,
+                cell_para_idx,
+            )
+            .ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "셀 문단 접근 실패 (sec={}, para={}, ctrl={}, cell={}, cell_para={})",
+                    section_idx, table_para_idx, control_idx, cell_idx, cell_para_idx
+                ))
+            })?;
+        let para_len = cell_para_ref.text.chars().count();
+        // [Sub-7 v2 Fix B] 셀 paragraph 의 원래 default char_shape_id 보관
+        let base_char_shape_id = cell_para_ref
+            .char_shapes
+            .first()
+            .map(|cs| cs.char_shape_id)
+            .unwrap_or(0);
+
+        // 2. 기존 텍스트 통째 삭제
+        if para_len > 0 {
+            self.delete_text_in_cell_native(
+                section_idx,
+                table_para_idx,
+                control_idx,
+                cell_idx,
+                cell_para_idx,
+                0,
+                para_len,
+            )?;
+        }
+
+        // 3. runs_json 파싱
+        let runs: Vec<serde_json::Value> = serde_json::from_str(runs_json)
+            .map_err(|e| HwpError::InvalidFile(format!("runs_json 파싱 실패: {e}")))?;
+
+        // 4. 각 run 순회 — 셀 내 텍스트 삽입 후 char_format 적용
+        let mut cursor = 0usize;
+        for run in runs {
+            let text = run.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            if text.is_empty() {
+                continue;
+            }
+            let len = text.chars().count();
+            self.insert_text_in_cell_native(
+                section_idx,
+                table_para_idx,
+                control_idx,
+                cell_idx,
+                cell_para_idx,
+                cursor,
+                text,
+            )?;
+
+            // style 이 있고 빈 객체가 아닐 때만 char_format 적용
+            if let Some(style) = run.get("style") {
+                if style.is_object() && !style.as_object().unwrap().is_empty() {
+                    let style_json = serde_json::to_string(style)
+                        .map_err(|e| HwpError::InvalidFile(format!("style 직렬화: {e}")))?;
+                    // [Sub-7 v2 Fix B] 셀 paragraph 의 원래 default 를 base 로 사용 —
+                    // cascade 회피.
+                    self.apply_char_format_in_cell_native_with_base(
+                        section_idx,
+                        table_para_idx,
+                        control_idx,
+                        cell_idx,
+                        cell_para_idx,
+                        cursor,
+                        cursor + len,
+                        base_char_shape_id,
+                        &style_json,
+                    )?;
+                }
+            }
+
+            cursor += len;
+        }
+
+        Ok(super::super::helpers::json_ok_with(&format!(
+            "\"cellParaIdx\":{},\"runsCount\":{}",
+            cell_para_idx, cursor
+        )))
+    }
+
     /// 표 셀에 대한 가변 참조를 얻는다.
     pub(crate) fn get_cell_mut(
         &mut self,
@@ -2585,6 +2757,230 @@ mod tests {
                 tree.err()
             );
         }
+    }
+
+    #[test]
+    fn test_replace_runs_native_basic() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.insert_text_native(0, 0, 0, "Hello World").unwrap();
+
+        let runs_json = r#"[
+            {"text": "Hi", "style": {"bold": true}},
+            {"text": " there", "style": {}}
+        ]"#;
+        core.replace_runs_native(0, 0, runs_json).unwrap();
+
+        assert_eq!(core.document.sections[0].paragraphs[0].text, "Hi there");
+    }
+
+    #[test]
+    fn test_replace_cell_runs_native_basic() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        // 1행 2열 표 생성 — 섹션 0, 문단 0, char_offset 0 에 인라인 삽입.
+        // create_table_native 은 빈 문서 첫 문단에 부속 컨트롤을 두고, 표 본체는
+        // 분리된 다음 문단(para_idx=1)에 Control::Table 으로 배치한다.
+        core.create_table_native(0, 0, 0, 1, 2).unwrap();
+
+        // table_para = 1, ctrl_idx = 0, cell (0,0) 의 cell_para_idx = 0 에 텍스트 삽입
+        let table_para_idx = 1usize;
+        let ctrl_idx = 0usize;
+        let cell_idx = 0usize;
+        core.insert_text_in_cell_native(0, table_para_idx, ctrl_idx, cell_idx, 0, 0, "원본")
+            .unwrap();
+
+        let runs_json = r#"[
+            {"text": "변경", "style": {"bold": true}}
+        ]"#;
+        core.replace_cell_runs_native(0, table_para_idx, ctrl_idx, cell_idx, 0, runs_json)
+            .unwrap();
+
+        // get_cell helper 부재 — 직접 접근으로 검증
+        let para = &core.document.sections[0].paragraphs[table_para_idx];
+        let table = match &para.controls[ctrl_idx] {
+            Control::Table(t) => t,
+            _ => panic!("ctrl_idx={} 가 표 컨트롤이 아님", ctrl_idx),
+        };
+        let cell = &table.cells[cell_idx];
+        assert_eq!(cell.paragraphs[0].text, "변경");
+    }
+
+    /// [Sub-7 v2 Fix A] 셀 paragraph 의 char_shape_id 가 실제로 변경되는지 확인.
+    /// `create_table_native` 가 빈 char_shapes 를 baseline CharShapeRef 로 채워야 하고,
+    /// apply_char_format_in_cell_native 호출 후 char_shapes 배열이 갱신되어야 한다.
+    #[test]
+    fn test_sub7v2_cell_paragraph_has_initial_char_shape() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 1, 2).unwrap();
+
+        let para = &core.document.sections[0].paragraphs[1];
+        let table = match &para.controls[0] {
+            Control::Table(t) => t,
+            _ => panic!("ctrl 0 is not table"),
+        };
+        for (idx, cell) in table.cells.iter().enumerate() {
+            assert!(
+                !cell.paragraphs[0].char_shapes.is_empty(),
+                "셀 #{} paragraph 의 char_shapes 가 비어 있음 — Sub-7 v2 Fix A 회귀",
+                idx
+            );
+        }
+    }
+
+    /// [Sub-7 v2 Fix A] 셀 내 multi-run style 분리 — 3 run 각 다른 style 이 *각각 다른
+    /// char_shape_id* 로 분리되어 char_shapes 에 기록되는지 확인.
+    #[test]
+    fn test_sub7v2_replace_cell_runs_with_distinct_styles() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 1, 2).unwrap();
+        let table_para_idx = 1usize;
+        let ctrl_idx = 0usize;
+        let cell_idx = 0usize;
+
+        // 3 run — 각각 다른 textColor, bold, shadeColor (native 직접 호출이므로 native 키 사용)
+        let runs_json = r##"[
+            {"text": "빨강", "style": {"textColor": "#FF0000"}},
+            {"text": "굵게", "style": {"bold": true}},
+            {"text": "노랑", "style": {"shadeColor": "#FFFF00"}}
+        ]"##;
+        core.replace_cell_runs_native(0, table_para_idx, ctrl_idx, cell_idx, 0, runs_json)
+            .unwrap();
+
+        let para = &core.document.sections[0].paragraphs[table_para_idx];
+        let table = match &para.controls[ctrl_idx] {
+            Control::Table(t) => t,
+            _ => panic!("not table"),
+        };
+        let cell_para = &table.cells[cell_idx].paragraphs[0];
+        assert_eq!(cell_para.text, "빨강굵게노랑");
+        // 3 run 이 *각각 다른 char_shape_id* — char_shapes 가 최소 3개 구간이어야 함
+        assert!(
+            cell_para.char_shapes.len() >= 3,
+            "최소 3개의 char_shape 구간 필요 (실제 {})",
+            cell_para.char_shapes.len()
+        );
+        // 모든 ID 가 distinct 한지 확인
+        let ids: Vec<u32> = cell_para.char_shapes.iter().map(|cs| cs.char_shape_id).collect();
+        let mut unique = ids.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len(), "char_shape_id 가 중복 — {:?}", ids);
+    }
+
+    /// [Sub-7 v2 Fix A] insert_text_in_cell_native + apply_char_format_in_cell_native
+    /// 후 char_shapes 가 갱신되는지.
+    #[test]
+    fn test_sub7v2_insert_text_in_cell_with_style() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 1, 2).unwrap();
+        let table_para_idx = 1usize;
+        let ctrl_idx = 0usize;
+        let cell_idx = 0usize;
+
+        core.insert_text_in_cell_native(0, table_para_idx, ctrl_idx, cell_idx, 0, 0, "굵게")
+            .unwrap();
+        core.apply_char_format_in_cell_native(
+            0,
+            table_para_idx,
+            ctrl_idx,
+            cell_idx,
+            0,
+            0,
+            2,
+            r##"{"bold":true}"##,
+        )
+        .unwrap();
+
+        let para = &core.document.sections[0].paragraphs[table_para_idx];
+        let table = match &para.controls[ctrl_idx] {
+            Control::Table(t) => t,
+            _ => panic!("not table"),
+        };
+        let cell_para = &table.cells[cell_idx].paragraphs[0];
+        assert_eq!(cell_para.text, "굵게");
+        // char_shapes 비어있지 않고, char_shape_id_at(0) 가 doc 의 새 bold char_shape 가리켜야
+        assert!(!cell_para.char_shapes.is_empty(), "char_shapes 가 비어 있음");
+        let id = cell_para.char_shape_id_at(0).expect("char_shape_id_at(0) None");
+        let raw = core
+            .document
+            .doc_info
+            .char_shapes
+            .get(id as usize)
+            .expect("char_shape id 범위 초과");
+        assert!(raw.bold, "bold 미설정 — Sub-7 v2 Fix A 회귀");
+    }
+
+    /// [Sub-7 v2 Fix B] 본문 replace_runs 가 직전 run 의 style 을 cascade 하지 않고
+    /// 각 run 이 paragraph 의 *원래 default* 에서 출발하는지 잠금.
+    #[test]
+    fn test_sub7v2_replace_runs_no_style_cascade() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.insert_text_native(0, 0, 0, "원본").unwrap();
+
+        // 세 run: 빨강 / 노랑 (color 지정 없음 — 빨강 상속되지 말아야) / 파랑+bold
+        let runs_json = r##"[
+            {"text": "빨강", "style": {"textColor": "#FF0000"}},
+            {"text": "노랑", "style": {"shadeColor": "#FFFF00"}},
+            {"text": "파랑", "style": {"textColor": "#0000FF", "bold": true}}
+        ]"##;
+        core.replace_runs_native(0, 0, runs_json).unwrap();
+
+        let para = &core.document.sections[0].paragraphs[0];
+        // 각 run 의 char_shape 가 *paragraph 의 원래 default 를 base 로* 했는지 확인 —
+        // run[1] ("노랑") 의 color 는 default color (검정/0) 와 동일하고 #FF0000 아니어야.
+        let id1 = para.char_shape_id_at(2).expect("run[1] char_shape id None");
+        let raw1 = &core.document.doc_info.char_shapes[id1 as usize];
+        // 첫 run "빨강" 의 색은 #FF0000 (RGB 0x0000FF — HWP little-endian)
+        let id0 = para.char_shape_id_at(0).expect("run[0] char_shape id None");
+        let raw0 = &core.document.doc_info.char_shapes[id0 as usize];
+        let color0 = raw0.text_color;
+        let color1 = raw1.text_color;
+        assert_ne!(
+            color0, color1,
+            "run[1] 의 color({:?}) 가 run[0] color({:?}) 와 동일 — cascade 발생",
+            color1, color0
+        );
+    }
+
+    #[test]
+    fn test_replace_runs_with_styled_runs() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.insert_text_native(0, 0, 0, "원본").unwrap();
+
+        let runs_json = r#"[
+            {"text": "굵게", "style": {"bold": true}},
+            {"text": " 보통", "style": {}}
+        ]"#;
+        core.replace_runs_native(0, 0, runs_json).unwrap();
+
+        let para = &core.document.sections[0].paragraphs[0];
+        assert_eq!(para.text, "굵게 보통");
+        // char_shapes 가 *2개 이상* 의 charShapeId 를 가져야 — 첫 번째 굵게 + 두 번째 보통
+        assert!(
+            para.char_shapes.len() >= 2,
+            "최소 2개의 char_shape 구간이 있어야 함"
+        );
+    }
+
+    /// `DocumentCore::find_cell_idx` 가 pub fn 으로 노출되어 외부에서 호출 가능한지 검증.
+    /// WASM export (`HwpDocument::find_cell_idx_js`) 의 underlying native 동등 확인.
+    #[test]
+    fn test_find_cell_idx_via_pub() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 2, 3).unwrap();
+        // 2x3 = 6 cells. 빈 문서 인라인 표 → table_para = 1 (Task 2a.3 발견).
+        // 셀 순서는 row-major: (0,0)→0, (0,1)→1, (0,2)→2, (1,0)→3, (1,1)→4, (1,2)→5
+        let idx_0_0 = core.find_cell_idx(0, 1, 0, 0, 0).unwrap();
+        assert_eq!(idx_0_0, 0, "(0,0) → cell_idx 0");
+        let idx_1_2 = core.find_cell_idx(0, 1, 0, 1, 2).unwrap();
+        assert_eq!(idx_1_2, 5, "(1,2) → cell_idx 5");
     }
 }
 

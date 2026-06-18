@@ -8,7 +8,10 @@ pub(crate) use helpers::*;
 
 pub mod builders;
 mod commands;
-pub use commands::edit_op::EditOperation;
+pub use commands::edit_op::{
+    AffectedRange, BorderLine, BorderSpec, CellFocus, EditOperation, ElementType, ParaRange,
+    PartialCellStyle, PartialParagraphStyle, PartialRunStyle, RunSpec,
+};
 pub mod converters;
 pub(crate) mod html_table_import;
 pub mod queries;
@@ -130,6 +133,19 @@ pub struct ActiveFieldInfo {
 }
 
 impl DocumentCore {
+    /// IR slice 빌더용 read-only accessor — `server::ir_compact` 에서 사용 (Sub-3).
+    /// `ResolvedCharStyle` / `ResolvedBorderStyle` 평탄화 결과에 접근.
+    /// (`document()` 는 이미 `commands/document.rs:626` 에 노출되어 있어 재정의 불필요.)
+    pub fn styles(&self) -> &ResolvedStyleSet {
+        &self.styles
+    }
+
+    /// IR slice 빌더용 read-only accessor — Sub-3 v2 의 페이지 단위 슬라이스가 사용.
+    /// `PaginationResult` (renderer 의 페이지 분할 결과) 를 그대로 노출.
+    pub fn pagination(&self) -> &[PaginationResult] {
+        &self.pagination
+    }
+
     /// 총 페이지 수를 반환한다.
     pub fn page_count(&self) -> u32 {
         self.pagination

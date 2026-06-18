@@ -12,9 +12,11 @@ path = "src/main.rs"
 # rhwp 엔진 (path 의존). native 빌드만 사용 — WASM 빌드와 분리.
 rhwp = { path = ".." }
 
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
-tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
+tokio-stream = "0.1"
+futures = "0.3"
+tower-http = { version = "0.5", features = ["cors", "fs", "trace", "set-header"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
@@ -23,3 +25,6 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "stream"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"

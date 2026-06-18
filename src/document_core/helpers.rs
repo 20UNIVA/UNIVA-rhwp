@@ -191,11 +191,31 @@ pub(crate) fn get_textbox_from_shape_mut(
     drawing.text_box.as_mut()
 }
 
+/// 문단 안 `control_idx` 자리 우선 시도. Table 이 아니거나 인덱스가 범위 밖이면
+/// 문단 안 *첫 Table control* 자동 검색.
+///
+/// 호출자가 control_idx=0 하드코딩 자리에서 paragraph 가 SectionDef/ColumnDef
+/// 같은 다른 control 을 먼저 가질 때 (섹션의 첫 문단 자리) 자동 우회.
+/// `find_cell_idx` (edit_op.rs §SetCellStyle 분기에서 사용) 의 fallback 과 동일 의도.
+///
+/// 반환: 문단 안 Table control 의 실제 인덱스. 문단 안에 Table 이 *전혀 없으면* `None`.
+pub(crate) fn resolve_table_ctrl_idx(para: &Paragraph, ctrl_idx: usize) -> Option<usize> {
+    if matches!(para.controls.get(ctrl_idx), Some(Control::Table(_))) {
+        return Some(ctrl_idx);
+    }
+    para.controls
+        .iter()
+        .position(|c| matches!(c, Control::Table(_)))
+}
+
 /// 문단 목록에서 DocumentPath를 따라 중첩 표에 대한 가변 참조를 얻는다.
 ///
 /// 경로 형식:
 /// - 종단: `[Paragraph(pi), Control(ci)]` → 해당 표 반환
 /// - 중첩: `[Paragraph(pi), Control(ci), Cell(r,c), ...rest]` → 셀 내 재귀
+///
+/// `ci` 자리가 SectionDef/ColumnDef 같은 비-Table control 을 가리키면 자동으로
+/// 문단 안 첫 Table control 로 fallback (`resolve_table_ctrl_idx`).
 pub(crate) fn navigate_path_to_table<'a>(
     paragraphs: &'a mut Vec<Paragraph>,
     path: &[PathSegment],
@@ -205,14 +225,18 @@ pub(crate) fn navigate_path_to_table<'a>(
             let para = paragraphs
                 .get_mut(*pi)
                 .ok_or_else(|| HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", pi)))?;
-            match para.controls.get_mut(*ci) {
+            let resolved_ci = resolve_table_ctrl_idx(para, *ci).ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "문단 {} 에 Table control 없음 (controls_len={})",
+                    pi,
+                    para.controls.len()
+                ))
+            })?;
+            match para.controls.get_mut(resolved_ci) {
                 Some(Control::Table(t)) => Ok(t),
-                Some(_) => Err(HwpError::RenderError(
-                    "지정된 컨트롤이 표가 아닙니다".to_string(),
-                )),
-                None => Err(HwpError::RenderError(format!(
-                    "컨트롤 인덱스 {} 범위 초과",
-                    ci
+                _ => Err(HwpError::RenderError(format!(
+                    "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                    resolved_ci
                 ))),
             }
         }
@@ -221,19 +245,23 @@ pub(crate) fn navigate_path_to_table<'a>(
             let para = paragraphs
                 .get_mut(*pi)
                 .ok_or_else(|| HwpError::RenderError(format!("문단 인덱스 {} 범위 초과", pi)))?;
-            match para.controls.get_mut(*ci) {
+            let resolved_ci = resolve_table_ctrl_idx(para, *ci).ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "문단 {} 에 Table control 없음 (controls_len={})",
+                    pi,
+                    para.controls.len()
+                ))
+            })?;
+            match para.controls.get_mut(resolved_ci) {
                 Some(Control::Table(t)) => {
                     let cell = t.cell_at_mut(*row, *col).ok_or_else(|| {
                         HwpError::RenderError(format!("셀({},{}) 접근 실패", row, col))
                     })?;
                     navigate_path_to_table(&mut cell.paragraphs, rest)
                 }
-                Some(_) => Err(HwpError::RenderError(
-                    "지정된 컨트롤이 표가 아닙니다".to_string(),
-                )),
-                None => Err(HwpError::RenderError(format!(
-                    "컨트롤 인덱스 {} 범위 초과",
-                    ci
+                _ => Err(HwpError::RenderError(format!(
+                    "내부 정합 오류: resolve_table_ctrl_idx={} 가 Table 미가리킴",
+                    resolved_ci
                 ))),
             }
         }
@@ -309,6 +337,20 @@ pub(crate) fn parse_char_shape_mods(json: &str) -> crate::model::style::CharShap
     }
     if let Some(v) = json_bool(json, "strikethrough") {
         mods.strikethrough = Some(v);
+    }
+    // [Sub-7 v3] 광고 alias 먼저 처리 — native 키가 함께 들어오면 native 키가 마지막에 이김.
+    // SKILL.md 가 광고하는 키 (color/highlight/font-size/font_size) 를 native 키와 동일 의미로 받는다.
+    if let Some(v) = json_color(json, "color") {
+        mods.text_color = Some(v);
+    }
+    if let Some(v) = json_color(json, "highlight") {
+        mods.shade_color = Some(v);
+    }
+    if let Some(v) = json_i32(json, "font-size") {
+        mods.base_size = Some(v);
+    }
+    if let Some(v) = json_i32(json, "font_size") {
+        mods.base_size = Some(v);
     }
     if let Some(v) = json_i32(json, "fontSize") {
         mods.base_size = Some(v);
@@ -495,6 +537,26 @@ pub(crate) fn parse_para_shape_mods(json: &str) -> crate::model::style::ParaShap
     use crate::model::style::{Alignment, HeadType, LineSpacingType, ParaShapeMods};
     let mut mods = ParaShapeMods::default();
 
+    // [Sub-7 v3] 광고 alias 먼저 처리 — native 키가 함께 들어오면 native 키가 마지막에 이김.
+    if let Some(v) = json_str(json, "align") {
+        mods.alignment = Some(match v.as_str() {
+            "left" => Alignment::Left,
+            "right" => Alignment::Right,
+            "center" => Alignment::Center,
+            "justify" => Alignment::Justify,
+            "distribute" => Alignment::Distribute,
+            _ => Alignment::Justify,
+        });
+    }
+    if let Some(v) = json_i32(json, "line-height") {
+        mods.line_spacing = Some(v);
+    }
+    if let Some(v) = json_i32(json, "line_height") {
+        mods.line_spacing = Some(v);
+    }
+    if let Some(v) = json_i32(json, "lineHeight") {
+        mods.line_spacing = Some(v);
+    }
     if let Some(v) = json_str(json, "alignment") {
         mods.alignment = Some(match v.as_str() {
             "left" => Alignment::Left,
@@ -1436,5 +1498,46 @@ mod tests {
         assert_eq!(find_logical_control_positions(&para), vec![0, 0, 0, 3]);
         assert_eq!(logical_paragraph_length(&para), 4);
         assert_eq!(navigable_text_len(&para), 4);
+    }
+
+    // [Sub-7 v3] 광고 키 alias 단위 테스트 — parse_char_shape_mods / parse_para_shape_mods.
+
+    #[test]
+    fn parse_char_shape_alias_color_sets_text_color() {
+        let mods = parse_char_shape_mods(r##"{"color":"#00FF00"}"##);
+        // css_color_to_bgr 으로 변환된 값 — r=00, g=FF, b=00 → 0x0000FF00
+        assert_eq!(mods.text_color, Some(0x0000FF00));
+    }
+
+    #[test]
+    fn parse_char_shape_alias_highlight_sets_shade_color() {
+        let mods = parse_char_shape_mods(r##"{"highlight":"#FFFF00"}"##);
+        // r=FF, g=FF, b=00 → 0x0000FFFF
+        assert_eq!(mods.shade_color, Some(0x0000FFFF));
+    }
+
+    #[test]
+    fn parse_char_shape_alias_font_size_kebab() {
+        let mods = parse_char_shape_mods(r#"{"font-size":12}"#);
+        assert_eq!(mods.base_size, Some(12));
+    }
+
+    #[test]
+    fn parse_char_shape_alias_font_size_snake() {
+        let mods = parse_char_shape_mods(r#"{"font_size":14}"#);
+        assert_eq!(mods.base_size, Some(14));
+    }
+
+    #[test]
+    fn parse_para_shape_alias_align_right() {
+        use crate::model::style::Alignment;
+        let mods = parse_para_shape_mods(r#"{"align":"right"}"#);
+        assert!(matches!(mods.alignment, Some(Alignment::Right)));
+    }
+
+    #[test]
+    fn parse_para_shape_alias_line_height_kebab() {
+        let mods = parse_para_shape_mods(r#"{"line-height":180}"#);
+        assert_eq!(mods.line_spacing, Some(180));
     }
 }

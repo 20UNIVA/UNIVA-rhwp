@@ -219,6 +219,62 @@ impl HwpDocument {
         self.core.page_count()
     }
 
+    /// 현재 paginate 결과를 page → (sec, para_start, para_end) 매핑 JSON 으로 직렬화한다.
+    ///
+    /// 반환 형식 (인덴트 없는 컴팩트 JSON):
+    /// ```json
+    /// { "total_pages": N, "pages": [
+    ///   {"page":1,"sec":0,"para_start":0,"para_end":31},
+    ///   ...
+    /// ]}
+    /// ```
+    /// `page` 는 *1-based* (사용자·모델 직관 정합). `para_end` 는 *exclusive*.
+    /// `core.pagination()` 의 `PageItem.para_index` 를 페이지마다 모아 min/max+1.
+    /// rhwp-studio 가 paginate 직후 이 결과를 서버의 `/sessions/:id/page-map` 에 POST 해서
+    /// native paginator (EmbeddedTextMeasurer 기반) 와 WASM paginator (Canvas measureText)
+    /// 의 측정기 격차를 우회하는 *역공급* 진입점.
+    #[wasm_bindgen(js_name = getPageMap)]
+    pub fn get_page_map(&self) -> String {
+        use crate::renderer::pagination::PageItem;
+        let mut entries: Vec<serde_json::Value> = Vec::new();
+        let mut total: u32 = 0;
+        for pr in self.core.pagination().iter() {
+            for page in &pr.pages {
+                total += 1;
+                let mut pis: Vec<usize> = Vec::new();
+                for col in &page.column_contents {
+                    for item in &col.items {
+                        let pi = match item {
+                            PageItem::FullParagraph { para_index } => *para_index,
+                            PageItem::PartialParagraph { para_index, .. } => *para_index,
+                            PageItem::Table { para_index, .. } => *para_index,
+                            PageItem::PartialTable { para_index, .. } => *para_index,
+                            PageItem::Shape { para_index, .. } => *para_index,
+                        };
+                        pis.push(pi);
+                    }
+                }
+                if pis.is_empty() {
+                    continue;
+                }
+                let sec = page.section_index;
+                let start = *pis.iter().min().unwrap();
+                let end = *pis.iter().max().unwrap() + 1;
+                entries.push(serde_json::json!({
+                    "page": total,
+                    "sec": sec,
+                    "para_start": start,
+                    "para_end": end,
+                }));
+            }
+        }
+        serde_json::json!({
+            "total_pages": total.max(1),
+            "pages": entries,
+        })
+        .to_string()
+    }
+
     /// 특정 페이지를 SVG 문자열로 렌더링한다.
     #[wasm_bindgen(js_name = renderPageSvg)]
     pub fn render_page_svg(&self, page_num: u32) -> Result<String, JsValue> {
@@ -735,6 +791,39 @@ impl HwpDocument {
             cell_para_idx as usize,
         )
         .map_err(|e| e.into())
+    }
+
+    /// (row, col) 좌표를 `Table.cells` 의 선형 인덱스로 변환한다.
+    ///
+    /// JS: `wasm.findCellIdx(secIdx, tableParaIdx, ctrlIdx, row, col)` → `cell_idx` (u32) 또는 throw.
+    ///
+    /// broadcast 받은 셀 편집 op (set_cell_style / replace_cell_runs /
+    /// insert_text_in_cell / delete_range_in_cell) 가 native 호출 전 cell_idx 를
+    /// 얻기 위해 사용한다. 함수 본체는 `DocumentCore::find_cell_idx` 위임.
+    ///
+    /// 함수 이름이 `find_cell_idx_js` 인 이유: HwpDocument 의 Deref 대상이
+    /// DocumentCore 이므로 같은 이름을 쓰면 wrapper 가 자기 자신을 재귀 호출하여
+    /// stack overflow 가 난다. `#[wasm_bindgen(js_name = findCellIdx)]` 어트리뷰트로
+    /// JS 측 이름은 유지한다.
+    #[wasm_bindgen(js_name = findCellIdx)]
+    pub fn find_cell_idx_js(
+        &self,
+        section_idx: u32,
+        table_para_idx: u32,
+        control_idx: u32,
+        row: u32,
+        col: u32,
+    ) -> Result<u32, JsValue> {
+        self.core
+            .find_cell_idx(
+                section_idx as usize,
+                table_para_idx as usize,
+                control_idx as usize,
+                row as u16,
+                col as u16,
+            )
+            .map(|idx| idx as u32)
+            .map_err(|e| e.into())
     }
 
     // ─── 중첩 표 path 기반 편집 API ──────────────────────────
@@ -4867,6 +4956,42 @@ impl HwpDocument {
     ) -> Result<String, JsValue> {
         self.apply_para_format_native(sec_idx, para_idx, props_json)
             .map_err(|e| e.into())
+    }
+
+    /// JS: replaceRuns(secIdx, paraIdx, runsJson) → ok JSON
+    ///
+    /// runs_json 형식: `[{"text": "...", "style": {bold?, italic?, ...}}, ...]`.
+    #[wasm_bindgen(js_name = replaceRuns)]
+    pub fn replace_runs(
+        &mut self,
+        section_idx: u32,
+        para_idx: u32,
+        runs_json: &str,
+    ) -> Result<String, JsValue> {
+        self.replace_runs_native(section_idx as usize, para_idx as usize, runs_json)
+            .map_err(|e| e.into())
+    }
+
+    /// JS: replaceCellRuns(secIdx, tableParaIdx, ctrlIdx, cellIdx, cellParaIdx, runsJson)
+    #[wasm_bindgen(js_name = replaceCellRuns)]
+    pub fn replace_cell_runs(
+        &mut self,
+        section_idx: u32,
+        table_para_idx: u32,
+        control_idx: u32,
+        cell_idx: u32,
+        cell_para_idx: u32,
+        runs_json: &str,
+    ) -> Result<String, JsValue> {
+        self.replace_cell_runs_native(
+            section_idx as usize,
+            table_para_idx as usize,
+            control_idx as usize,
+            cell_idx as usize,
+            cell_para_idx as usize,
+            runs_json,
+        )
+        .map_err(|e| e.into())
     }
 
     /// 문단 서식을 적용한다 (셀 내 문단).

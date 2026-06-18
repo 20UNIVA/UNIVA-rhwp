@@ -22,7 +22,10 @@ import { ContextMenu } from '@/ui/context-menu';
 import { CommandPalette } from '@/ui/command-palette';
 import { showValidationModalIfNeeded } from '@/ui/validation-modal';
 import { showToast } from '@/ui/toast';
+import { mountVfinderModal } from '@/view/vfinder-modal';
 import { initRhwpDev } from '@/core/rhwp-dev';
+import { getActionDef } from '@/hwpctl/action-registry';
+import { HwpCtrl, ParameterSet } from '@/hwpctl/index';
 import { DocumentDirtyState } from '@/core/document-dirty-state';
 import { CellSelectionRenderer } from '@/engine/cell-selection-renderer';
 import { TableObjectRenderer } from '@/engine/table-object-renderer';
@@ -59,13 +62,30 @@ let sessionClient: SessionClient | null = null;
 let currentSsrFileId: string | null = null;
 /** 현재 세션이 "빈 문서로 시작"되었는지(열기 시 미편집이면 닫기 위함). */
 let currentIsBlank = false;
+/**
+ * 브라우저가 마지막으로 적용한 op seq. WS `ServerEvent::Ops` 도착마다 갱신.
+ * 서버로 page map 을 POST 할 때 staleness 판정용으로 함께 송신.
+ */
+let lastAppliedSeq = 0;
+/** page map POST debounce 타이머 핸들. */
+let pageMapPostTimer: ReturnType<typeof setTimeout> | null = null;
 
 const SSR_PARAMS = new URLSearchParams(location.search);
-/** iframe 부모가 `?fileId=&ssrBase=` 로 전달. */
-const SSR_BASE_URL = SSR_PARAMS.get('ssrBase') ?? '';
+/**
+ * iframe 부모가 `?fileId=&ssrBase=` 로 전달. 미지정 시 same-origin 으로 보고
+ * `import.meta.env.BASE_URL` ('/hwp/') 의 trailing slash 만 제거해 prefix 로 사용 —
+ * fetch 와 WebSocket 모두 `/hwp/sessions/...` 로 자동 전송된다.
+ *
+ * ssrBase 가 cross-origin 으로 명시되면 그 값을 그대로 사용 (deploy 가이드의 책임).
+ */
+const SSR_BASE_URL =
+  SSR_PARAMS.get('ssrBase') ?? import.meta.env.BASE_URL.replace(/\/$/, '');
 const SSR_URL_FILE_ID = SSR_PARAMS.get('fileId');
 /** SSR 모드 활성 조건 — fileId/ssrBase/ssr 중 하나라도 있으면. */
 const SSR_MODE = SSR_PARAMS.has('fileId') || SSR_PARAMS.has('ssrBase') || SSR_PARAMS.has('ssr');
+/** URL `?user=` 자리에서 추출. vfinder modal 의 X-Vfinder-User 헤더 자리에 박힘.
+ *  미설정이면 vfinder 서버의 VFINDER_DEFAULT_USER_ID 환경변수 폴백. */
+const SSR_USER_ID = SSR_PARAMS.get('user') ?? undefined;
 
 /**
  * 현재 세션 fileId를 주소창 URL(`?fileId=`)에 반영한다(history.replaceState).
@@ -80,6 +100,44 @@ function syncUrlFileId(fileId: string): void {
   } catch {
     /* URL 갱신 실패는 치명적이지 않음 */
   }
+}
+
+/**
+ * 현재 wasm paginate 결과를 page → (sec, para_start, para_end) 묶음으로 서버에 POST.
+ *
+ * 측정기 격차 우회 — 서버 native paginator (EmbeddedTextMeasurer) 와 WASM Canvas
+ * 측정기가 페이지 경계를 다르게 그릴 때, 브라우저 결과를 *진실* 로 삼게 한다.
+ *
+ * 디바운스 600ms — 연속 편집 중에 매번 POST 하지 않는다. `document-changed` 마다 호출되며
+ * 마지막 호출 후 600ms 무이벤트 자리에서 한 번 발사.
+ */
+function schedulePageMapPost(): void {
+  if (!currentSsrFileId) return;
+  if (pageMapPostTimer) clearTimeout(pageMapPostTimer);
+  pageMapPostTimer = setTimeout(() => {
+    pageMapPostTimer = null;
+    if (!currentSsrFileId) return;
+    let map;
+    try {
+      map = wasm.getPageMap();
+    } catch (e) {
+      console.warn('[main] getPageMap 실패:', e);
+      return;
+    }
+    if (!map.pages || map.pages.length === 0) return;
+    const body = JSON.stringify({
+      seq: lastAppliedSeq,
+      total_pages: map.total_pages,
+      pages: map.pages,
+    });
+    fetch(`${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/page-map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).catch((e) => {
+      console.warn('[main] page-map POST 실패:', e);
+    });
+  }, 600);
 }
 
 /** Uint8Array → base64 (청크 처리). */
@@ -106,6 +164,282 @@ function buildSessionClient(fileId: string): SessionClient {
         return null;
       }
     },
+    onServerEvent: (ev) => {
+      // shape 가드 (Task 4 review Important #2)
+      if (!ev || typeof ev !== 'object' || !('kind' in ev)) {
+        console.warn('[main] ServerEvent shape 미일치 — 무시:', ev);
+        return;
+      }
+      // [Sub-6] WS broadcast self-echo skip — 자기 clientId 가 발행한 ops 는
+      // 이미 로컬 wasm 에 적용됨. 다시 적용하면 600ms 디바운스 단위마다 *복제* 발생.
+      // origin_client_id 가 *다른 값* 이거나 *누락* (HTTP /workbench 등) 이면 그대로 적용.
+      if (ev.kind === 'ops'
+          && typeof (ev as { origin_client_id?: string }).origin_client_id === 'string'
+          && (ev as { origin_client_id?: string }).origin_client_id === sessionClient?.getClientId()) {
+        return;
+      }
+      if (ev.kind === 'ops') {
+        if (!Array.isArray(ev.ops)) {
+          console.warn('[main] ops 필드 누락 — 무시');
+          return;
+        }
+        let appliedCount = 0;
+        for (const op of ev.ops) {
+          try {
+            switch (op.op) {
+              case 'insert_text':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para !== 'number' ||
+                    typeof op.offset !== 'number' ||
+                    typeof op.text !== 'string') {
+                  console.warn('[main] insert_text 필드 누락:', op);
+                  break;
+                }
+                wasm.insertText(op.section, op.para, op.offset, op.text);
+                appliedCount += 1;
+                break;
+              case 'split_paragraph':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para !== 'number' ||
+                    typeof op.offset !== 'number') {
+                  console.warn('[main] split_paragraph 필드 누락:', op);
+                  break;
+                }
+                wasm.splitParagraph(op.section, op.para, op.offset);
+                appliedCount += 1;
+                break;
+              case 'replace_runs':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para !== 'number' ||
+                    !Array.isArray(op.runs)) {
+                  console.warn('[main] replace_runs payload 미일치 — 무시', op);
+                  break;
+                }
+                wasm.replaceRuns(op.section, op.para, JSON.stringify(op.runs));
+                appliedCount += 1;
+                break;
+              case 'set_paragraph_style':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para !== 'number' ||
+                    typeof op.style !== 'object' || op.style === null) {
+                  console.warn('[main] set_paragraph_style payload 미일치 — 무시', op);
+                  break;
+                }
+                wasm.applyParaFormat(op.section, op.para, JSON.stringify(op.style));
+                appliedCount += 1;
+                break;
+              case 'delete_range':
+                if (typeof op.section !== 'number' ||
+                    typeof op.para_start !== 'number' ||
+                    typeof op.char_start !== 'number' ||
+                    typeof op.para_end !== 'number' ||
+                    typeof op.char_end !== 'number') {
+                  console.warn('[main] delete_range payload 미일치 — 무시', op);
+                  break;
+                }
+                wasm.deleteRange(op.section, op.para_start, op.char_start, op.para_end, op.char_end);
+                appliedCount += 1;
+                break;
+              case 'insert_paragraph':
+                if (typeof op.section !== 'number' || typeof op.after_para !== 'number') {
+                  console.warn('[main] insert_paragraph payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  const cnt = typeof op.count === 'number' ? op.count : 1;
+                  for (let i = 0; i < cnt; i++) {
+                    wasm.insertParagraph(op.section, op.after_para + i);
+                    if (op.style && typeof op.style === 'object') {
+                      wasm.applyParaFormat(op.section, op.after_para + i + 1, JSON.stringify(op.style));
+                    }
+                  }
+                  appliedCount += 1;
+                }
+                break;
+              case 'delete_element':
+                if (typeof op.section !== 'number' || typeof op.para !== 'number' ||
+                    typeof op.element_type !== 'string') {
+                  console.warn('[main] delete_element payload 미일치 — 무시', op);
+                  break;
+                }
+                if (op.element_type === 'paragraph') {
+                  wasm.deleteParagraph(op.section, op.para);
+                } else if (op.element_type === 'table') {
+                  // controlIdx 는 broadcast 페이로드에 없음 — 0 가정 (한 문단에 한 표).
+                  wasm.deleteTableControl(op.section, op.para, 0);
+                } else {
+                  console.warn(`[main] 알 수 없는 element_type: ${op.element_type}`);
+                  break;
+                }
+                appliedCount += 1;
+                break;
+              case 'insert_table':
+                if (typeof op.section !== 'number' ||
+                    typeof op.insert_after_para !== 'number' ||
+                    typeof op.rows !== 'number' ||
+                    typeof op.cols !== 'number') {
+                  console.warn('[main] insert_table payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  // 서버는 char_offset = 문단 길이로 호출. 클라도 동일하게 — 문단 끝에 삽입.
+                  const paraLen = wasm.getParagraphLength(op.section, op.insert_after_para);
+                  wasm.createTable(op.section, op.insert_after_para, paraLen, op.rows, op.cols);
+                  appliedCount += 1;
+                }
+                break;
+              case 'set_cell_style':
+                if (typeof op.section !== 'number' ||
+                    typeof op.table_para !== 'number' ||
+                    typeof op.row !== 'number' ||
+                    typeof op.col !== 'number' ||
+                    typeof op.style !== 'object' || op.style === null) {
+                  console.warn('[main] set_cell_style payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  // [4-4 fix] 서버가 변환해 보낸 cell_idx 우선 사용 — 다중 사용자 race 회피.
+                  // 없으면 wasm.findCellIdx fallback (구 서버 호환).
+                  const ctrlIdx = 0;
+                  const cellIdx = typeof op.cell_idx === 'number'
+                    ? op.cell_idx
+                    : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
+                  // setCellProperties wrapper 가 자체적으로 JSON.stringify 함 — object 그대로 전달.
+                  wasm.setCellProperties(op.section, op.table_para, ctrlIdx, cellIdx, op.style as any);
+                  appliedCount += 1;
+                }
+                break;
+              case 'merge_cells':
+                if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
+                    typeof op.row_start !== 'number' || typeof op.col_start !== 'number' ||
+                    typeof op.row_end !== 'number' || typeof op.col_end !== 'number') {
+                  console.warn('[main] merge_cells payload 미일치 — 무시', op);
+                  break;
+                }
+                wasm.mergeTableCells(op.section, op.table_para, 0, op.row_start, op.col_start, op.row_end, op.col_end);
+                appliedCount += 1;
+                break;
+              case 'replace_cell_runs':
+                if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
+                    typeof op.row !== 'number' || typeof op.col !== 'number' ||
+                    typeof op.cell_para !== 'number' || !Array.isArray(op.runs)) {
+                  console.warn('[main] replace_cell_runs payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  // [4-4 fix] cell_idx 우선 + fallback.
+                  const ctrlIdx = 0;
+                  const cellIdx = typeof op.cell_idx === 'number'
+                    ? op.cell_idx
+                    : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
+                  wasm.replaceCellRuns(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, JSON.stringify(op.runs));
+                  appliedCount += 1;
+                }
+                break;
+              case 'insert_text_in_cell':
+                if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
+                    typeof op.row !== 'number' || typeof op.col !== 'number' ||
+                    typeof op.cell_para !== 'number' || typeof op.offset !== 'number' ||
+                    typeof op.text !== 'string') {
+                  console.warn('[main] insert_text_in_cell payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  // [4-4 fix] cell_idx 우선 + fallback.
+                  const ctrlIdx = 0;
+                  const cellIdx = typeof op.cell_idx === 'number'
+                    ? op.cell_idx
+                    : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
+                  wasm.insertTextInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, op.offset, op.text);
+                  if (op.style && typeof op.style === 'object') {
+                    wasm.applyCharFormatInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para, op.offset, op.offset + op.text.length, JSON.stringify(op.style));
+                  }
+                  appliedCount += 1;
+                }
+                break;
+              case 'delete_range_in_cell':
+                if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
+                    typeof op.row !== 'number' || typeof op.col !== 'number' ||
+                    typeof op.cell_para_start !== 'number' || typeof op.char_start !== 'number' ||
+                    typeof op.cell_para_end !== 'number' || typeof op.char_end !== 'number') {
+                  console.warn('[main] delete_range_in_cell payload 미일치 — 무시', op);
+                  break;
+                }
+                {
+                  // [4-4 fix] cell_idx 우선 + fallback.
+                  const ctrlIdx = 0;
+                  const cellIdx = typeof op.cell_idx === 'number'
+                    ? op.cell_idx
+                    : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
+                  wasm.deleteRangeInCell(op.section, op.table_para, ctrlIdx, cellIdx, op.cell_para_start, op.char_start, op.cell_para_end, op.char_end);
+                  appliedCount += 1;
+                }
+                break;
+              default:
+                console.warn(`[main] Sub-2 미지원 ops op: ${op.op}`);
+            }
+          } catch (e) {
+            console.error('[main] WASM op 적용 실패:', op, e);
+          }
+        }
+        // CanvasView 가 'document-changed' 만 듣고 refreshPages 한다 — IR 만 바꾸고 emit 안 하면
+        // 화면이 새로고침 전까지 옛 그림 그대로. InputHandler 도 wasm 편집 직후 같은 이벤트 발행.
+        if (appliedCount > 0) {
+          // 적용된 마지막 op seq 추적 — page map POST 시 staleness 판정용.
+          if (typeof ev.seq === 'number' && ev.seq > lastAppliedSeq) {
+            lastAppliedSeq = ev.seq;
+          }
+          eventBus.emit('document-changed');
+        }
+      } else if (ev.kind === 'workbench') {
+        if (typeof ev.action !== 'string') {
+          console.warn('[main] workbench action 필드 누락');
+          return;
+        }
+        const def = getActionDef(ev.action);
+        if (!def?.executor) {
+          console.warn(`[main] 알 수 없는 hwpctl action: ${ev.action}`);
+          return;
+        }
+        try {
+          const ctrl = new HwpCtrl(wasm as any);
+          let set: ParameterSet | null = null;
+          if (ev.payload && typeof ev.payload === 'object') {
+            set = new ParameterSet(def.parameterSetId ?? ev.action);
+            for (const [k, v] of Object.entries(ev.payload as Record<string, unknown>)) {
+              set.SetItem(k, v);
+            }
+          }
+          def.executor(ctrl, set);
+          // ops 분기와 동일 이유 — wasm 변경 후 CanvasView refresh 트리거 필요.
+          eventBus.emit('document-changed');
+        } catch (e) {
+          console.error(`[main] hwpctl executor 예외: ${ev.action}`, e);
+        }
+      } else if (ev.kind === 'snapshot_restored') {
+        if (typeof ev.snapshot_base64 !== 'string') {
+          console.warn('[main] snapshot_restored snapshot_base64 누락');
+          return;
+        }
+        try {
+          // base64 → Uint8Array
+          const binStr = atob(ev.snapshot_base64);
+          const bin = new Uint8Array(binStr.length);
+          for (let i = 0; i < binStr.length; i++) bin[i] = binStr.charCodeAt(i);
+          // wasm-bridge.loadDocument 가 기존 인스턴스 release 후 새 HwpDocument 로 교체.
+          wasm.loadDocument(bin);
+          eventBus.emit('document-changed');
+          console.log(`[main] snapshot 복구 적용 — seq ${ev.seq}`);
+        } catch (e) {
+          console.error('[main] snapshot_restored 적용 실패 — 새로고침 필요:', e);
+        }
+      } else if (ev.kind === 'complete') {
+        // 워크벤치 종료 시그널. UI 통합은 Sub-3.
+        console.log(`[main] 워크벤치 종료 시그널 — seq ${ev.seq}`);
+      } else {
+        console.warn(`[main] 알 수 없는 ServerEvent kind:`, (ev as { kind?: string }).kind);
+      }
+    },
   });
 }
 
@@ -123,6 +457,8 @@ async function createSsrSession(bytes: Uint8Array, fileId: string): Promise<void
     syncUrlFileId(fileId);
     if (inputHandler) inputHandler.mirrorSink = client;
     console.info(`[SSR] 세션 생성됨: fileId=${fileId}`);
+    // 첫 페이지 맵 역공급 — 첫 ir-slice 호출 전까지 native paginator 가 안 쓰이도록.
+    schedulePageMapPost();
   } catch (e) {
     console.warn('[SSR] 세션 생성 실패 — 로컬 편집으로 계속', e);
   }
@@ -141,6 +477,8 @@ function attachSsrMirror(fileId: string): void {
   syncUrlFileId(fileId);
   if (inputHandler) inputHandler.mirrorSink = client;
   console.info(`[SSR] 세션 미러링 연결됨: fileId=${fileId}`);
+  // 첫 페이지 맵 역공급 — 새로고침으로 attach 한 경우, 화면 로드 후 즉시 서버 정합.
+  schedulePageMapPost();
 }
 
 /** 문서 바이트를 서버에 업로드(POST /documents)하여 발급된 fileId를 반환한다. */
@@ -249,7 +587,7 @@ const commandServices: CommandServices = {
   getContext,
   getInputHandler: () => inputHandler,
   getViewportManager: () => canvasView?.getViewportManager() ?? null,
-  // SSR 모드면 저장을 서버 minio 덮어쓰기로 라우팅.
+  // SSR 모드면 저장을 서버 외부 저장소 덮어쓰기로 라우팅.
   saveToServer: SSR_MODE
     ? async () => {
         if (!currentSsrFileId) return false;
@@ -260,6 +598,118 @@ const commandServices: CommandServices = {
           { method: 'POST' },
         );
         if (!res.ok) throw new Error(`save HTTP ${res.status}`);
+        return true;
+      }
+    : undefined,
+  // SSR 환경에서 *다른 이름으로 저장* — rhwp studio 자체 modal 안에 vfinder save-as
+  // iframe 을 띄우는 자리. agent 부모창 자리와 무관하게 동작 — *iframe 안 iframe* 흐름.
+  // rhwp 와 vfinder 가 같은 host 라 same-origin 룰로 자연 통과.
+  saveAsViaVfinder: SSR_MODE
+    ? async () => {
+        if (!currentSsrFileId) return false;
+        // 디바운스 큐에 남은 편집 먼저 반영
+        await sessionClient?.flushOps();
+
+        // 1) modal 띄움 + 사용자 선택 대기
+        const target = await new Promise<
+          { path: string; name: string; overwrite: boolean } | null
+        >((resolve) => {
+          let settled = false;
+          const handle = mountVfinderModal({
+            mode: 'save-as',
+            suggestedName: wasm.fileName,
+            userId: SSR_USER_ID,
+            onSaveAs: (result) => {
+              if (settled) return;
+              settled = true;
+              resolve(result);
+            },
+            onCancel: () => {
+              if (settled) return;
+              settled = true;
+              resolve(null);
+            },
+          });
+          // 5분 타임아웃 — modal 이 열려 있는 자리에서 사용자가 잊었을 자리.
+          window.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            handle.close();
+            resolve(null);
+          }, 5 * 60 * 1000);
+        });
+
+        if (!target) return false;
+
+        // 2) /save-as 호출
+        const res = await fetch(
+          `${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/save-as`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(target),
+          },
+        );
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          throw new Error(`save-as HTTP ${res.status}: ${body}`);
+        }
+        const body = (await res.json()) as { fileId: string; path: string };
+
+        // 3) 새 fileId 로 URL 갱신 — 이후 새로고침·공유 자리에서 새 id 로 진입.
+        const url = new URL(window.location.href);
+        url.searchParams.set('fileId', body.fileId);
+        window.history.replaceState({}, '', url.toString());
+        currentSsrFileId = body.fileId;
+        wasm.fileName = target.name;
+
+        return true;
+      }
+    : undefined,
+  // SSR 환경에서 *파일 열기* — rhwp studio 자체 modal 안에 vfinder picker iframe.
+  // 사용자가 파일 고르면 URL ?fileId= 갱신 + iframe in-place 재진입 (window.location.replace).
+  // 새 file_id 의 세션이 서버 메모리에 없으면 get_or_restore 가 storage.download 로 자동 복원.
+  openViaVfinder: SSR_MODE
+    ? async () => {
+        // 1) modal 띄움 + 사용자 선택 대기
+        const picked = await new Promise<{ fileId: string; name: string } | null>(
+          (resolve) => {
+            let settled = false;
+            const handle = mountVfinderModal({
+              mode: 'picker',
+              kind: 'file',
+              userId: SSR_USER_ID,
+              onPick: (items) => {
+                if (settled) return;
+                settled = true;
+                const first = items[0];
+                if (!first || !first.file_id) {
+                  resolve(null);
+                  return;
+                }
+                resolve({ fileId: first.file_id, name: first.name });
+              },
+              onCancel: () => {
+                if (settled) return;
+                settled = true;
+                resolve(null);
+              },
+            });
+            window.setTimeout(() => {
+              if (settled) return;
+              settled = true;
+              handle.close();
+              resolve(null);
+            }, 5 * 60 * 1000);
+          },
+        );
+
+        if (!picked) return false;
+
+        // 2) URL 갱신 + iframe reload — 새 file_id 로 *처음부터 진입*.
+        const url = new URL(window.location.href);
+        url.searchParams.set('fileId', picked.fileId);
+        window.location.replace(url.toString());
         return true;
       }
     : undefined,
@@ -634,6 +1084,8 @@ function setupEventListeners(): void {
 
   eventBus.on('document-changed', (reason) => {
     documentState.markDirty(typeof reason === 'string' ? reason : 'document-changed');
+    // 측정기 격차 우회 — 페이지 경계가 *브라우저 진실* 이 되도록 서버에 역공급.
+    schedulePageMapPost();
   });
 
   eventBus.on('document-dirty-changed', () => {
@@ -801,9 +1253,17 @@ async function loadBytes(
     // 외부가 fileId 명시(loadFile({fileId})): 그 fileId로 세션 생성
     await createSsrSession(data, fileId);
     currentIsBlank = false;
+  } else if (SSR_MODE && currentSsrFileId && !prevBlankUnedited) {
+    // [post-Sub-2 fix] 로컬 "열기" — 기존 세션 fileId 유지 + 서버 core 만 교체.
+    // URL 의 fileId 가 보존되므로 노트북·외부 호출자도 동일 fileId 로 새 문서 IR 조회 가능.
+    // sessionClient.requestSnapshot() 는 현재 wasm 의 export bytes 를 ClientMessage::Snapshot 으로
+    // WS 전송 → 서버 ws.rs::handle_client_text 의 Snapshot 분기가 session.core 를
+    // DocumentCore::from_bytes(...) 로 통째 교체.
+    sessionClient?.requestSnapshot();
+    currentIsBlank = false;
   } else if (SSR_MODE) {
-    // 로컬 "열기": minio 업로드로 새 fileId 발급 후 미러링.
-    // 직전 세션이 빈 문서 + 미편집이면 닫고(닫지 않으면 유지), 새 문서 세션으로 전환.
+    // 직전 세션이 빈 문서 + 미편집이거나 기존 세션 없음 → 새 fileId 발급 경로.
+    // minio 업로드로 새 fileId 발급 후 미러링.
     if (prevBlankUnedited && prevFileId) await ssrDeleteSession(prevFileId);
     const fid = await ssrUploadNewDocument(data, fileName);
     if (fid) {

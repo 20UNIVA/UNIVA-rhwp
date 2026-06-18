@@ -6,6 +6,9 @@ import { VitePWA } from 'vite-plugin-pwa';
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
 
 export default defineConfig({
+  // 모든 자산 URL 과 import.meta.env.BASE_URL 이 `/hwp/` 로 생성. 서버가 `/hwp` 아래로
+  // nest 되어 있어 정적 자산·SPA index·API 호출 모두 동일 prefix 로 통일.
+  base: '/hwp/',
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -66,8 +69,8 @@ export default defineConfig({
         theme_color: '#2b6cb0',
         background_color: '#ffffff',
         display: 'standalone',
-        start_url: '/rhwp/',
-        scope: '/rhwp/',
+        start_url: '/hwp/',
+        scope: '/hwp/',
         icons: [
           { src: 'icons/icon-128.png', sizes: '128x128', type: 'image/png' },
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },

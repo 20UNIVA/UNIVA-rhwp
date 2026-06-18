@@ -27,6 +27,14 @@ pub struct Store {
     conn: Mutex<Connection>,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct OpStashRow {
+    pub seq: i64,
+    pub op_json: String,
+    pub before_blob: Vec<u8>,
+}
+
 impl Store {
     /// sqlite 파일을 열고 스키마를 보장한다. `:memory:` 도 허용.
     pub fn open(path: &str) -> rusqlite::Result<Self> {
@@ -49,6 +57,21 @@ impl Store {
                 seq     INTEGER NOT NULL,
                 blob    BLOB NOT NULL,
                 PRIMARY KEY (file_id, seq)
+             );
+             CREATE TABLE IF NOT EXISTS op_stash (
+                seq         INTEGER NOT NULL,
+                file_id     TEXT NOT NULL,
+                op_json     TEXT NOT NULL,
+                before_blob BLOB NOT NULL,
+                created_at  INTEGER NOT NULL,
+                PRIMARY KEY (file_id, seq)
+             );
+             CREATE INDEX IF NOT EXISTS idx_op_stash_file_seq ON op_stash(file_id, seq);
+             CREATE TABLE IF NOT EXISTS final_snapshots (
+                file_id    TEXT PRIMARY KEY,
+                seq        INTEGER NOT NULL,
+                blob       BLOB NOT NULL,
+                created_at INTEGER NOT NULL
              );",
         )?;
         Ok(Store {
@@ -98,7 +121,129 @@ impl Store {
         Ok(())
     }
 
+    pub fn append_op_stash(
+        &self,
+        file_id: &str,
+        seq: i64,
+        op_json: &str,
+        before_blob: &[u8],
+    ) -> rusqlite::Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO op_stash(seq, file_id, op_json, before_blob, created_at) VALUES (?, ?, ?, ?, ?)",
+            rusqlite::params![seq, file_id, op_json, before_blob, now],
+        )?;
+        // 세션당 100 entry 정책 — 초과 row 제거
+        conn.execute(
+            "DELETE FROM op_stash WHERE file_id = ?1 AND seq IN (
+                SELECT seq FROM op_stash WHERE file_id = ?1 ORDER BY seq DESC LIMIT -1 OFFSET 100
+             )",
+            rusqlite::params![file_id],
+        )?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn pop_op_stash(&self, file_id: &str) -> rusqlite::Result<Option<OpStashRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT seq, op_json, before_blob FROM op_stash WHERE file_id = ?1 ORDER BY seq DESC LIMIT 1",
+        )?;
+        let row_opt = stmt
+            .query_row(rusqlite::params![file_id], |row| {
+                Ok(OpStashRow {
+                    seq: row.get(0)?,
+                    op_json: row.get(1)?,
+                    before_blob: row.get(2)?,
+                })
+            })
+            .optional()?;
+
+        if let Some(row) = &row_opt {
+            conn.execute(
+                "DELETE FROM op_stash WHERE file_id = ?1 AND seq = ?2",
+                rusqlite::params![file_id, row.seq],
+            )?;
+        }
+        Ok(row_opt)
+    }
+
+    #[allow(dead_code)]
+    pub fn count_op_stash(&self, file_id: &str) -> rusqlite::Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM op_stash WHERE file_id = ?1",
+            rusqlite::params![file_id],
+            |row| row.get(0),
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn list_op_stash_range(
+        &self,
+        file_id: &str,
+        seq_from: i64,
+        seq_to: i64,
+    ) -> rusqlite::Result<Vec<OpStashRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT seq, op_json, before_blob FROM op_stash WHERE file_id = ?1 AND seq BETWEEN ?2 AND ?3 ORDER BY seq ASC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![file_id, seq_from, seq_to], |row| {
+            Ok(OpStashRow {
+                seq: row.get(0)?,
+                op_json: row.get(1)?,
+                before_blob: row.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    #[allow(dead_code)]
+    pub fn get_op_stash_by_seq(
+        &self,
+        file_id: &str,
+        seq: i64,
+    ) -> rusqlite::Result<Option<OpStashRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT seq, op_json, before_blob FROM op_stash WHERE file_id = ?1 AND seq = ?2",
+        )?;
+        stmt.query_row(rusqlite::params![file_id, seq], |row| {
+            Ok(OpStashRow {
+                seq: row.get(0)?,
+                op_json: row.get(1)?,
+                before_blob: row.get(2)?,
+            })
+        })
+        .optional()
+    }
+
+    #[allow(dead_code)]
+    pub fn save_final_snapshot(
+        &self,
+        file_id: &str,
+        seq: i64,
+        blob: &[u8],
+    ) -> rusqlite::Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO final_snapshots(file_id, seq, blob, created_at) VALUES (?, ?, ?, ?)",
+            rusqlite::params![file_id, seq, blob, now],
+        )?;
+        Ok(())
+    }
+
     /// 세션 존재 여부.
+    #[allow(dead_code)]
     pub fn exists(&self, file_id: &str) -> rusqlite::Result<bool> {
         let conn = self.conn.lock().unwrap();
         let n: i64 = conn.query_row(
@@ -198,5 +343,56 @@ mod tests {
     fn test_load_missing() {
         let store = Store::open(":memory:").unwrap();
         assert!(store.load("nope").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_op_stash_append_and_pop() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("x.db").to_str().unwrap()).unwrap();
+        store.create_session("file-1", "hwpx", &[]).unwrap();
+
+        store
+            .append_op_stash("file-1", 1, r#"{"op":"insert_text"}"#, b"BLOBA")
+            .unwrap();
+        store
+            .append_op_stash("file-1", 2, r#"{"op":"insert_text"}"#, b"BLOBB")
+            .unwrap();
+
+        let popped = store.pop_op_stash("file-1").unwrap().unwrap();
+        assert_eq!(popped.seq, 2);
+        assert_eq!(popped.before_blob, b"BLOBB");
+
+        let popped2 = store.pop_op_stash("file-1").unwrap().unwrap();
+        assert_eq!(popped2.seq, 1);
+
+        let empty = store.pop_op_stash("file-1").unwrap();
+        assert!(empty.is_none());
+    }
+
+    #[test]
+    fn test_op_stash_100_entry_limit_per_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("x.db").to_str().unwrap()).unwrap();
+        store.create_session("file-A", "hwpx", &[]).unwrap();
+        for i in 1..=105 {
+            store.append_op_stash("file-A", i, r#"{}"#, &[]).unwrap();
+        }
+        let count = store.count_op_stash("file-A").unwrap();
+        assert_eq!(count, 100, "세션당 마지막 100개만 보관");
+    }
+
+    #[test]
+    fn test_op_stash_list_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("x.db").to_str().unwrap()).unwrap();
+        store.create_session("file-2", "hwpx", &[]).unwrap();
+        for i in 1..=10 {
+            let op_json = format!(r#"{{"op":"test","seq":{}}}"#, i);
+            store.append_op_stash("file-2", i, &op_json, &[]).unwrap();
+        }
+        let rows = store.list_op_stash_range("file-2", 3, 7).unwrap();
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0].seq, 3);
+        assert_eq!(rows[4].seq, 7);
     }
 }

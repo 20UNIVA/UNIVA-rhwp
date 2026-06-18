@@ -245,6 +245,25 @@ export class WasmBridge {
     return this.doc?.pageCount() ?? 0;
   }
 
+  /**
+   * 현재 paginate 결과를 page → (sec, para_start, para_end) 묶음으로 반환한다.
+   *
+   * 측정기 격차 우회용 — 서버 native paginator (EmbeddedTextMeasurer) 와 WASM
+   * paginator (Canvas measureText) 가 페이지 경계를 다르게 그릴 때, 브라우저가 자기
+   * 결과를 서버로 *역공급* 해서 ir-slice 가 *사용자가 본 화면* 을 진실로 삼게 만든다.
+   */
+  getPageMap(): { total_pages: number; pages: Array<{ page: number; sec: number; para_start: number; para_end: number }> } {
+    if (!this.doc) return { total_pages: 1, pages: [] };
+    const raw = (this.doc as { getPageMap?: () => string }).getPageMap?.();
+    if (!raw) return { total_pages: this.pageCount, pages: [] };
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('[WasmBridge] getPageMap 파싱 실패:', e);
+      return { total_pages: this.pageCount, pages: [] };
+    }
+  }
+
   getSectionCount(): number {
     return this.doc?.getSectionCount() ?? 0;
   }
@@ -487,6 +506,16 @@ export class WasmBridge {
     return this.doc.mergeParagraph(sec, para);
   }
 
+  insertParagraph(sec: number, para: number): { ok: boolean } {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return JSON.parse(this.doc.insertParagraph(sec, para));
+  }
+
+  deleteParagraph(sec: number, para: number): { ok: boolean } {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return JSON.parse(this.doc.deleteParagraph(sec, para));
+  }
+
   splitParagraphInCell(sec: number, parentPara: number, controlIdx: number, cellIdx: number, cellParaIdx: number, charOffset: number): string {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     return this.doc.splitParagraphInCell(sec, parentPara, controlIdx, cellIdx, cellParaIdx, charOffset);
@@ -715,6 +744,20 @@ export class WasmBridge {
   setCellProperties(sec: number, parentPara: number, controlIdx: number, cellIdx: number, props: Partial<CellProperties>): { ok: boolean } {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     return JSON.parse(this.doc.setCellProperties(sec, parentPara, controlIdx, cellIdx, JSON.stringify(props)));
+  }
+
+  /**
+   * (row, col) 좌표를 `Table.cells` 의 선형 인덱스로 변환한다.
+   *
+   * broadcast 받은 셀 편집 op (set_cell_style / replace_cell_runs /
+   * insert_text_in_cell / delete_range_in_cell) 가 native 호출 전 cell_idx 를
+   * 얻기 위해 사용한다. WASM 측 `DocumentCore::find_cell_idx` 위임.
+   *
+   * 좌표가 부적합하거나 control 이 Table 이 아니면 throw.
+   */
+  findCellIdx(sec: number, tableParaIdx: number, ctrlIdx: number, row: number, col: number): number {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return this.doc.findCellIdx(sec, tableParaIdx, ctrlIdx, row, col);
   }
 
   resizeTableCells(
@@ -1220,6 +1263,19 @@ export class WasmBridge {
   applyParaFormatInCell(sec: number, parentPara: number, controlIdx: number, cellIdx: number, cellParaIdx: number, propsJson: string): string {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     return this.doc.applyParaFormatInCell(sec, parentPara, controlIdx, cellIdx, cellParaIdx, propsJson);
+  }
+
+  replaceRuns(sec: number, para: number, runsJson: string): { ok: boolean } {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return JSON.parse((this.doc as any).replaceRuns(sec, para, runsJson));
+  }
+
+  replaceCellRuns(
+    sec: number, tableParaIdx: number, controlIdx: number,
+    cellIdx: number, cellParaIdx: number, runsJson: string,
+  ): { ok: boolean } {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return JSON.parse((this.doc as any).replaceCellRuns(sec, tableParaIdx, controlIdx, cellIdx, cellParaIdx, runsJson));
   }
 
   /** 머리말/꼬리말 문단의 문단 속성을 조회한다 */

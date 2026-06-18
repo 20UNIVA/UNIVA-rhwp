@@ -236,6 +236,20 @@ export const fileCommands: CommandDef[] = [
     id: 'file:open',
     label: '열기',
     async execute(services) {
+      // SSR + iframe 환경: vfinder picker 흐름이 우선. cross-origin sub frame 자리에서
+      // 브라우저가 showOpenFilePicker 자체를 차단하므로 로컬 폴백이 무의미.
+      if (services.openViaVfinder) {
+        try {
+          const canReplace = await confirmSaveBeforeReplacingDocument(services);
+          if (!canReplace) return;
+          if (await services.openViaVfinder()) {
+            console.log('[file:open] vfinder 진입 트리거 발사');
+            return;
+          }
+        } catch (e) {
+          console.warn('[file:open] vfinder 진입 실패 — 로컬 흐름으로 폴백', e);
+        }
+      }
       try {
         const canReplace = await confirmSaveBeforeReplacingDocument(services);
         if (!canReplace) return;
@@ -281,6 +295,18 @@ export const fileCommands: CommandDef[] = [
     shortcutLabel: 'Ctrl+Shift+S',
     canExecute: (ctx) => ctx.hasDocument,
     async execute(services) {
+      // SSR + iframe 환경: vfinder save-as iframe 흐름이 우선. 미설정·실패면 로컬 폴백.
+      if (services.saveAsViaVfinder) {
+        try {
+          if (await services.saveAsViaVfinder()) {
+            services.documentState.markClean('save');
+            console.log('[file:save-as] vfinder 저장 완료');
+            return;
+          }
+        } catch (e) {
+          console.warn('[file:save-as] vfinder 저장 실패 — 로컬 저장으로 폴백', e);
+        }
+      }
       try {
         const sourceFormat = services.wasm.getSourceFormat();
         const isHwpx = sourceFormat === 'hwpx';

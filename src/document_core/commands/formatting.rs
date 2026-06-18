@@ -13,6 +13,43 @@ use crate::renderer::composer::reflow_line_segs;
 use crate::renderer::page_layout::PageLayoutInfo;
 use crate::renderer::style_resolver::resolve_styles;
 
+/// [Sub-7 v3] props_json 에 `fontName`/`font-name`/`font_name` 광고 키가 있으면
+/// `find_or_create_font_id_native` 로 변환해 `fontId` 키로 재작성한다.
+/// 폰트 키가 없으면 입력 문자열을 그대로 반환 (no-op).
+///
+/// 둘 다 있으면 native `fontId` 가 이김 (광고 키만 제거하고 fontId 는 건드리지 않음).
+pub(crate) fn inject_font_id_if_present(
+    core: &mut DocumentCore,
+    json_in: &str,
+) -> Result<String, HwpError> {
+    let mut v: serde_json::Value = match serde_json::from_str(json_in) {
+        Ok(v) => v,
+        Err(_) => return Ok(json_in.to_string()),
+    };
+    let Some(obj) = v.as_object_mut() else {
+        return Ok(json_in.to_string());
+    };
+
+    // 광고 키 셋 — 어느 하나라도 있으면 추출.
+    let font_name = obj
+        .remove("fontName")
+        .or_else(|| obj.remove("font-name"))
+        .or_else(|| obj.remove("font_name"));
+    let font_name = match font_name {
+        Some(serde_json::Value::String(s)) => s,
+        _ => return Ok(serde_json::to_string(&v).unwrap_or_else(|_| json_in.to_string())),
+    };
+
+    // 이미 native `fontId` 가 명시되어 있으면 그쪽 우선 — 광고 키만 제거하고 끝.
+    if obj.contains_key("fontId") {
+        return Ok(serde_json::to_string(&v).unwrap_or_else(|_| json_in.to_string()));
+    }
+
+    let font_id = core.find_or_create_font_id_native(&font_name);
+    obj.insert("fontId".to_string(), serde_json::json!(font_id));
+    Ok(serde_json::to_string(&v).unwrap_or_else(|_| json_in.to_string()))
+}
+
 impl DocumentCore {
     pub fn get_char_properties_at_native(
         &self,
@@ -907,6 +944,10 @@ impl DocumentCore {
             )));
         }
 
+        // [Sub-7 v3] 광고 키 `fontName` → native `fontId` 변환 (있을 때만).
+        let props_owned = inject_font_id_if_present(self, props_json)?;
+        let props_json = props_owned.as_str();
+
         let mut mods = parse_char_shape_mods(props_json);
         // border/fill JSON이 있으면 BorderFill 생성/재사용하여 border_fill_id 설정
         if json_has_border_keys(props_json) {
@@ -955,6 +996,86 @@ impl DocumentCore {
         Ok("{\"ok\":true}".to_string())
     }
 
+    /// [Sub-7 v2 Fix B] 글자 서식 적용 — *base char_shape_id 를 호출자가 지정*. replace_runs
+    /// 류 (한 paragraph 안에 여러 run 을 순차 삽입) 에서 *직전 run 의 char_shape 가 다음 run 의
+    /// base 로 cascade 되는 사고* 를 막기 위해 사용한다. apply_char_format_native 는
+    /// `char_shape_id_at(start)` 를 base 로 쓰지만, 이 함수는 호출자가 미리 보관한 *paragraph
+    /// 의 원래 default* 를 base 로 받아 매 run 마다 동일한 출발점에서 partial mods 를 적용한다.
+    pub fn apply_char_format_native_with_base(
+        &mut self,
+        sec_idx: usize,
+        para_idx: usize,
+        start_offset: usize,
+        end_offset: usize,
+        base_char_shape_id: u32,
+        props_json: &str,
+    ) -> Result<String, HwpError> {
+        if sec_idx >= self.document.sections.len() {
+            return Err(HwpError::RenderError(format!("구역 {} 범위 초과", sec_idx)));
+        }
+        if para_idx >= self.document.sections[sec_idx].paragraphs.len() {
+            return Err(HwpError::RenderError(format!(
+                "문단 {} 범위 초과",
+                para_idx
+            )));
+        }
+
+        // [Sub-7 v3] 광고 키 `fontName` → native `fontId` 변환 (있을 때만).
+        let props_owned = inject_font_id_if_present(self, props_json)?;
+        let props_json = props_owned.as_str();
+
+        let mut mods = parse_char_shape_mods(props_json);
+        if json_has_border_keys(props_json) {
+            let bf_id = self.create_border_fill_from_json(props_json);
+            mods.border_fill_id = Some(bf_id);
+        }
+
+        let new_id = self.document.find_or_create_char_shape(base_char_shape_id, &mods);
+        self.document.sections[sec_idx].paragraphs[para_idx].apply_char_shape_range(
+            start_offset,
+            end_offset,
+            new_id,
+        );
+
+        // base_size 변경 시 reflow (apply_char_format_native 와 동일 로직)
+        if mods.base_size.is_some() {
+            let styles = resolve_styles(&self.document.doc_info, self.dpi);
+            let section = &self.document.sections[sec_idx];
+            let page_def = &section.section_def.page_def;
+            let column_def = DocumentCore::find_initial_column_def(&section.paragraphs);
+            let layout = PageLayoutInfo::from_page_def(page_def, &column_def, self.dpi);
+            let col_width = layout
+                .column_areas
+                .first()
+                .map(|a| a.width)
+                .unwrap_or(layout.body_area.width);
+            let para_shape_id = self.document.sections[sec_idx].paragraphs[para_idx].para_shape_id;
+            let para_style = styles.para_styles.get(para_shape_id as usize);
+            let margin_left = para_style.map(|s| s.margin_left).unwrap_or(0.0);
+            let margin_right = para_style.map(|s| s.margin_right).unwrap_or(0.0);
+            let available_width = (col_width - margin_left - margin_right).max(1.0);
+            self.document.sections[sec_idx].paragraphs[para_idx]
+                .line_segs
+                .clear();
+            reflow_line_segs(
+                &mut self.document.sections[sec_idx].paragraphs[para_idx],
+                available_width,
+                &styles,
+                self.dpi,
+            );
+        }
+
+        self.document.sections[sec_idx].raw_stream = None;
+        self.rebuild_section(sec_idx);
+        self.event_log.push(DocumentEvent::CharFormatChanged {
+            section: sec_idx,
+            para: para_idx,
+            start: start_offset,
+            end: end_offset,
+        });
+        Ok("{\"ok\":true}".to_string())
+    }
+
     /// 글자 서식 적용 (네이티브) — 셀 내 문단
     pub fn apply_char_format_in_cell_native(
         &mut self,
@@ -967,6 +1088,10 @@ impl DocumentCore {
         end_offset: usize,
         props_json: &str,
     ) -> Result<String, HwpError> {
+        // [Sub-7 v3] 광고 키 `fontName` → native `fontId` 변환 (있을 때만).
+        let props_owned = inject_font_id_if_present(self, props_json)?;
+        let props_json = props_owned.as_str();
+
         let mut mods = parse_char_shape_mods(props_json);
         if json_has_border_keys(props_json) {
             let bf_id = self.create_border_fill_from_json(props_json);
@@ -1027,6 +1152,88 @@ impl DocumentCore {
             reflow_line_segs(cell_para, available_width, &styles, dpi);
 
             // 표 dirty 마킹 — 셀 높이 재계산 필요
+            if let Control::Table(ref mut t) =
+                self.document.sections[sec_idx].paragraphs[parent_para_idx].controls[control_idx]
+            {
+                t.dirty = true;
+            }
+        }
+
+        self.document.sections[sec_idx].raw_stream = None;
+        self.rebuild_section(sec_idx);
+        self.event_log.push(DocumentEvent::CharFormatChanged {
+            section: sec_idx,
+            para: parent_para_idx,
+            start: start_offset,
+            end: end_offset,
+        });
+        Ok("{\"ok\":true}".to_string())
+    }
+
+    /// [Sub-7 v2 Fix B] 글자 서식 적용 — 셀 내 문단, *base char_shape_id 호출자 지정*.
+    /// `replace_cell_runs` 가 직전 run 의 char_shape 를 cascade 하지 않도록, paragraph 의
+    /// 원래 default 를 base 로 받아 매 run partial mods 를 동일 base 에서 합성한다.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_char_format_in_cell_native_with_base(
+        &mut self,
+        sec_idx: usize,
+        parent_para_idx: usize,
+        control_idx: usize,
+        cell_idx: usize,
+        cell_para_idx: usize,
+        start_offset: usize,
+        end_offset: usize,
+        base_char_shape_id: u32,
+        props_json: &str,
+    ) -> Result<String, HwpError> {
+        // [Sub-7 v3] 광고 키 `fontName` → native `fontId` 변환 (있을 때만).
+        let props_owned = inject_font_id_if_present(self, props_json)?;
+        let props_json = props_owned.as_str();
+
+        let mut mods = parse_char_shape_mods(props_json);
+        if json_has_border_keys(props_json) {
+            let bf_id = self.create_border_fill_from_json(props_json);
+            mods.border_fill_id = Some(bf_id);
+        }
+
+        let new_id = self.document.find_or_create_char_shape(base_char_shape_id, &mods);
+
+        let cell_para = self.get_cell_paragraph_mut(
+            sec_idx,
+            parent_para_idx,
+            control_idx,
+            cell_idx,
+            cell_para_idx,
+        )?;
+        cell_para.apply_char_shape_range(start_offset, end_offset, new_id);
+
+        if mods.base_size.is_some() {
+            let dpi = self.dpi;
+            let styles = resolve_styles(&self.document.doc_info, dpi);
+            let section = &self.document.sections[sec_idx];
+            let page_def = &section.section_def.page_def;
+            let column_def = DocumentCore::find_initial_column_def(&section.paragraphs);
+            let layout = PageLayoutInfo::from_page_def(page_def, &column_def, dpi);
+            let col_width = layout
+                .column_areas
+                .first()
+                .map(|a| a.width)
+                .unwrap_or(layout.body_area.width);
+            let cell_para = self.get_cell_paragraph_mut(
+                sec_idx,
+                parent_para_idx,
+                control_idx,
+                cell_idx,
+                cell_para_idx,
+            )?;
+            let para_shape_id = cell_para.para_shape_id;
+            let para_style = styles.para_styles.get(para_shape_id as usize);
+            let margin_left = para_style.map(|s| s.margin_left).unwrap_or(0.0);
+            let margin_right = para_style.map(|s| s.margin_right).unwrap_or(0.0);
+            let available_width = (col_width - margin_left - margin_right).max(1.0);
+            cell_para.line_segs.clear();
+            reflow_line_segs(cell_para, available_width, &styles, dpi);
+
             if let Control::Table(ref mut t) =
                 self.document.sections[sec_idx].paragraphs[parent_para_idx].controls[control_idx]
             {
@@ -1665,5 +1872,56 @@ impl DocumentCore {
             }
         }
         Ok("{\"ok\":true,\"exists\":false}".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// [Sub-7 v3] 광고 키 `fontName` 이 들어오면 native `fontId` 로 변환되고
+    /// 광고 키는 결과 JSON 에서 제거된다.
+    #[test]
+    fn inject_font_id_converts_font_name_alias() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        let out = inject_font_id_if_present(&mut core, r#"{"fontName":"함초롬바탕","bold":true}"#)
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(
+            v.get("fontId").and_then(|x| x.as_i64()).is_some(),
+            "fontId must be injected, got: {}",
+            out
+        );
+        assert!(v.get("fontName").is_none(), "fontName alias must be consumed");
+        assert_eq!(v.get("bold").and_then(|x| x.as_bool()), Some(true));
+    }
+
+    /// 광고 키가 없으면 입력 JSON 그대로 통과 (no-op).
+    #[test]
+    fn inject_font_id_no_op_when_no_font_name() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        let input = r#"{"bold":true,"fontSize":12}"#;
+        let out = inject_font_id_if_present(&mut core, input).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v.get("bold").and_then(|x| x.as_bool()), Some(true));
+        assert_eq!(v.get("fontSize").and_then(|x| x.as_i64()), Some(12));
+        assert!(v.get("fontId").is_none());
+    }
+
+    /// native `fontId` 가 이미 있으면 광고 키만 제거하고 native 값 유지.
+    #[test]
+    fn inject_font_id_native_wins_when_both_present() {
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        let out = inject_font_id_if_present(
+            &mut core,
+            r#"{"fontName":"무시할 폰트","fontId":3}"#,
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v.get("fontId").and_then(|x| x.as_i64()), Some(3));
+        assert!(v.get("fontName").is_none());
     }
 }
