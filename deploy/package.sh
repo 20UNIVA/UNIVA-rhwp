@@ -35,6 +35,18 @@ done
 cp "$ROOT/deploy/run.sh" "$OUT/run.sh"
 chmod +x "$OUT/rhwp-server" "$OUT/run.sh"
 
+# .build-info — VM 안에서 이 패키지가 어느 commit·시점에서 만들어졌는지 한 줄로 확인.
+# 사용: ssh ubuntu@VM "cat /opt/app/rhwp/.build-info"
+{
+    echo "app=rhwp"
+    echo "git_commit=$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "git_short=$(cd "$ROOT" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "git_branch=$(cd "$ROOT" && git branch --show-current 2>/dev/null || echo unknown)"
+    echo "git_dirty=$(cd "$ROOT" && git diff --quiet 2>/dev/null && echo false || echo true)"
+    echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "build_host=$(hostname)"
+} > "$OUT/.build-info"
+
 tar czf "$ROOT/deploy/rhwp-vm-package.tgz" -C "$ROOT/deploy" rhwp-vm-package
 
 echo "패키지 생성:"
