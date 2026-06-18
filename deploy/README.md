@@ -41,7 +41,7 @@ deploy/package.sh      # 산출물을 deploy/rhwp-vm-package/ 로 모으고 .tgz
 ```
 
 산출물:
-- `server/target/release/rhwp-server`
+- `rhwp-server/target/release/rhwp-server`
 - `rhwp-studio/dist/`
 - → `deploy/rhwp-vm-package.tgz` (VM으로 전송할 패키지)
 
@@ -65,11 +65,15 @@ vi .env                                   # UPLOAD_URL/DOWNLOAD_URL/ADDR 등 확
 | `RHWP_SERVER_ADDR` | `0.0.0.0:7710` | bind 주소 |
 | `RHWP_SERVER_DB` | `/var/lib/rhwp/sessions.db` | sqlite 경로(작업 중 세션 영속) |
 | `RHWP_STUDIO_DIR` | `./studio` | studio 정적 자산 경로(설정 시 same-origin 서빙) |
+| `RHWP_ALLOWED_PARENT_ORIGIN` | `https://*.vm.univa-dev.com,https://agent.univa-dev.com` | iframe 부모창 origin 화이트리스트 (콤마/공백 분리). 응답 헤더 `Content-Security-Policy: frame-ancestors {목록}` 으로 박힘 — 매칭 부재 부모창은 브라우저가 iframe 박힘 자체를 차단 |
+| `RHWP_FRAME_ANCESTORS` | `'self' https://agent.example.com` | (선택, BC) raw CSP frame-ancestors 문자열. 박혀 있으면 ALLOWED_PARENT_ORIGIN 보다 우선 |
 | `UPLOAD_URL` | `http://minio-host:25029/upload` | minio 업로드(파일→file_id, file_id 포함 시 덮어쓰기) |
 | `DOWNLOAD_URL` | `http://minio-host:25029/download/{file_id}` | minio 다운로드(`{file_id}` placeholder 필수) |
 | `RUST_LOG` | `rhwp_server=info` | 로그 레벨 |
 
 > `RHWP_STUDIO_DIR` 를 비우면 **API 전용**으로 뜹니다(정적 서빙 끔). 이 경우 studio는 별도 웹서버로 서빙하고 iframe에 `?ssrBase=`로 서버 주소를 넘기면 됩니다(CorsLayer permissive).
+>
+> `RHWP_ALLOWED_PARENT_ORIGIN` 미지정 시 CSP `frame-ancestors` 헤더 자체가 박히지 않아 *모든 origin 에서 iframe 박힘 허용* (기존 permissive 동작). 운영 환경에서는 반드시 채울 것.
 
 ---
 

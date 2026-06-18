@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use rhwp::DocumentCore;
 
@@ -1551,9 +1552,48 @@ async fn main() {
 
     let addr = std::env::var("RHWP_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:7710".to_string());
     let listener = TcpListener::bind(&addr).await.expect("bind 실패");
-    tracing::info!("rhwp-server listening on {addr} (db={db_path})");
 
-    axum::serve(listener, router(state))
-        .await
-        .expect("서버 종료됨");
+    // iframe 부모창 origin 화이트리스트 → CSP frame-ancestors 디렉티브.
+    // 우선순위: RHWP_FRAME_ANCESTORS (raw, BC) > RHWP_ALLOWED_PARENT_ORIGIN (CSV/공백 분리)
+    // 비어 있으면 layer 미적용 (= 기존 permissive 동작 유지).
+    let frame_ancestors = resolve_frame_ancestors();
+    tracing::info!(
+        "rhwp-server listening on {addr} (db={db_path}, frame_ancestors={:?})",
+        frame_ancestors
+    );
+
+    let mut svc = router(state);
+    if let Some(fa) = frame_ancestors {
+        let csp = format!("frame-ancestors {fa}");
+        if let Ok(value) = axum::http::HeaderValue::from_str(&csp) {
+            svc = svc.layer(SetResponseHeaderLayer::if_not_present(
+                axum::http::header::CONTENT_SECURITY_POLICY,
+                value,
+            ));
+        }
+    }
+
+    axum::serve(listener, svc).await.expect("서버 종료됨");
+}
+
+/// `RHWP_ALLOWED_PARENT_ORIGIN` (콤마/공백 분리 CSV) 또는 `RHWP_FRAME_ANCESTORS` (raw CSP)
+/// 를 읽어 CSP `frame-ancestors` 디렉티브로 환산한다. rcode/vfinder 와 동등 패턴.
+fn resolve_frame_ancestors() -> Option<String> {
+    if let Ok(raw) = std::env::var("RHWP_FRAME_ANCESTORS") {
+        let t = raw.trim();
+        if !t.is_empty() {
+            return Some(t.to_string());
+        }
+    }
+    if let Ok(list) = std::env::var("RHWP_ALLOWED_PARENT_ORIGIN") {
+        let tokens: Vec<&str> = list
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !tokens.is_empty() {
+            return Some(tokens.join(" "));
+        }
+    }
+    None
 }

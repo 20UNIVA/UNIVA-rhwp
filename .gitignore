@@ -56,9 +56,27 @@ Thumbs.db
 # .claude/skills/는 프로젝트 종속 Skill (rhwp 바이너리 호출, ingest_schema_v1 사용)이므로 추적
 !.claude/skills/
 
-# 환경변수 (민감 정보)
+# 환경변수 (민감 정보) — *모든 환경 파일·example 템플릿* 모두 commit 금지.
+# 내부 IP·사내 도메인이 example 에 박힐 수 있어 노출 위험. 변수 목록은 deploy/README.md 에서 본다.
+# 새 머신 셋업 시 example 은 별도 보안 채널로 공유한다.
+# .env.docker.example 만 예외 — Docker WASM 빌더 설정(민감정보 없음).
 .env
+.env.local
+.env.dev
+.env.testing
+.env.staging
+.env.prod
+.env.example
+.env.*.example
+!.env.docker.example
 .env.docker
+# rhwp-server 가 생성하는 sqlite 세션 저장소
+rhwp-sessions*.db
+rhwp-sessions*.db-journal
+rhwp-server/.env.local
+# 배포 패키지 산출물 (deploy/build.sh + deploy/package.sh)
+deploy/rhwp-vm-package/
+deploy/rhwp-vm-package.tgz
 
 # E2E 스크린샷
 rhwp-studio/e2e/screenshots/

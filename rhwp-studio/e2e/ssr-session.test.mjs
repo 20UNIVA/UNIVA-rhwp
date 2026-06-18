@@ -18,7 +18,7 @@ import { dirname, resolve } from 'node:path';
 import { runTest, assert, clickEditArea, typeText } from './helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SERVER_BIN = resolve(__dirname, '../../server/target/debug/rhwp-server');
+const SERVER_BIN = resolve(__dirname, '../../rhwp-server/target/debug/rhwp-server');
 const SERVER_PORT = 7720;
 const SERVER_BASE = `http://127.0.0.1:${SERVER_PORT}`;
 const VITE_URL = process.env.VITE_URL || 'http://localhost:7700';

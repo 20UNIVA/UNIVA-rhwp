@@ -5,7 +5,7 @@
 set -e
 PIDFILE="/tmp/rhwp-server-sub2.pid"
 LOGFILE="/tmp/rhwp-server-sub2.log"
-SERVER_DIR="$(cd "$(dirname "$0")/../.." && pwd)/server"
+SERVER_DIR="$(cd "$(dirname "$0")/../.." && pwd)/rhwp-server"
 CARGO="${CARGO:-$HOME/.cargo/bin/cargo}"
 
 case "${1:-}" in

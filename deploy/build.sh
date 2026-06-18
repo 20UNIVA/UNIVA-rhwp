@@ -17,11 +17,11 @@ npm run build
 cd "$ROOT"
 
 echo "==> [3/3] rhwp-server 릴리즈 빌드"
-cd server
+cd rhwp-server
 cargo build --release
 cd "$ROOT"
 
 echo "완료:"
-echo "  - server/target/release/rhwp-server"
+echo "  - rhwp-server/target/release/rhwp-server"
 echo "  - rhwp-studio/dist/"
 echo "다음: deploy/package.sh 로 배포 패키지 생성"

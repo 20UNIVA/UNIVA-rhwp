@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/deploy/rhwp-vm-package"
 
-BIN="$ROOT/server/target/release/rhwp-server"
+BIN="$ROOT/rhwp-server/target/release/rhwp-server"
 DIST="$ROOT/rhwp-studio/dist"
 [ -f "$BIN" ] || { echo "ERROR: $BIN 없음 — deploy/build.sh 먼저 실행"; exit 1; }
 [ -d "$DIST" ] || { echo "ERROR: $DIST 없음 — deploy/build.sh 먼저 실행"; exit 1; }
@@ -13,7 +13,20 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$BIN" "$OUT/rhwp-server"
 cp -r "$DIST" "$OUT/studio"
-cp "$ROOT/deploy/.env.example" "$OUT/.env"
+# 환경 .env — .env.example 은 git ignored. 빌드 머신 로컬에 있다면 복사.
+if [ -f "$ROOT/deploy/.env.example" ]; then
+  cp "$ROOT/deploy/.env.example" "$OUT/.env"
+else
+  echo "WARNING: deploy/.env.example 없음 — 패키지에 .env 미포함 (VM 에서 직접 .env 작성 필요)"
+fi
+# 환경별 .env.*.example — 있는 환경만 복사. 모두 있으면 run.sh dev/testing/staging/prod 모두 가능.
+for env in dev testing staging prod; do
+  if [ -f "$ROOT/deploy/.env.$env.example" ]; then
+    cp "$ROOT/deploy/.env.$env.example" "$OUT/.env.$env.example"
+  fi
+done
+# systemd 유닛 — 있다면 복사 (rdocx 패턴 정합).
+[ -d "$ROOT/deploy/systemd" ] && cp -r "$ROOT/deploy/systemd" "$OUT/systemd"
 cp "$ROOT/deploy/run.sh" "$OUT/run.sh"
 chmod +x "$OUT/rhwp-server" "$OUT/run.sh"
 
