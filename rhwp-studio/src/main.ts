@@ -745,6 +745,13 @@ const commandServices: CommandServices = {
         return true;
       }
     : undefined,
+  // SSR 비활성 + cross-origin iframe (agent VM) 자리에서 *vfinder /api/upload 직호출*
+  // 흐름이 인증에 사용. iframe URL ?user= 그대로 전달.
+  vfinderUserId: SSR_USER_ID,
+  // vfinder studio base — SSR_BASE_URL 과 다른 자리. rhwp-server 의 SSR base 는
+  // `/hwp` 이지만 vfinder 는 `/vfinder` 로 떠 있다. agent 환경 override 가 필요하면
+  // URL `?vfinderBase=` 같은 별 파라미터 도입 검토.
+  vfinderBase: SSR_PARAMS.get('vfinderBase') ?? '/vfinder',
 };
 
 const dispatcher = new CommandDispatcher(registry, commandServices, eventBus);

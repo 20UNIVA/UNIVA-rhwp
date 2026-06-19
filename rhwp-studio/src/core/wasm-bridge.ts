@@ -49,6 +49,15 @@ export class WasmBridge {
   private initialized = false;
   private _fileName = 'document.hwp';
   private _currentFileHandle: FileSystemFileHandleLike | null = null;
+  /**
+   * vfinder 에 저장된 적이 있는 문서의 file_id 보관.
+   *
+   * agent VM iframe + SSR 비활성 환경에서 *vfinder /api/upload 직호출* 흐름이 처음
+   * 저장 (save-as picker 경유) 후 응답의 `file_id` 를 여기 박는다. 다음 `Ctrl+S`
+   * 자리에서는 *별도 picker 없이* file_id 모드 (`?file_id=`) 로 곧장 덮어쓴다.
+   * 문서 교체·새 문서 시 null 로 리셋.
+   */
+  private _vfinderFileId: string | null = null;
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -90,6 +99,7 @@ export class WasmBridge {
       this.doc = null;
     }
     this._currentFileHandle = null;
+    this._vfinderFileId = null;
   }
 
   loadDocument(data: Uint8Array, fileName?: string): DocumentInfo {
@@ -126,6 +136,7 @@ export class WasmBridge {
       }
       this._fileName = 'document.hwp';
       this._currentFileHandle = null;
+      this._vfinderFileId = null;
       throw error;
     }
   }
@@ -178,6 +189,7 @@ export class WasmBridge {
     this.ensureParagraphStableIds();
     this._fileName = '새 문서.hwp';
     this._currentFileHandle = null;
+    this._vfinderFileId = null;
     this.doc.setFileName(this._fileName);
     console.log(`[WasmBridge] 새 문서 생성: ${info.pageCount}페이지`);
     return info;
@@ -197,6 +209,14 @@ export class WasmBridge {
 
   set currentFileHandle(handle: FileSystemFileHandleLike | null) {
     this._currentFileHandle = handle;
+  }
+
+  get vfinderFileId(): string | null {
+    return this._vfinderFileId;
+  }
+
+  set vfinderFileId(id: string | null) {
+    this._vfinderFileId = id;
   }
 
   get isNewDocument(): boolean {
