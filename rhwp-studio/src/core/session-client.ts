@@ -82,6 +82,13 @@ export interface SessionClientOptions {
   onServerEvent?: (ev: ServerEvent) => void;
   /** WS 재연결 백오프 — 기본 [500, 1000, 2000, 5000, 10000] ms */
   reconnectDelaysMs?: number[];
+  /**
+   * URL `?user=` 자리에서 추출된 사용자 식별자. 모든 HTTP 요청의 `X-Rhwp-User` 헤더에
+   * 박힘. 미지정 시 서버 `RHWP_DEFAULT_USER` 환경변수 폴백.
+   *
+   * 브라우저 native WebSocket 은 커스텀 헤더를 못 박는다 — WS 연결 자리는 별도 사안.
+   */
+  userId?: string;
 }
 
 const DEFAULT_BACKOFF = [500, 1000, 2000, 5000, 10000];
@@ -95,6 +102,7 @@ export class SessionClient implements MirrorSink {
   private readonly debounceMs: number;
   private readonly onServerEvent?: (ev: ServerEvent) => void;
   private readonly reconnectDelaysMs: number[];
+  private readonly userId?: string;
 
   // [Sub-6] *이 SessionClient 인스턴스의 고유 식별자*. 서버가 broadcast 페이로드의
   // `origin_client_id` 에 그대로 실어 — 자기 발신을 echo 로 받으면 main.ts 가 skip.
@@ -119,6 +127,7 @@ export class SessionClient implements MirrorSink {
     this.debounceMs = opts.debounceMs ?? 600;
     this.onServerEvent = opts.onServerEvent;
     this.reconnectDelaysMs = opts.reconnectDelaysMs ?? DEFAULT_BACKOFF;
+    this.userId = opts.userId;
   }
 
   /** fileId + 원본 바이트로 서버 세션을 생성/재생성. 이후 WS 연결. */
@@ -128,9 +137,11 @@ export class SessionClient implements MirrorSink {
       format: this.format,
       fileBase64: bytesToBase64(bytes),
     });
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.userId) headers['X-Rhwp-User'] = this.userId;
     const res = await fetch(this.baseUrlHttp + '/sessions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body,
     });
     if (!res.ok) throw new Error(`세션 생성 실패: HTTP ${res.status}`);

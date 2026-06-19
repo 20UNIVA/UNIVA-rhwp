@@ -130,9 +130,11 @@ function schedulePageMapPost(): void {
       total_pages: map.total_pages,
       pages: map.pages,
     });
+    const pmHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (SSR_USER_ID) pmHeaders['X-Rhwp-User'] = SSR_USER_ID;
     fetch(`${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/page-map`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: pmHeaders,
       body,
     }).catch((e) => {
       console.warn('[main] page-map POST 실패:', e);
@@ -157,6 +159,7 @@ function buildSessionClient(fileId: string): SessionClient {
     baseUrl: SSR_BASE_URL,
     fileId,
     format,
+    userId: SSR_USER_ID,
     getSnapshotBytes: () => {
       try {
         return wasm.exportHwpx();
@@ -484,9 +487,11 @@ function attachSsrMirror(fileId: string): void {
 /** 문서 바이트를 서버에 업로드(POST /documents)하여 발급된 fileId를 반환한다. */
 async function ssrUploadNewDocument(bytes: Uint8Array, filename: string): Promise<string | null> {
   try {
+    const docHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (SSR_USER_ID) docHeaders['X-Rhwp-User'] = SSR_USER_ID;
     const res = await fetch(`${SSR_BASE_URL}/documents`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: docHeaders,
       body: JSON.stringify({ filename, fileBase64: ssrBytesToBase64(bytes) }),
     });
     if (!res.ok) {
@@ -503,7 +508,12 @@ async function ssrUploadNewDocument(bytes: Uint8Array, filename: string): Promis
 /** 서버 세션을 메모리에서 해제(DELETE). 영속(sqlite/minio)은 유지된다. */
 async function ssrDeleteSession(fileId: string): Promise<void> {
   try {
-    await fetch(`${SSR_BASE_URL}/sessions/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+    const delHeaders: Record<string, string> = {};
+    if (SSR_USER_ID) delHeaders['X-Rhwp-User'] = SSR_USER_ID;
+    await fetch(`${SSR_BASE_URL}/sessions/${encodeURIComponent(fileId)}`, {
+      method: 'DELETE',
+      headers: delHeaders,
+    });
   } catch {
     /* best-effort */
   }
@@ -536,7 +546,12 @@ async function restoreSsrSessionIfNeeded(): Promise<void> {
   if (!SSR_URL_FILE_ID) return;
   if (SSR_PARAMS.get('url')) return; // `?url=` 우선
   try {
-    const res = await fetch(`${SSR_BASE_URL}/sessions/${encodeURIComponent(SSR_URL_FILE_ID)}/export`);
+    const exportHeaders: Record<string, string> = {};
+    if (SSR_USER_ID) exportHeaders['X-Rhwp-User'] = SSR_USER_ID;
+    const res = await fetch(
+      `${SSR_BASE_URL}/sessions/${encodeURIComponent(SSR_URL_FILE_ID)}/export`,
+      { headers: exportHeaders },
+    );
     if (!res.ok) return; // 세션·저장소에 없음 — 빈 상태 유지
     const bytes = new Uint8Array(await res.arrayBuffer());
     await loadBytes(bytes, SSR_URL_FILE_ID, null, performance.now(), SSR_URL_FILE_ID, true);
@@ -593,9 +608,11 @@ const commandServices: CommandServices = {
         if (!currentSsrFileId) return false;
         // 디바운스 큐에 남은 편집을 먼저 서버에 반영한 뒤 저장.
         await sessionClient?.flushOps();
+        const saveHeaders: Record<string, string> = {};
+        if (SSR_USER_ID) saveHeaders['X-Rhwp-User'] = SSR_USER_ID;
         const res = await fetch(
           `${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/save`,
-          { method: 'POST' },
+          { method: 'POST', headers: saveHeaders },
         );
         if (!res.ok) throw new Error(`save HTTP ${res.status}`);
         return true;
@@ -642,11 +659,13 @@ const commandServices: CommandServices = {
         if (!target) return false;
 
         // 2) /save-as 호출
+        const saveAsHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (SSR_USER_ID) saveAsHeaders['X-Rhwp-User'] = SSR_USER_ID;
         const res = await fetch(
           `${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/save-as`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: saveAsHeaders,
             body: JSON.stringify(target),
           },
         );
