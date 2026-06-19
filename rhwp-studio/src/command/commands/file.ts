@@ -7,6 +7,7 @@ import {
   pickOpenFileHandle,
   readFileFromHandle,
   saveDocumentToFileSystem,
+  isCrossOriginEmbedded,
   type FileSystemFileHandleLike,
   type FileSystemWindowLike,
 } from '@/command/file-system-access';
@@ -55,9 +56,37 @@ export async function saveCurrentDocument(services: CommandServices): Promise<Sa
         console.log('[file:save] SSR 서버 저장 완료');
         return 'saved';
       }
+      // saveToServer 가 false 반환 — 세션 식별자 누락 등. cross-origin iframe
+      // 환경 (agent iframe) 에서는 로컬 다운로드 폴백이 무의미하므로 명확히 안내.
+      if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
+        console.error('[file:save] SSR 서버 저장이 거부됨 (세션 정보 부재)');
+        alert('서버에 저장할 세션 정보가 없어 저장에 실패했습니다.\n페이지를 새로고침해 다시 시도해 주세요.');
+        return 'failed';
+      }
     } catch (e) {
+      // SSR 활성 상태의 *진짜 서버 실패* — agent iframe 환경에선 다운로드 폴백
+      // 의미 없음. top window·same-origin iframe 만 로컬 폴백.
+      if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[file:save] SSR 서버 저장 실패:', msg);
+        alert(`서버 저장에 실패했습니다:\n${msg}`);
+        return 'failed';
+      }
       console.warn('[file:save] 서버 저장 실패 — 로컬 저장으로 폴백', e);
     }
+  } else if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
+    // SSR 비활성 + cross-origin iframe = 환경 결함. 다운로드는 사용자 의도가
+    // 아닌 *agent 측 저장소 반영* 이 의도이므로 명확히 안내하고 종결.
+    console.error(
+      '[file:save] agent iframe 환경인데 SSR 모드가 비활성이라 저장이 불가합니다. ' +
+      'iframe URL 에 ?fileId=... 또는 ?ssr=1 파라미터를 부착해 SSR 모드로 진입해야 합니다.'
+    );
+    alert(
+      '이 환경에서는 저장이 지원되지 않습니다.\n\n' +
+      'agent 화면에서 띄운 경우 iframe URL 에 SSR 파라미터 (?fileId=... 또는 ?ssr=1) 가 ' +
+      '부착되어야 서버에 저장됩니다. agent 운영자에게 문의해 주세요.'
+    );
+    return 'unsupported';
   }
   try {
     const saveName = services.wasm.fileName;
@@ -303,9 +332,27 @@ export const fileCommands: CommandDef[] = [
             console.log('[file:save-as] vfinder 저장 완료');
             return;
           }
+          if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
+            console.error('[file:save-as] vfinder 저장 거부');
+            alert('다른 이름으로 저장이 취소되었거나 실패했습니다.');
+            return;
+          }
         } catch (e) {
+          if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error('[file:save-as] vfinder 저장 실패:', msg);
+            alert(`다른 이름으로 저장에 실패했습니다:\n${msg}`);
+            return;
+          }
           console.warn('[file:save-as] vfinder 저장 실패 — 로컬 저장으로 폴백', e);
         }
+      } else if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
+        console.error('[file:save-as] agent iframe 환경에서 SSR 모드 비활성 — 저장 불가');
+        alert(
+          '이 환경에서는 다른 이름으로 저장이 지원되지 않습니다.\n\n' +
+          'agent iframe URL 에 SSR 파라미터 (?fileId=... 또는 ?ssr=1) 가 부착되어야 합니다.'
+        );
+        return;
       }
       try {
         const sourceFormat = services.wasm.getSourceFormat();

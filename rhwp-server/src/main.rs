@@ -148,6 +148,16 @@ struct CreateDocReq {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateBlankReq {
+    /// 새 문서 파일명. `보고서.hwp` / `초안.hwpx` 등. 확장자가 format 결정에 사용된다.
+    /// 미명시 시 `format` 인자 (또는 기본 `"hwp"`) 로 `document.<ext>` 가 자동 생성.
+    filename: Option<String>,
+    /// `"hwp"` / `"hwpx"`. 미명시 시 filename 확장자로 결정, 그것도 부재면 `"hwp"`.
+    format: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct ExportQuery {
     /// "hwp" | "hwpx". 미지정 시 세션 생성 시 포맷을 따른다.
     fmt: Option<String>,
@@ -423,6 +433,80 @@ async fn create_document(
         .file_id;
 
     // 3) 발급된 file_id로 세션 생성
+    state.store.create_session(&file_id, &format, &bytes)?;
+    let session = Session {
+        core,
+        format,
+        filename,
+        next_seq: 1,
+        user_id,
+    };
+    let info = session_info(&file_id, &session);
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .insert(file_id.clone(), Arc::new(Mutex::new(session)));
+    Ok(Json(info))
+}
+
+/// 빈 hwp/hwpx 문서를 *서버 자체* 가 생성해 외부 저장소에 업로드한다. rhwp-studio 의
+/// "새로 만들기" 흐름과 동등 — Rust core 의 `create_blank_document_native()` 가 메모리
+/// IR 빈 문서를 만들고, 그것을 직렬화해 minio 에 올려 file_id 를 발급받는다. 호출자가
+/// 빈 바이트를 base64 로 보낼 필요 없음 — `filename` (옵션) 과 `format` (옵션) 만 박는다.
+async fn create_blank_document(
+    State(state): State<AppState>,
+    RhwpUser(user_id): RhwpUser,
+    Json(req): Json<CreateBlankReq>,
+) -> Result<Json<SessionInfo>, AppError> {
+    // 1) format 결정: 명시 인자 > filename 확장자 > 기본 "hwp"
+    let format = req
+        .format
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|f| f == "hwp" || f == "hwpx")
+        .or_else(|| {
+            req.filename.as_deref().and_then(|f| {
+                let lower = f.to_lowercase();
+                if lower.ends_with(".hwpx") {
+                    Some("hwpx".to_string())
+                } else if lower.ends_with(".hwp") {
+                    Some("hwp".to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| "hwp".to_string());
+
+    let filename = req
+        .filename
+        .clone()
+        .unwrap_or_else(|| format!("document.{format}"));
+
+    // 2) Rust core 자체 함수로 빈 문서 IR 생성 (studio 의 createBlankDocument 와 동등).
+    let mut core = rhwp::document_core::DocumentCore::new_empty();
+    core.create_blank_document_native()
+        .map_err(|e| AppError::internal(format!("빈 문서 생성 실패: {e}")))?;
+
+    // 3) format 에 따라 hwp / hwpx 직렬화.
+    let doc = core.document();
+    let bytes = match format.as_str() {
+        "hwpx" => rhwp::serializer::serialize_hwpx(doc)
+            .map_err(|e| AppError::internal(format!("hwpx 직렬화 실패: {e:?}")))?,
+        _ => rhwp::serialize_document(doc)
+            .map_err(|e| AppError::internal(format!("hwp 직렬화 실패: {e:?}")))?,
+    };
+
+    // 4) 외부 저장소 upload → file_id 발급.
+    let file_id = state
+        .storage
+        .upload(bytes.clone(), &filename, None, None, false, &user_id)
+        .await
+        .map_err(|e| AppError::internal(format!("저장소 업로드 실패: {e}")))?
+        .file_id;
+
+    // 5) 발급된 file_id 로 세션 생성 (메모리 + sqlite 양쪽).
     state.store.create_session(&file_id, &format, &bytes)?;
     let session = Session {
         core,
@@ -1476,6 +1560,7 @@ fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/sessions", post(create_session))
         .route("/documents", post(create_document))
+        .route("/documents/blank", post(create_blank_document))
         .route("/sessions/:id/ops", post(apply_ops))
         .route("/sessions/:id/snapshot", put(put_snapshot))
         .route("/sessions/:id/ir", get(get_ir))
