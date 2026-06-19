@@ -973,15 +973,21 @@ impl DocumentCore {
             let margin_left = para_style.map(|s| s.margin_left).unwrap_or(0.0);
             let margin_right = para_style.map(|s| s.margin_right).unwrap_or(0.0);
             let available_width = (col_width - margin_left - margin_right).max(1.0);
-            // 원본 LineSeg 무효화 → reflow가 max_font_size에서 새로 계산
-            self.document.sections[sec_idx].paragraphs[para_idx]
-                .line_segs
-                .clear();
+            // reflow_line_segs 는 기존 line_segs[0].vertical_pos 를 *orig 으로 보존* 해
+            // 새 line_segs 의 첫 줄 vpos 를 같은 값으로 시작한다. line_segs.clear() 를
+            // 호출하면 orig=None 이 되어 vpos_start=0 으로 reset 되고, paginate 가
+            // paragraph 를 페이지 본문 시작에 잘못 배치하는 사고가 난다 — replace_runs
+            // 의 font-size 변경 시 paragraph 뒤가 다음 페이지로 밀리는 증상의 직접 원인.
             reflow_line_segs(
                 &mut self.document.sections[sec_idx].paragraphs[para_idx],
                 available_width,
                 &styles,
                 self.dpi,
+            );
+            // paragraph height 변동만큼 같은 구역 뒤 paragraphs 의 vpos 도 보정.
+            crate::renderer::composer::recalculate_section_vpos(
+                &mut self.document.sections[sec_idx].paragraphs,
+                para_idx,
             );
         }
 
@@ -1054,14 +1060,19 @@ impl DocumentCore {
             let margin_left = para_style.map(|s| s.margin_left).unwrap_or(0.0);
             let margin_right = para_style.map(|s| s.margin_right).unwrap_or(0.0);
             let available_width = (col_width - margin_left - margin_right).max(1.0);
-            self.document.sections[sec_idx].paragraphs[para_idx]
-                .line_segs
-                .clear();
+            // line_segs.clear() 를 호출하지 않는다 — reflow_line_segs 는 기존 첫 LineSeg
+            // 의 vertical_pos 를 orig 으로 보존해 vpos 일관성 유지. clear 시 vpos=0
+            // reset → paginate 가 paragraph 위치를 잘못 잡는 사고 (replace_runs 의
+            // font-size 변경 시 paragraph 뒤가 다음 페이지로 밀림) 발생.
             reflow_line_segs(
                 &mut self.document.sections[sec_idx].paragraphs[para_idx],
                 available_width,
                 &styles,
                 self.dpi,
+            );
+            crate::renderer::composer::recalculate_section_vpos(
+                &mut self.document.sections[sec_idx].paragraphs,
+                para_idx,
             );
         }
 
@@ -1148,7 +1159,8 @@ impl DocumentCore {
             let margin_left = para_style.map(|s| s.margin_left).unwrap_or(0.0);
             let margin_right = para_style.map(|s| s.margin_right).unwrap_or(0.0);
             let available_width = (col_width - margin_left - margin_right).max(1.0);
-            cell_para.line_segs.clear();
+            // 셀 paragraph 도 본문과 동일하게 line_segs.clear() 호출 시 vpos 0 으로 reset
+            // 되어 셀 내부 줄 배치가 무너진다. reflow_line_segs 가 orig 보존해서 새로 할당.
             reflow_line_segs(cell_para, available_width, &styles, dpi);
 
             // 표 dirty 마킹 — 셀 높이 재계산 필요
@@ -1231,7 +1243,7 @@ impl DocumentCore {
             let margin_left = para_style.map(|s| s.margin_left).unwrap_or(0.0);
             let margin_right = para_style.map(|s| s.margin_right).unwrap_or(0.0);
             let available_width = (col_width - margin_left - margin_right).max(1.0);
-            cell_para.line_segs.clear();
+            // line_segs.clear() 미호출 — vpos 보존을 위해 reflow_line_segs 만 호출.
             reflow_line_segs(cell_para, available_width, &styles, dpi);
 
             if let Control::Table(ref mut t) =

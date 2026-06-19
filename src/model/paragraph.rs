@@ -491,6 +491,35 @@ impl Paragraph {
         // 6. char_count 갱신
         self.char_count -= actual_count as u32;
 
+        // 7. char_shapes 정규화 — 클램핑 결과 같은 start_pos 에 여러 entry 가 쌓이면
+        //    *마지막 entry* 만 남긴다. 그 다음 연속 동일 id 도 병합 (apply_char_shape_range
+        //    의 병합 규약과 동일 결과). 정규화 하지 않으면 paragraph 전 영역 삭제 후
+        //    insert_text 로 재구성 시 char_shapes 가 누적 (모두 start_pos=0) 되어 IR 직렬화·
+        //    렌더 측정 일관성을 해친다.
+        if self.char_shapes.len() > 1 {
+            let mut deduped: Vec<CharShapeRef> = Vec::with_capacity(self.char_shapes.len());
+            for cs in self.char_shapes.drain(..) {
+                if let Some(last) = deduped.last_mut() {
+                    if last.start_pos == cs.start_pos {
+                        *last = cs;
+                        continue;
+                    }
+                }
+                deduped.push(cs);
+            }
+            // 연속 동일 char_shape_id 병합
+            let mut merged: Vec<CharShapeRef> = Vec::with_capacity(deduped.len());
+            for cs in deduped {
+                if let Some(last) = merged.last() {
+                    if last.char_shape_id == cs.char_shape_id {
+                        continue;
+                    }
+                }
+                merged.push(cs);
+            }
+            self.char_shapes = merged;
+        }
+
         actual_count
     }
 
