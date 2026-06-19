@@ -39,6 +39,19 @@ import {
   resolveRenderProfile,
 } from '@/view/render-backend';
 
+// vm:ready 신호 — VM iframe 마운트 완료를 부모창에 1회 알림.
+// 부모창은 이 신호 도착 전까지 로딩 스피너, 미도착 시 주기적 reload.
+// 데이터 로드는 기다리지 않음 — 정적 셸 표시 시점이면 충분.
+(() => {
+  if (window.parent === window) return;
+  const parentOrigin = new URLSearchParams(location.search).get('parentOrigin') || '*';
+  try {
+    window.parent.postMessage({ type: 'vm:ready' }, parentOrigin);
+  } catch {
+    /* postMessage 실패해도 앱 진행에 영향 없음 — silent */
+  }
+})();
+
 const wasm = new WasmBridge();
 const eventBus = new EventBus();
 const documentState = new DocumentDirtyState(eventBus);
