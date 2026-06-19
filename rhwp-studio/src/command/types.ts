@@ -96,4 +96,17 @@ export interface CommandServices {
    * 기존 로컬 showOpenFilePicker 흐름으로 진행 (cross-origin sub frame 에서는 차단됨).
    */
   openViaVfinder?: () => Promise<boolean>;
+  /**
+   * agent VM 안에서 *vfinder /api/upload 직호출* 흐름의 사용자 식별자.
+   *
+   * iframe URL `?user=<email>` 로 부착된 값. SSR 모드 비활성에서도 cross-origin
+   * iframe 환경에서 *VM 내부 vfinder upload* 인증에 그대로 박힌다 (헤더
+   * `X-Vfinder-User` + 쿼리 `?user=`). 미설정 시 vfinder 서버측 기본 사용자 fallback.
+   */
+  vfinderUserId?: string;
+  /**
+   * vfinder studio base URL. 기본 `/vfinder` (같은 host path proxy).
+   * agent 환경에서 vfinder 가 다른 자리에 떠 있을 때만 override.
+   */
+  vfinderBase?: string;
 }
