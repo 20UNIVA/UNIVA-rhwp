@@ -455,15 +455,19 @@ fn serialize_column_def(cd: &ColumnDef, level: u16, records: &mut Vec<Record>) {
 fn serialize_table(table: &Table, level: u16, records: &mut Vec<Record>) {
     // CTRL_HEADER: raw_ctrl_data는 CommonObjAttr 전체 (attr 포함)
     // Task 271에서 파싱 변경: ctrl_data 전체 = CommonObjAttr
-    records.push(make_ctrl_record(
-        tags::CTRL_TABLE,
-        level,
-        if !table.raw_ctrl_data.is_empty() {
-            &table.raw_ctrl_data
-        } else {
-            &[]
-        },
-    ));
+    //
+    // Task #m600-28 — HWPX parser 자료 (WASM put_snapshot 워크플로우) 는 raw_ctrl_data
+    // 를 비운 채 common 만 채우므로, 빈 자료 박으면 재파싱 시 common 손실 (outer_margin·
+    // size·wrap·tac·vert_rel/horz_rel·page_break 전부 default). raw_ctrl_data 가 비어있을
+    // 때 common 으로부터 합성 박는다.
+    let synthesized_ctrl_data;
+    let ctrl_data: &[u8] = if !table.raw_ctrl_data.is_empty() {
+        &table.raw_ctrl_data
+    } else {
+        synthesized_ctrl_data = build_table_ctrl_data_from_common(table);
+        &synthesized_ctrl_data
+    };
+    records.push(make_ctrl_record(tags::CTRL_TABLE, level, ctrl_data));
 
     // 캡션 (TABLE 이전, level+1)
     if let Some(ref caption) = table.caption {
@@ -482,6 +486,21 @@ fn serialize_table(table: &Table, level: u16, records: &mut Vec<Record>) {
     for cell in &table.cells {
         serialize_cell(cell, level + 1, records);
     }
+}
+
+/// HWPX parser 자료 입력처럼 `table.raw_ctrl_data` 가 비어있는 경우 common 자료로부터
+/// CTRL_HEADER ctrl_data 를 합성한다 (Task #m600-28). HWPX parser 가 `common.margin` 을
+/// 채우지 않고 `table.outer_margin_*` 만 채우므로, base 자료의 margin 자리 (offset 24..32)
+/// 를 명시적으로 덮어쓴다.
+fn build_table_ctrl_data_from_common(table: &Table) -> Vec<u8> {
+    let mut data = serialize_common_obj_attr(&table.common);
+    if data.len() >= 32 {
+        data[24..26].copy_from_slice(&table.outer_margin_left.to_le_bytes());
+        data[26..28].copy_from_slice(&table.outer_margin_right.to_le_bytes());
+        data[28..30].copy_from_slice(&table.outer_margin_top.to_le_bytes());
+        data[30..32].copy_from_slice(&table.outer_margin_bottom.to_le_bytes());
+    }
+    data
 }
 
 fn serialize_table_record(table: &Table) -> Vec<u8> {
