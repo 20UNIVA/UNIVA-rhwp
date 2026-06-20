@@ -278,23 +278,79 @@ fn write_sub_list<W: Write>(
         write_cell_text(w, &para.text)?;
         end_tag(w, "hp:run")?;
 
-        // <hp:linesegarray> 최소 1개 lineseg
+        // <hp:linesegarray> — para.line_segs IR 그대로 직렬화 (Task #m600-25 fix).
+        // 종전 자료가 *cell paragraph 의 line_segs 자료를 무시하고 단일 정적 lineseg
+        // (vertsize=1000, spacing=600) 하드코딩*해 클라 새로고침 시 paginate 깨짐.
+        //
+        // 추가 자료 (Task #m600-25 cycle 2): HWP5 의 *1 lineseg per paragraph* 규약이
+        // HWPX *LinesegTextRunReflow* 비표준으로 검출되어 클라 reflow auto-fix 가 cell
+        // 서식·border 자료에 부수효과. 셀 폭 기반 reflow_line_segs 호출 결과 자료를
+        // HWPX 정합 line_segs 자료로 직렬화. paragraph 자료 자체는 mutate 안 함 (clone).
+        let reflowed_segs: Vec<crate::model::paragraph::LineSeg> =
+            if !para.text.is_empty() && para.line_segs.len() <= 1 {
+                if let Some(styles) = &ctx.resolved_styles {
+                    let mut p = para.clone();
+                    let available_px = (cell.width as f64) * ctx.dpi / 7200.0;
+                    crate::renderer::composer::reflow_line_segs(
+                        &mut p,
+                        available_px,
+                        styles,
+                        ctx.dpi,
+                    );
+                    p.line_segs
+                } else {
+                    para.line_segs.clone()
+                }
+            } else {
+                para.line_segs.clone()
+            };
+
         start_tag(w, "hp:linesegarray")?;
-        empty_tag(
-            w,
-            "hp:lineseg",
-            &[
-                ("textpos", "0"),
-                ("vertpos", "0"),
-                ("vertsize", "1000"),
-                ("textheight", "1000"),
-                ("baseline", "850"),
-                ("spacing", "600"),
-                ("horzpos", "0"),
-                ("horzsize", "12964"),
-                ("flags", "393216"),
-            ],
-        )?;
+        if !reflowed_segs.is_empty() {
+            for seg in &reflowed_segs {
+                let textpos = seg.text_start.to_string();
+                let vertpos = seg.vertical_pos.to_string();
+                let vertsize = seg.line_height.to_string();
+                let textheight = seg.text_height.to_string();
+                let baseline = seg.baseline_distance.to_string();
+                let spacing = seg.line_spacing.to_string();
+                let horzpos = seg.column_start.to_string();
+                let horzsize = seg.segment_width.to_string();
+                let flags = seg.tag.to_string();
+                empty_tag(
+                    w,
+                    "hp:lineseg",
+                    &[
+                        ("textpos", &textpos),
+                        ("vertpos", &vertpos),
+                        ("vertsize", &vertsize),
+                        ("textheight", &textheight),
+                        ("baseline", &baseline),
+                        ("spacing", &spacing),
+                        ("horzpos", &horzpos),
+                        ("horzsize", &horzsize),
+                        ("flags", &flags),
+                    ],
+                )?;
+            }
+        } else {
+            // line_segs 비어 있는 자리만 fallback (Document::default() 등).
+            empty_tag(
+                w,
+                "hp:lineseg",
+                &[
+                    ("textpos", "0"),
+                    ("vertpos", "0"),
+                    ("vertsize", "1000"),
+                    ("textheight", "1000"),
+                    ("baseline", "850"),
+                    ("spacing", "600"),
+                    ("horzpos", "0"),
+                    ("horzsize", "12964"),
+                    ("flags", "393216"),
+                ],
+            )?;
+        }
         end_tag(w, "hp:linesegarray")?;
 
         end_tag(w, "hp:p")?;
