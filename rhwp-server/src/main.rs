@@ -1002,12 +1002,17 @@ async fn workbench(
             }
             let payload: Payload = serde_json::from_value(req.payload.clone())
                 .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
-            // [4-4 fix] cell_idx 미리 변환해 broadcast 페이로드에 포함 — 클라 재계산 제거.
-            let cell_idx = {
+            // [4-4 fix] cell_idx + ctrl_idx 미리 변환해 broadcast 페이로드에 포함 — 클라 재계산 제거.
+            // ctrl_idx 는 paragraph 첫 Table 위치 (section_def/column_def 가 앞에 동거할 때 0 이 아님).
+            let (cell_idx, ctrl_idx) = {
                 let s = session.lock().unwrap();
-                s.core
-                    .find_cell_idx(payload.section, payload.table_para, 0, payload.row as u16, payload.col as u16)
-                    .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?
+                let ctrl = s.core
+                    .find_table_ctrl_idx(payload.section, payload.table_para)
+                    .map_err(|e| AppError::unprocessable(format!("find_table_ctrl_idx: {e}")))?;
+                let cell = s.core
+                    .find_cell_idx(payload.section, payload.table_para, ctrl, payload.row as u16, payload.col as u16)
+                    .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?;
+                (cell, ctrl)
             };
             let op = rhwp::document_core::EditOperation::SetCellStyle {
                 section: payload.section,
@@ -1015,6 +1020,7 @@ async fn workbench(
                 row: payload.row,
                 col: payload.col,
                 cell_idx: Some(cell_idx),
+                ctrl_idx: Some(ctrl_idx),
                 style: payload.style,
             };
             let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
@@ -1037,6 +1043,12 @@ async fn workbench(
             }
             let payload: Payload = serde_json::from_value(req.payload.clone())
                 .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let ctrl_idx = {
+                let s = session.lock().unwrap();
+                s.core
+                    .find_table_ctrl_idx(payload.section, payload.table_para)
+                    .map_err(|e| AppError::unprocessable(format!("find_table_ctrl_idx: {e}")))?
+            };
             let op = rhwp::document_core::EditOperation::MergeCells {
                 section: payload.section,
                 table_para: payload.table_para,
@@ -1044,6 +1056,7 @@ async fn workbench(
                 col_start: payload.col_start,
                 row_end: payload.row_end,
                 col_end: payload.col_end,
+                ctrl_idx: Some(ctrl_idx),
             };
             let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {
@@ -1065,12 +1078,16 @@ async fn workbench(
             }
             let payload: Payload = serde_json::from_value(req.payload.clone())
                 .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
-            // [4-4 fix] cell_idx 미리 변환해 broadcast 페이로드에 포함.
-            let cell_idx = {
+            // [4-4 fix] cell_idx + ctrl_idx 미리 변환해 broadcast 페이로드에 포함.
+            let (cell_idx, ctrl_idx) = {
                 let s = session.lock().unwrap();
-                s.core
-                    .find_cell_idx(payload.section, payload.table_para, 0, payload.row as u16, payload.col as u16)
-                    .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?
+                let ctrl = s.core
+                    .find_table_ctrl_idx(payload.section, payload.table_para)
+                    .map_err(|e| AppError::unprocessable(format!("find_table_ctrl_idx: {e}")))?;
+                let cell = s.core
+                    .find_cell_idx(payload.section, payload.table_para, ctrl, payload.row as u16, payload.col as u16)
+                    .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?;
+                (cell, ctrl)
             };
             let op = rhwp::document_core::EditOperation::ReplaceCellRuns {
                 section: payload.section,
@@ -1078,6 +1095,7 @@ async fn workbench(
                 row: payload.row,
                 col: payload.col,
                 cell_idx: Some(cell_idx),
+                ctrl_idx: Some(ctrl_idx),
                 cell_para: payload.cell_para,
                 runs: payload.runs,
             };
@@ -1104,12 +1122,16 @@ async fn workbench(
             }
             let payload: Payload = serde_json::from_value(req.payload.clone())
                 .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
-            // [4-4 fix] cell_idx 미리 변환해 broadcast 페이로드에 포함.
-            let cell_idx = {
+            // [4-4 fix] cell_idx + ctrl_idx 미리 변환해 broadcast 페이로드에 포함.
+            let (cell_idx, ctrl_idx) = {
                 let s = session.lock().unwrap();
-                s.core
-                    .find_cell_idx(payload.section, payload.table_para, 0, payload.row as u16, payload.col as u16)
-                    .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?
+                let ctrl = s.core
+                    .find_table_ctrl_idx(payload.section, payload.table_para)
+                    .map_err(|e| AppError::unprocessable(format!("find_table_ctrl_idx: {e}")))?;
+                let cell = s.core
+                    .find_cell_idx(payload.section, payload.table_para, ctrl, payload.row as u16, payload.col as u16)
+                    .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?;
+                (cell, ctrl)
             };
             let op = rhwp::document_core::EditOperation::InsertTextInCell {
                 section: payload.section,
@@ -1117,6 +1139,7 @@ async fn workbench(
                 row: payload.row,
                 col: payload.col,
                 cell_idx: Some(cell_idx),
+                ctrl_idx: Some(ctrl_idx),
                 cell_para: payload.cell_para,
                 offset: payload.offset,
                 text: payload.text,
@@ -1144,12 +1167,16 @@ async fn workbench(
             }
             let payload: Payload = serde_json::from_value(req.payload.clone())
                 .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
-            // [4-4 fix] cell_idx 미리 변환해 broadcast 페이로드에 포함.
-            let cell_idx = {
+            // [4-4 fix] cell_idx + ctrl_idx 미리 변환해 broadcast 페이로드에 포함.
+            let (cell_idx, ctrl_idx) = {
                 let s = session.lock().unwrap();
-                s.core
-                    .find_cell_idx(payload.section, payload.table_para, 0, payload.row as u16, payload.col as u16)
-                    .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?
+                let ctrl = s.core
+                    .find_table_ctrl_idx(payload.section, payload.table_para)
+                    .map_err(|e| AppError::unprocessable(format!("find_table_ctrl_idx: {e}")))?;
+                let cell = s.core
+                    .find_cell_idx(payload.section, payload.table_para, ctrl, payload.row as u16, payload.col as u16)
+                    .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?;
+                (cell, ctrl)
             };
             let op = rhwp::document_core::EditOperation::DeleteRangeInCell {
                 section: payload.section,
@@ -1157,6 +1184,7 @@ async fn workbench(
                 row: payload.row,
                 col: payload.col,
                 cell_idx: Some(cell_idx),
+                ctrl_idx: Some(ctrl_idx),
                 cell_para_start: payload.cell_para_start,
                 char_start: payload.char_start,
                 cell_para_end: payload.cell_para_end,

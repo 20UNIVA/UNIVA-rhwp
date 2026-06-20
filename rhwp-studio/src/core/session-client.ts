@@ -60,6 +60,9 @@ interface EditOpJson {
   // [4-4 fix] 서버가 broadcast 전에 (row, col) → cell_idx 변환 결과를 채워 보냄.
   // 클라는 우선 사용 (없으면 wasm.findCellIdx fallback). 다중 사용자 race 회피.
   cell_idx?: number;
+  // paragraph 안 Table control 위치 (section_def + column_def 가 앞에 박힐 때 0 아님).
+  // 서버 broadcast 자리 (row, col) → cell_idx 변환과 함께 ctrl_idx 도 함께 보냄.
+  ctrl_idx?: number;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
