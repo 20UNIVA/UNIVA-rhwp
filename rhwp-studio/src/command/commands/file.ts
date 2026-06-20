@@ -1,4 +1,4 @@
-import type { CommandDef, CommandServices } from '../types';
+import type { CommandDef, CommandServices, SaveAsTarget } from '../types';
 import { PageSetupDialog } from '@/ui/page-setup-dialog';
 import { AboutDialog } from '@/ui/about-dialog';
 import { showSaveAs } from '@/ui/save-as-dialog';
@@ -12,7 +12,7 @@ import {
   type FileSystemWindowLike,
 } from '@/command/file-system-access';
 import { uploadToVfinder } from '@/command/vfinder-upload';
-import { mountVfinderModal, type SaveAsResult } from '@/view/vfinder-modal';
+import { mountVfinderModal } from '@/view/vfinder-modal';
 
 /** [Task #833] 사용자 명시 cancel 에러 검출.
  * - AbortError: showSaveFilePicker / showOpenFilePicker 다이얼로그 취소
@@ -50,36 +50,29 @@ function hwpSaveCurrentHandle(
 export type SaveCurrentDocumentResult = 'saved' | 'cancelled' | 'failed' | 'unsupported';
 
 /**
- * vfinder save-as picker iframe modal 을 띄워 사용자가 *부모 폴더 + 파일명 + 덮어쓰기*
- * 를 고르게 한다. 사용자가 취소 또는 시간 초과 시 null.
+ * vfinder save-as picker iframe modal 자리. *picker 한 번만* 띄우고 결과 반환.
  *
- * 본 helper 는 *agent VM iframe + SSR 비활성* 환경에서 [saveCurrentDocument] /
- * `file:save-as` 두 곳이 공유.
+ * `services.pickVfinderSaveAsTarget` 가 설정된 자리 (SSR 모드 + non-SSR 양쪽 모두
+ * main.ts 에서 정의) 자리 그쪽 위임. 미설정 자리 (e2e/스탠드얼론) 로컬 inline 호출.
  */
-async function pickVfinderSaveAs(
+async function pickSaveAsTarget(
+  services: CommandServices,
   suggestedName: string,
-  vfinderBase: string | undefined,
-  userId: string | undefined,
-): Promise<SaveAsResult | null> {
-  return await new Promise<SaveAsResult | null>((resolve) => {
+): Promise<SaveAsTarget | null> {
+  if (services.pickVfinderSaveAsTarget) {
+    return await services.pickVfinderSaveAsTarget(suggestedName);
+  }
+  // fallback inline — services 미설정 자리.
+  return await new Promise<SaveAsTarget | null>((resolve) => {
     let settled = false;
     const handle = mountVfinderModal({
       mode: 'save-as',
       suggestedName,
-      vfinderBase,
-      userId,
-      onSaveAs: (result) => {
-        if (settled) return;
-        settled = true;
-        resolve(result);
-      },
-      onCancel: () => {
-        if (settled) return;
-        settled = true;
-        resolve(null);
-      },
+      vfinderBase: services.vfinderBase,
+      userId: services.vfinderUserId,
+      onSaveAs: (r) => { if (settled) return; settled = true; resolve(r); },
+      onCancel: () => { if (settled) return; settled = true; resolve(null); },
     });
-    // 5 분 timeout — modal 을 열어둔 채 사용자가 잊었을 자리.
     window.setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -90,19 +83,18 @@ async function pickVfinderSaveAs(
 }
 
 /**
- * agent VM 안 *vfinder /api/upload 직호출* 저장.
+ * 현재 문서 blob 을 vfinder `/api/upload` 자리 직호출. *target 이 있으면 path 모드*
+ * (신규/덮어쓰기), *없으면 file_id 모드* (재저장).
  *
- * - 기존 file_id 보유 시 (직전 저장 또는 SSR fileId 진입) *file_id 모드* 로 자동 덮어쓰기.
- * - 미보유 시 vfinder save-as picker 를 띄워 path/name 받고 *path 모드* 로 신규/덮어쓰기.
+ * 본 helper 가 *picker 를 안 띄움* 이 핵심 — caller (file.ts) 가 picker 결과를
+ * 미리 받아 본 함수에 *그대로 전달*. 그러면 *picker 가 두 번 뜨는* 사고가 원천 차단.
  *
- * 반환:
- *  - 'saved'     — vfinder 에 저장 완료, file_id 보관
- *  - 'cancelled' — picker 취소
- *  - 'failed'    — fetch/HTTP 실패 (alert 동반)
+ * 성공 자리 result.fileId 를 `WasmBridge.vfinderFileId` 자리 박음 — 다음 Ctrl+S 자리
+ * 곧장 file_id 모드 덮어쓰기.
  */
-async function saveCurrentDocumentViaVfinder(
+async function uploadCurrentDocumentToVfinder(
   services: CommandServices,
-  forceSaveAs: boolean,
+  target: SaveAsTarget | null,
 ): Promise<SaveCurrentDocumentResult> {
   const sourceFormat = services.wasm.getSourceFormat();
   if (sourceFormat === 'hwpx') {
@@ -114,41 +106,38 @@ async function saveCurrentDocumentViaVfinder(
   const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/x-hwp' });
   const fileName = hwpSaveFileName(services.wasm.fileName);
 
-  // 첫 저장 또는 *다른 이름으로 저장* — picker 경로.
-  // 재저장 (file_id 보유 + Ctrl+S) — picker 우회, 곧장 덮어쓰기.
-  const existingFileId = forceSaveAs ? null : services.wasm.vfinderFileId;
-
   try {
-    if (existingFileId) {
+    if (target) {
+      // path 모드 (신규/덮어쓰기) — picker 결과 그대로.
       const result = await uploadToVfinder({
         blob,
-        fileName,
+        fileName: target.name,
         vfinderBase: services.vfinderBase,
         userId: services.vfinderUserId,
-        fileId: existingFileId,
+        path: target.path,
+        overwrite: target.overwrite,
       });
+      if (result.fileId) services.wasm.vfinderFileId = result.fileId;
+      services.wasm.fileName = result.name;
       services.documentState.markClean('save');
-      console.log(`[file:save] vfinder 덮어쓰기 완료: ${result.path} (${(bytes.length / 1024).toFixed(1)}KB)`);
+      console.log(`[file:save] vfinder 저장 완료: ${result.path} (${(bytes.length / 1024).toFixed(1)}KB)`);
       return 'saved';
     }
-
-    const target = await pickVfinderSaveAs(fileName, services.vfinderBase, services.vfinderUserId);
-    if (!target) return 'cancelled';
-
+    // file_id 모드 (재저장) — vfinderFileId 보유 가정.
+    const fileId = services.wasm.vfinderFileId;
+    if (!fileId) {
+      console.error('[file:save] file_id 모드 호출 — vfinderFileId 부재');
+      return 'failed';
+    }
     const result = await uploadToVfinder({
       blob,
-      fileName: target.name,
+      fileName,
       vfinderBase: services.vfinderBase,
       userId: services.vfinderUserId,
-      path: target.path,
-      overwrite: target.overwrite,
+      fileId,
     });
-    if (result.fileId) {
-      services.wasm.vfinderFileId = result.fileId;
-    }
-    services.wasm.fileName = result.name;
     services.documentState.markClean('save');
-    console.log(`[file:save] vfinder 저장 완료: ${result.path} (${(bytes.length / 1024).toFixed(1)}KB)`);
+    console.log(`[file:save] vfinder 덮어쓰기 완료: ${result.path} (${(bytes.length / 1024).toFixed(1)}KB)`);
     return 'saved';
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -156,6 +145,29 @@ async function saveCurrentDocumentViaVfinder(
     alert(`저장에 실패했습니다:\n${msg}`);
     return 'failed';
   }
+}
+
+/**
+ * agent VM iframe 자리 `Ctrl+S` 흐름 — *picker 한 번 또는 없음*.
+ *
+ * - vfinderFileId 보유 자리: picker 없이 곧장 file_id 모드 덮어쓰기 (재저장).
+ * - 미보유 자리: picker 한 번 → path 모드 신규/덮어쓰기.
+ *
+ * `Ctrl+Shift+S` (다른 이름으로 저장) 흐름은 본 함수를 *안 부르고* file:save-as
+ * execute 자리 직접 `pickSaveAsTarget` + `uploadCurrentDocumentToVfinder(target)` 자리
+ * 조합 — server forward 시도 자리 *같은 target 재활용* 자리 위함.
+ */
+async function saveCurrentDocumentViaVfinder(
+  services: CommandServices,
+): Promise<SaveCurrentDocumentResult> {
+  if (services.wasm.vfinderFileId) {
+    // 재저장 — picker 없음.
+    return await uploadCurrentDocumentToVfinder(services, null);
+  }
+  // 첫 저장 — picker 한 번.
+  const target = await pickSaveAsTarget(services, hwpSaveFileName(services.wasm.fileName));
+  if (!target) return 'cancelled';
+  return await uploadCurrentDocumentToVfinder(services, target);
 }
 
 export async function saveCurrentDocument(services: CommandServices): Promise<SaveCurrentDocumentResult> {
@@ -167,28 +179,27 @@ export async function saveCurrentDocument(services: CommandServices): Promise<Sa
         console.log('[file:save] SSR 서버 저장 완료');
         return 'saved';
       }
-      // saveToServer 가 false 반환 — 세션 식별자 누락 등. cross-origin iframe
-      // 환경 (agent iframe) 에서는 로컬 다운로드 폴백이 무의미하므로 명확히 안내.
+      // saveToServer 가 false 반환 — 세션 식별자 누락 등. agent iframe 환경이면
+      // *vfinder 직호출 흐름* 으로 자동 fallback (사용자가 저장 결과를 보게).
       if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
-        console.error('[file:save] SSR 서버 저장이 거부됨 (세션 정보 부재)');
-        alert('서버에 저장할 세션 정보가 없어 저장에 실패했습니다.\n페이지를 새로고침해 다시 시도해 주세요.');
-        return 'failed';
+        console.warn('[file:save] SSR 서버 저장 거부 — vfinder 직호출로 fallback');
+        return await saveCurrentDocumentViaVfinder(services);
       }
     } catch (e) {
-      // SSR 활성 상태의 *진짜 서버 실패* — agent iframe 환경에선 다운로드 폴백
-      // 의미 없음. top window·same-origin iframe 만 로컬 폴백.
+      // SSR 활성 상태의 *진짜 서버 실패* (502·timeout 등). agent iframe 환경이면
+      // 다운로드 폴백 의미 없음 — *vfinder 직호출* 로 자동 fallback. top window·
+      // same-origin iframe 만 로컬 폴백.
       if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.error('[file:save] SSR 서버 저장 실패:', msg);
-        alert(`서버 저장에 실패했습니다:\n${msg}`);
-        return 'failed';
+        console.warn(`[file:save] SSR 서버 저장 실패 (${msg}) — vfinder 직호출로 fallback`);
+        return await saveCurrentDocumentViaVfinder(services);
       }
       console.warn('[file:save] 서버 저장 실패 — 로컬 저장으로 폴백', e);
     }
   } else if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
     // SSR 비활성 + cross-origin iframe (agent VM iframe). agent host 의 SSR 파라미터
     // 부착에 의존하지 않고 *VM 내부 vfinder /api/upload 직호출* 흐름으로 저장.
-    return await saveCurrentDocumentViaVfinder(services, false);
+    return await saveCurrentDocumentViaVfinder(services);
   }
   try {
     const saveName = services.wasm.fileName;
@@ -426,7 +437,38 @@ export const fileCommands: CommandDef[] = [
     shortcutLabel: 'Ctrl+Shift+S',
     canExecute: (ctx) => ctx.hasDocument,
     async execute(services) {
-      // SSR + iframe 환경: vfinder save-as iframe 흐름이 우선. 미설정·실패면 로컬 폴백.
+      // cross-origin iframe (agent VM) 자리 — picker 가 *정확히 한 번* 만 뜨도록
+      // picker 호출 과 저장 위임 을 명시적으로 분리:
+      //   1) pickSaveAsTarget → SaveAsTarget 받음 (한 번)
+      //   2) SSR 활성 자리 server-side `/save-as` forward 시도
+      //   3) server-side 실패 (false·throw) 자리 *같은 target* 으로 vfinder direct upload
+      //
+      // SSR 비활성 자리 (2) 건너뛰고 곧장 (3). 어느 경로든 picker 두 번 안 뜸.
+      if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
+        const suggested = hwpSaveFileName(services.wasm.fileName);
+        const target = await pickSaveAsTarget(services, suggested);
+        if (!target) return; // 사용자 취소
+
+        // (2) SSR 활성 자리 server-side forward
+        if (services.forwardSaveAsToServer) {
+          try {
+            if (await services.forwardSaveAsToServer(target)) {
+              services.documentState.markClean('save');
+              console.log('[file:save-as] server-side 저장 완료');
+              return;
+            }
+            console.warn('[file:save-as] server-side 거부 — vfinder 직호출로 fallback');
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.warn(`[file:save-as] server-side 실패 (${msg}) — vfinder 직호출로 fallback`);
+          }
+        }
+
+        // (3) client direct vfinder upload — picker 결과 그대로 재활용
+        await uploadCurrentDocumentToVfinder(services, target);
+        return;
+      }
+      // top window / same-origin iframe 자리 — SSR 활성이면 server forward 흐름 우선.
       if (services.saveAsViaVfinder) {
         try {
           if (await services.saveAsViaVfinder()) {
@@ -434,24 +476,9 @@ export const fileCommands: CommandDef[] = [
             console.log('[file:save-as] vfinder 저장 완료');
             return;
           }
-          if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
-            console.error('[file:save-as] vfinder 저장 거부');
-            alert('다른 이름으로 저장이 취소되었거나 실패했습니다.');
-            return;
-          }
         } catch (e) {
-          if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
-            const msg = e instanceof Error ? e.message : String(e);
-            console.error('[file:save-as] vfinder 저장 실패:', msg);
-            alert(`다른 이름으로 저장에 실패했습니다:\n${msg}`);
-            return;
-          }
           console.warn('[file:save-as] vfinder 저장 실패 — 로컬 저장으로 폴백', e);
         }
-      } else if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
-        // agent VM iframe + SSR 비활성 — vfinder /api/upload 직호출 흐름으로 *다른 이름으로 저장*.
-        await saveCurrentDocumentViaVfinder(services, /*forceSaveAs*/ true);
-        return;
       }
       try {
         const sourceFormat = services.wasm.getSourceFormat();

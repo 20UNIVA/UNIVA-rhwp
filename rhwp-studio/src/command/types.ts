@@ -55,6 +55,19 @@ export interface CommandDef {
   execute: (services: CommandServices, params?: Record<string, unknown>) => void;
 }
 
+/**
+ * vfinder save-as picker 결과 — `{path, name, overwrite}` 한 묶음. server forward
+ * 와 client direct upload 양쪽이 *같은 target* 으로 갈 수 있게 picker 책임을 분리한 자리.
+ */
+export interface SaveAsTarget {
+  /** 부모 폴더 경로 (root 기준). */
+  path: string;
+  /** 파일명 (확장자 포함). */
+  name: string;
+  /** 동일 이름 자리 덮어쓰기 선택 여부. */
+  overwrite: boolean;
+}
+
 /** 커맨드 execute()에 주입되는 서비스 */
 export interface CommandServices {
   eventBus: EventBus;
@@ -73,17 +86,29 @@ export interface CommandServices {
    */
   saveToServer?: () => Promise<boolean>;
   /**
-   * vfinder iframe 흐름으로 *다른 이름으로 저장*.
+   * vfinder iframe 흐름으로 *다른 이름으로 저장* (호환 유지 — file.ts 는 이제
+   * `pickVfinderSaveAsTarget` + `forwardSaveAsToServer` 두 함수를 *직접* 조합해서
+   * picker 가 한 번만 뜨도록 흐름을 통합한다. 본 메서드는 외부 e2e/툴 호환 위해 유지).
    *
-   * 동작: 부모창에 `rhwp:save-as-request` postMessage 발사 → 부모창이 vfinder save-as
-   * iframe 띄움 → 사용자가 폴더·이름 고르면 부모창이 `rhwp:save-as-target` 으로 forward
-   * → 그 인자로 `POST /sessions/:id/save-as` 호출 → 응답의 새 fileId 로 URL 갱신 +
-   * 부모창에 `rhwp:saved-as` 발사.
-   *
-   * 반환 true = 성공 (사용자가 저장 완료). false = 취소·실패. 미설정이면 기존 로컬
-   * file system access 흐름으로 진행.
+   * 반환 true = 성공. false = 취소·실패.
    */
   saveAsViaVfinder?: () => Promise<boolean>;
+  /**
+   * vfinder save-as picker iframe 만 띄워 *target* 만 반환. server forward 또는 client
+   * direct vfinder upload 어느 쪽으로 갈지는 caller (file.ts) 가 결정한다 — picker 가
+   * 한 번만 뜨도록 *picker 책임* 과 *저장 책임* 을 분리한 결과.
+   *
+   * 미설정 자리·취소·timeout 자리 null.
+   */
+  pickVfinderSaveAsTarget?: (suggestedName: string) => Promise<SaveAsTarget | null>;
+  /**
+   * vfinder save-as picker 결과 (`SaveAsTarget`) 를 server-side `/sessions/{id}/save-as`
+   * 에 forward 한다. SSR 활성 자리만 의미 — *server-side 저장 흐름* 의 진입점.
+   *
+   * 반환 true = 성공 (URL 갱신·세션 갱신 완료). false = 세션 정보 부재 자리 (caller 가
+   * vfinder 직호출 fallback 으로 흘릴 자리). throw = 서버 4xx/5xx 응답.
+   */
+  forwardSaveAsToServer?: (target: SaveAsTarget) => Promise<boolean>;
   /**
    * vfinder iframe 흐름으로 *파일 열기*.
    *
