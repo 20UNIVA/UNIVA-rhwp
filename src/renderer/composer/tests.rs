@@ -440,6 +440,39 @@ fn test_reflow_line_height() {
     assert_eq!(para.line_segs[0].line_height, 1200);
 }
 
+/// 빈 텍스트 + char_shapes[0] font_size=1.0px → first char_shape font_size 차용
+/// (Task #m600-24, 빈 셀 paragraph 폴백 자리 cell.height 폭증 결함 fix).
+/// 변경 전: line_height = (12.0 * 7200/96) = 900 (12px 폴백)
+/// 변경 후: line_height = (1.0 * 7200/96) = 75 (paragraph 첫 char_shape font_size)
+#[test]
+fn test_reflow_empty_text_uses_first_char_shape_font_size() {
+    let styles = make_styles_with_font_size(1.0);
+    let mut para = Paragraph {
+        char_shapes: vec![CharShapeRef {
+            start_pos: 0,
+            char_shape_id: 0,
+        }],
+        ..Default::default()
+    };
+
+    reflow_line_segs(&mut para, 500.0, &styles, 96.0);
+    assert_eq!(para.line_segs.len(), 1);
+    assert_eq!(para.line_segs[0].line_height, 75);
+}
+
+/// 빈 텍스트 + char_shapes 비어 있음 → 12.0px 최종 폴백 유지 (안전장치)
+#[test]
+fn test_reflow_empty_text_no_char_shapes_falls_back_12px() {
+    use crate::renderer::style_resolver::ResolvedStyleSet;
+    let styles = ResolvedStyleSet::default();
+    let mut para = Paragraph::default();
+
+    reflow_line_segs(&mut para, 500.0, &styles, 96.0);
+    assert_eq!(para.line_segs.len(), 1);
+    // char_shapes 비어 있음 → para_first_fs unwrap_or(12.0) → (12.0 * 7200/96) = 900
+    assert_eq!(para.line_segs[0].line_height, 900);
+}
+
 // ===== split_runs_by_lang 테스트 =====
 
 /// 한영 혼합 텍스트가 언어별로 분할되는지 검증
