@@ -416,6 +416,20 @@ pub enum EditOperation {
         para: usize,
         offset: usize,
     },
+
+    // ─── Task #m600-29: nested table (이중 표) cell 편집 ─────────────────────
+
+    /// nested cell paragraph 의 runs 통째 교체. `CellPath` 따라 임의 깊이 표현.
+    /// 기존 `ReplaceCellRuns` 는 최상위 cell 만 가리키지만 이 variant 는 path 길이로
+    /// nested depth 표현 (길이 1 = 최상위, 길이 2 = 한 단계 nested, ...).
+    /// `replace_cell_runs_at_path_native` 위임.
+    ReplaceCellRunsAtPath {
+        section: usize,
+        path: super::cell_path::CellPath,
+        /// 최종 cell 안 paragraph 인덱스 (편집 자리).
+        cell_para: usize,
+        runs: Vec<RunSpec>,
+    },
 }
 
 fn one_count() -> usize { 1 }
@@ -842,6 +856,18 @@ impl EditOperation {
                 after: ParaRange { start: *para, end: *para + 2 },
                 cell: None,
             },
+            // Task #m600-29 — path 의 첫 step 의 para 가 최상위 표가 들어있는 paragraph.
+            // CellFocus 자료는 path 깊이 1 일 때만 의미가 있어 None 박음 — broadcast 클라이언트가
+            // path 자체 자체 자체 자체 자체 nested cell 위치 박음.
+            EditOperation::ReplaceCellRunsAtPath { section, path, .. } => {
+                let outer_para = path.steps.first().map(|s| s.para).unwrap_or(0);
+                AffectedRange {
+                    section: *section,
+                    before: ParaRange::single(outer_para),
+                    after: ParaRange::single(outer_para),
+                    cell: None,
+                }
+            }
         }
     }
 }
@@ -1087,6 +1113,11 @@ impl DocumentCore {
             EditOperation::InsertPageBreak { section, para, offset } => {
                 self.insert_page_break_native(*section, *para, *offset)?;
             }
+            // Task #m600-29 — nested cell path 따라 cell paragraph 의 runs 교체.
+            EditOperation::ReplaceCellRunsAtPath { section, path, cell_para, runs } => {
+                let runs_json = runs_to_native_json(self, runs)?;
+                self.replace_cell_runs_at_path_native(*section, path, *cell_para, &runs_json)?;
+            }
         }
         Ok(())
     }
@@ -1161,6 +1192,9 @@ impl DocumentCore {
             }
             EditOperation::InsertPageBreak { .. } => {
                 unreachable!("Sub-8 variant uses snapshot stash for inverse");
+            }
+            EditOperation::ReplaceCellRunsAtPath { .. } => {
+                unreachable!("Task #m600-29 variant uses snapshot stash for inverse");
             }
         }
         Ok(())

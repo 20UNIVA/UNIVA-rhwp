@@ -1204,6 +1204,35 @@ async fn workbench(
                 diff,
             }))
         }
+        "replace_cell_runs_at_path" => {
+            // Task #m600-29 — nested table (이중 표) cell paragraph runs 교체.
+            // path 길이로 nested depth 표현 (길이 1 = 최상위, 2+ = nested).
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                path: rhwp::document_core::commands::cell_path::CellPath,
+                cell_para: usize,
+                runs: Vec<rhwp::document_core::RunSpec>,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            if payload.path.steps.is_empty() {
+                return Err(AppError::bad_request("path.steps 빈 자료".to_string()));
+            }
+            let op = rhwp::document_core::EditOperation::ReplaceCellRunsAtPath {
+                section: payload.section,
+                path: payload.path,
+                cell_para: payload.cell_para,
+                runs: payload.runs,
+            };
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+                diff,
+            }))
+        }
         "complete" => {
             let blob = {
                 let s = session.lock().unwrap();

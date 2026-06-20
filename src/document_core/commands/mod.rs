@@ -1,5 +1,6 @@
 mod clipboard;
 mod document;
+pub mod cell_path;
 pub mod edit_op;
 mod footnote_ops;
 mod formatting;
