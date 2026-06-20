@@ -17,8 +17,8 @@ use quick_xml::Writer;
 
 use crate::model::document::{DocInfo, DocProperties, Document};
 use crate::model::style::{
-    Alignment, BorderFill, BorderLine, BorderLineType, CharShape, DiagonalLine, FillType, Font,
-    HeadType, LineSpacingType, Numbering, ParaShape, Style, TabDef,
+    Alignment, BorderFill, BorderLine, BorderLineType, CharShape, DiagonalLine, Fill, FillType,
+    Font, HeadType, LineSpacingType, Numbering, ParaShape, Style, TabDef,
 };
 use crate::model::ColorRef;
 
@@ -220,16 +220,139 @@ fn write_border_fill<W: Write>(
     write_border_line(w, "hh:bottomBorder", &bf.borders[3])?;
     write_diagonal(w, &bf.diagonal)?;
 
-    // fillBrush: Fill이 존재할 때만
+    // fillBrush: Fill이 존재할 때 자식 자료 (winBrush/gradation/imgBrush) 직렬화.
+    // Task #m600-26 — 종전이 *빈 fillBrush 래퍼만* 출력해 Solid·Gradient·Image
+    // 자료 모두 손실. 그라데이션 색띠·아래 표 셀 색상 누락 결함의 원인.
     if !matches!(bf.fill.fill_type, FillType::None) {
         start_tag(w, "hc:fillBrush")?;
-        // Stage 1에서는 Fill 내부를 완전 직렬화하지 않고 빈 래퍼만 출력.
-        // (한컴 관찰: ref_empty의 borderFill id=2 에 빈 fillBrush 존재)
+        write_fill_inner(w, &bf.fill)?;
         end_tag(w, "hc:fillBrush")?;
     }
 
     end_tag(w, "hh:borderFill")?;
     Ok(())
+}
+
+/// Task #m600-26 — fillBrush 내부 (winBrush/gradation/imgBrush) 직렬화.
+fn write_fill_inner<W: Write>(w: &mut Writer<W>, fill: &Fill) -> Result<(), SerializeError> {
+    match fill.fill_type {
+        FillType::None => {}
+        FillType::Solid => {
+            if let Some(solid) = &fill.solid {
+                let face = color_hex(solid.background_color);
+                let hatch = color_hex(solid.pattern_color);
+                // pattern_type < 1 자리 (-1 = 무늬 없음, parser 기본값) 에서는
+                // hatchStyle 속성 자체를 박지 않음. 종전 *_ => "HORIZONTAL" 기본값* 이
+                // 단색 셀에 줄무늬 패턴을 박는 결함이었음 (Task #m600-26 cycle 2).
+                if solid.pattern_type >= 1 {
+                    let style = hatch_style_str(solid.pattern_type);
+                    empty_tag(
+                        w,
+                        "hc:winBrush",
+                        &[
+                            ("faceColor", &face),
+                            ("hatchColor", &hatch),
+                            ("hatchStyle", style),
+                        ],
+                    )?;
+                } else {
+                    empty_tag(
+                        w,
+                        "hc:winBrush",
+                        &[("faceColor", &face), ("hatchColor", &hatch)],
+                    )?;
+                }
+            }
+        }
+        FillType::Gradient => {
+            if let Some(grad) = &fill.gradient {
+                let type_str = gradient_type_str(grad.gradient_type);
+                let angle = grad.angle.to_string();
+                let cx = grad.center_x.to_string();
+                let cy = grad.center_y.to_string();
+                let step = grad.blur.to_string();
+                let step_center = grad.step_center.to_string();
+                start_tag_attrs(
+                    w,
+                    "hc:gradation",
+                    &[
+                        ("type", type_str),
+                        ("angle", &angle),
+                        ("centerX", &cx),
+                        ("centerY", &cy),
+                        ("step", &step),
+                        ("stepCenter", &step_center),
+                    ],
+                )?;
+                for color in &grad.colors {
+                    let v = color_hex(*color);
+                    empty_tag(w, "hc:color", &[("value", &v)])?;
+                }
+                end_tag(w, "hc:gradation")?;
+            }
+        }
+        FillType::Image => {
+            if let Some(img) = &fill.image {
+                let mode = image_fill_mode_str(img.fill_mode);
+                let bright = img.brightness.to_string();
+                let contrast = img.contrast.to_string();
+                start_tag_attrs(
+                    w,
+                    "hc:imgBrush",
+                    &[
+                        ("mode", mode),
+                        ("bright", &bright),
+                        ("contrast", &contrast),
+                    ],
+                )?;
+                if img.bin_data_id != 0 {
+                    let bin_ref = format!("image{}", img.bin_data_id);
+                    empty_tag(w, "hc:img", &[("binaryItemIDRef", &bin_ref)])?;
+                }
+                end_tag(w, "hc:imgBrush")?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn hatch_style_str(pattern_type: i32) -> &'static str {
+    match pattern_type {
+        1 => "HORIZONTAL",
+        2 => "VERTICAL",
+        3 => "BACK_SLASH",
+        4 => "SLASH",
+        5 => "CROSS",
+        6 => "CROSS_DIAGONAL",
+        _ => "HORIZONTAL",
+    }
+}
+
+fn gradient_type_str(t: i16) -> &'static str {
+    match t {
+        1 => "LINEAR",
+        2 => "RADIAL",
+        3 => "CONICAL",
+        4 => "SQUARE",
+        _ => "LINEAR",
+    }
+}
+
+fn image_fill_mode_str(mode: crate::model::style::ImageFillMode) -> &'static str {
+    use crate::model::style::ImageFillMode::*;
+    match mode {
+        TileAll => "TILE",
+        TileHorzTop => "TILE_HORZ_TOP",
+        TileHorzBottom => "TILE_HORZ_BOTTOM",
+        TileVertLeft => "TILE_VERT_LEFT",
+        TileVertRight => "TILE_VERT_RIGHT",
+        FitToSize => "FIT_TO_SIZE",
+        Center => "CENTER",
+        CenterTop => "CENTER_TOP",
+        CenterBottom => "CENTER_BOTTOM",
+        LeftTop => "TOP_LEFT_ALIGN",
+        _ => "TILE",
+    }
 }
 
 fn write_diag_line<W: Write>(w: &mut Writer<W>, name: &str) -> Result<(), SerializeError> {

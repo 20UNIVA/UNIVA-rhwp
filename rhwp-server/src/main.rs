@@ -155,6 +155,10 @@ struct CreateBlankReq {
     filename: Option<String>,
     /// `"hwp"` / `"hwpx"`. 미명시 시 filename 확장자로 결정, 그것도 부재면 `"hwp"`.
     format: Option<String>,
+    /// vfinder 안 저장 폴더 path (예: `"/mnt/drive"`). *호출자 책임* — 본 서버는 path
+    /// 결정 정책을 가지지 않는다. 받은 값을 그대로 storage 에 흘려보낸다. 부재 시
+    /// vfinder 가 `path 누락 — file_id 모드가 아니면 필수` 로 400.
+    target_path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -499,9 +503,11 @@ async fn create_blank_document(
     };
 
     // 4) 외부 저장소 upload → file_id 발급.
+    //    target_path 는 *호출자 책임* — 본 서버는 결정 정책을 가지지 않고 받은 값 그대로
+    //    storage 에 흘려보낸다. 부재 시 None → vfinder 측에서 `path` 누락 400.
     let file_id = state
         .storage
-        .upload(bytes.clone(), &filename, None, None, false, &user_id)
+        .upload(bytes.clone(), &filename, None, req.target_path.as_deref(), false, &user_id)
         .await
         .map_err(|e| AppError::internal(format!("저장소 업로드 실패: {e}")))?
         .file_id;
@@ -1302,8 +1308,52 @@ struct IrSliceQuery {
     /// sec/para_start/para_end 가 *덮어써짐*. raw 모드에는 영향 없음.
     #[serde(default)]
     page: Option<u32>,
+    /// 옛 호환 키 — `detail` 미지정 시 흡수. "raw" / "compact" / "auto"(=compact).
     #[serde(default = "default_ir_slice_mode")]
     mode: String,
+    /// 신규 응답 세부 단계. "raw" | "compact" | "outline" | "structure". 명시 시 mode 우선.
+    #[serde(default)]
+    detail: Option<String>,
+    /// 신규 style 강도. "full" | "essential"(기본) | "none".
+    #[serde(default)]
+    include_style: Option<String>,
+    /// 신규 표 정보 강도. "full"(기본) | "structure" | "count".
+    #[serde(default)]
+    include_tables: Option<String>,
+    /// outline / structure 단계에서 paragraph 별 텍스트 자르기 (글자 단위).
+    #[serde(default)]
+    max_text_chars: Option<u32>,
+}
+
+/// 문자열 → `Detail` enum. 알 수 없는 값은 기본값 (Compact) 으로 폴백 — 에러 없음.
+fn parse_detail(s: &str) -> ir_compact::Detail {
+    match s.to_ascii_lowercase().as_str() {
+        "raw" => ir_compact::Detail::Raw,
+        "compact" => ir_compact::Detail::Compact,
+        "outline" => ir_compact::Detail::Outline,
+        "structure" => ir_compact::Detail::Structure,
+        // 옛 "auto" — 현 분기 자리 사실상 compact 만 분기하므로 동일 매핑.
+        "auto" => ir_compact::Detail::Compact,
+        _ => ir_compact::Detail::Compact,
+    }
+}
+
+fn parse_style_level(s: &str) -> ir_compact::StyleLevel {
+    match s.to_ascii_lowercase().as_str() {
+        "full" => ir_compact::StyleLevel::Full,
+        "essential" => ir_compact::StyleLevel::Essential,
+        "none" => ir_compact::StyleLevel::None,
+        _ => ir_compact::StyleLevel::Essential,
+    }
+}
+
+fn parse_table_level(s: &str) -> ir_compact::TableLevel {
+    match s.to_ascii_lowercase().as_str() {
+        "full" => ir_compact::TableLevel::Full,
+        "structure" => ir_compact::TableLevel::Structure,
+        "count" => ir_compact::TableLevel::Count,
+        _ => ir_compact::TableLevel::Full,
+    }
 }
 
 /// 섹션 일부 paragraph 만 IR JSON 으로 반환.
@@ -1362,51 +1412,118 @@ async fn ir_slice_handler(
     let para_start = q.para_start.unwrap_or(0);
     let para_end = q.para_end.unwrap_or(total).min(total);
 
-    let resolved_mode = match q.mode.as_str() {
-        "raw" => "raw",
-        _ => "compact",
+    // detail 키가 명시되면 그 값 우선. 부재 시 옛 mode 키로 폴백 — backward 호환.
+    // 옛 "auto" 도 사실상 compact 만 분기하던 자리라 동일 매핑.
+    let detail = match q.detail.as_deref() {
+        Some(s) => parse_detail(s),
+        None => parse_detail(q.mode.as_str()),
+    };
+    let style_level = q
+        .include_style
+        .as_deref()
+        .map(parse_style_level)
+        .unwrap_or_default();
+    let table_level = q
+        .include_tables
+        .as_deref()
+        .map(parse_table_level)
+        .unwrap_or_default();
+
+    // [Plan A] page_maps (브라우저 wasm 역공급 매핑) 폐기 — 항상 server 자기 paginate
+    // 결과만 단일 진실 소스로 사용한다.
+    //
+    // 현재 [text_measurement.rs PR #1026] 이후 wasm 측정도 *내장 메트릭 + 휴리스틱*
+    // 만 사용 (Canvas measureText 호출 자리 0건) — native EmbeddedTextMeasurer 와
+    // 사실상 동일. 측정기 격차가 사실상 사라졌으므로 page_maps 우회가 불필요.
+    let build_opts = ir_compact::BuildOptions {
+        sec,
+        para_start,
+        para_end: Some(para_end),
+        edit_session_id: Some(format!("cli_{}", file_id)),
+        // Sub-3 v2 — page query 지정 시 paginator 결과로 sec/start/end 가 덮어써짐.
+        // m400 sub-2 — page 인자 1-based 정합. 사용자·모델 직관 (1 페이지 = page 1) 정합.
+        // page = 1 → 첫 페이지 (내부 0-based 인덱스 0). page = 0 또는 미지정 → 전체.
+        page: q.page.and_then(|p| if p >= 1 { Some(p - 1) } else { None }),
+        page_override_range: None,
+        total_pages_override: None,
+        detail,
+        include_style: style_level,
+        include_tables: table_level,
+        max_text_chars: q.max_text_chars,
     };
 
-    if resolved_mode == "compact" {
-        // [Plan A] page_maps (브라우저 wasm 역공급 매핑) 폐기 — 항상 server 자기 paginate
-        // 결과만 단일 진실 소스로 사용한다.
-        //
-        // 종전: 측정기 격차 우회용으로 wasm 매핑을 우선 사용. 다만 wasm 의 paginate 가
-        // *진행 중 부분 결과*를 600ms debounce 로 POST 하는 race 가 있어 *부분 매핑* 이
-        // server 에 영구 박힐 위험이 있었다. 한 paragraph 가 매핑에서 누락되면 ir-slice
-        // 응답이 *잘려서* 모델이 paragraph 일부만 받는 사고가 일어났다.
-        //
-        // 현재 [text_measurement.rs PR #1026] 이후 wasm 측정도 *내장 메트릭 + 휴리스틱*
-        // 만 사용 (Canvas measureText 호출 자리 0건) — native EmbeddedTextMeasurer 와
-        // 사실상 동일. 측정기 격차가 사실상 사라졌으므로 page_maps 우회가 불필요.
-        let (page_override_range, total_pages_override): (Option<(usize, usize, usize)>, Option<u32>) =
-            (None, None);
-        let opts = ir_compact::BuildOptions {
-            sec,
-            para_start,
-            para_end: Some(para_end),
-            edit_session_id: Some(format!("cli_{}", file_id)),
-            // Sub-3 v2 — page query 지정 시 paginator 결과로 sec/start/end 가 덮어써짐.
-            // m400 sub-2 — page 인자 1-based 정합. 사용자·모델 직관 (1 페이지 = page 1) 정합.
-            // page = 1 → 첫 페이지 (내부 0-based 인덱스 0). page = 0 또는 미지정 → 전체.
-            page: q.page.and_then(|p| if p >= 1 { Some(p - 1) } else { None }),
-            page_override_range,
-            total_pages_override,
-        };
-        let slice = ir_compact::build_compact_ir_slice(&s.core, &opts);
-        // anchor 값은 page 매핑 후의 *실제* sec/para_start/para_end — top-level 호환 필드도
-        // 이 값으로 채워야 옛 client 가 일관되게 인식. move 전에 사본을 떠둔다.
-        let anchor_sec = slice.doc_meta.anchor.sec;
-        let anchor_start = slice.doc_meta.anchor.para_start;
-        let anchor_end = slice.doc_meta.anchor.para_end;
-        let mut v = serde_json::to_value(&slice).unwrap_or(serde_json::Value::Null);
-        if let serde_json::Value::Object(ref mut m) = v {
-            m.insert("section".into(), serde_json::json!(anchor_sec));
-            m.insert("para_start".into(), serde_json::json!(anchor_start));
-            m.insert("para_end".into(), serde_json::json!(anchor_end));
-            m.insert("mode".into(), serde_json::json!("compact"));
+    match detail {
+        ir_compact::Detail::Compact => {
+            let slice = ir_compact::build_compact_ir_slice(&s.core, &build_opts);
+            let anchor_sec = slice.doc_meta.anchor.sec;
+            let anchor_start = slice.doc_meta.anchor.para_start;
+            let anchor_end = slice.doc_meta.anchor.para_end;
+            let mut v = serde_json::to_value(&slice).unwrap_or(serde_json::Value::Null);
+            if let serde_json::Value::Object(ref mut m) = v {
+                // compact 응답 자리 paragraphs 배열에 include_style / include_tables 후처리 적용.
+                // 표 가지치기를 *먼저* — Count 단계는 cells 키 자체를 제거하므로 그 안의 style
+                // 가지치기는 무의미.
+                if let Some(serde_json::Value::Array(arr)) = m.get_mut("paragraphs") {
+                    ir_compact::apply_table_filter(arr, table_level);
+                    ir_compact::apply_style_filter(arr, style_level);
+                }
+                m.insert("section".into(), serde_json::json!(anchor_sec));
+                m.insert("para_start".into(), serde_json::json!(anchor_start));
+                m.insert("para_end".into(), serde_json::json!(anchor_end));
+                m.insert("mode".into(), serde_json::json!("compact"));
+                m.insert("detail".into(), serde_json::json!("compact"));
+            }
+            return Ok(Json(v));
         }
-        return Ok(Json(v));
+        ir_compact::Detail::Outline => {
+            let mut v = ir_compact::build_outline_slice(&s.core, &build_opts);
+            // outline 단계는 자체적으로 본문 일부만 박으므로 style/table 가지치기 의미 없음.
+            // doc_meta.anchor 로 호환 top-level 필드를 채워준다.
+            if let Some(obj) = v.as_object_mut() {
+                if let Some(anchor) = obj
+                    .get("doc_meta")
+                    .and_then(|m| m.get("anchor"))
+                    .cloned()
+                {
+                    if let Some(sec_v) = anchor.get("sec") {
+                        obj.insert("section".into(), sec_v.clone());
+                    }
+                    if let Some(ps) = anchor.get("para_start") {
+                        obj.insert("para_start".into(), ps.clone());
+                    }
+                    if let Some(pe) = anchor.get("para_end") {
+                        obj.insert("para_end".into(), pe.clone());
+                    }
+                }
+                obj.insert("detail".into(), serde_json::json!("outline"));
+            }
+            return Ok(Json(v));
+        }
+        ir_compact::Detail::Structure => {
+            let mut v = ir_compact::build_structure_slice(&s.core, &build_opts);
+            if let Some(obj) = v.as_object_mut() {
+                if let Some(anchor) = obj
+                    .get("doc_meta")
+                    .and_then(|m| m.get("anchor"))
+                    .cloned()
+                {
+                    if let Some(sec_v) = anchor.get("sec") {
+                        obj.insert("section".into(), sec_v.clone());
+                    }
+                    if let Some(ps) = anchor.get("para_start") {
+                        obj.insert("para_start".into(), ps.clone());
+                    }
+                    if let Some(pe) = anchor.get("para_end") {
+                        obj.insert("para_end".into(), pe.clone());
+                    }
+                }
+                obj.insert("detail".into(), serde_json::json!("structure"));
+            }
+            return Ok(Json(v));
+        }
+        ir_compact::Detail::Raw => {
+            // 아래 raw 분기로 fallthrough.
+        }
     }
 
     let paragraphs: Vec<serde_json::Value> = (para_start..para_end)
@@ -1433,7 +1550,8 @@ async fn ir_slice_handler(
         "section": sec,
         "para_start": para_start,
         "para_end": para_end,
-        "mode": resolved_mode,
+        "mode": "raw",
+        "detail": "raw",
         "paragraphs": paragraphs,
     })))
 }

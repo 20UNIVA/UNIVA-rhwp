@@ -246,23 +246,54 @@ fn write_draw_text_paragraph<W: Write>(
 
     end_tag(w, "hp:run")?;
 
-    // minimal lineseg
+    // <hp:linesegarray> — p.line_segs IR 그대로 직렬화 (Task #m600-25 fix).
+    // 종전 자료가 *글상자 paragraph 의 line_segs 자료를 무시하고 단일 정적 lineseg
+    // (vertsize=1000, spacing=600) 하드코딩*해 클라 새로고침 시 paginate 깨짐.
     start_tag(w, "hp:linesegarray")?;
-    empty_tag(
-        w,
-        "hp:lineseg",
-        &[
-            ("textpos", "0"),
-            ("vertpos", "0"),
-            ("vertsize", "1000"),
-            ("textheight", "1000"),
-            ("baseline", "850"),
-            ("spacing", "600"),
-            ("horzpos", "0"),
-            ("horzsize", "42520"),
-            ("flags", "393216"),
-        ],
-    )?;
+    if !p.line_segs.is_empty() {
+        for seg in &p.line_segs {
+            let textpos = seg.text_start.to_string();
+            let vertpos = seg.vertical_pos.to_string();
+            let vertsize = seg.line_height.to_string();
+            let textheight = seg.text_height.to_string();
+            let baseline = seg.baseline_distance.to_string();
+            let spacing = seg.line_spacing.to_string();
+            let horzpos = seg.column_start.to_string();
+            let horzsize = seg.segment_width.to_string();
+            let flags = seg.tag.to_string();
+            empty_tag(
+                w,
+                "hp:lineseg",
+                &[
+                    ("textpos", &textpos),
+                    ("vertpos", &vertpos),
+                    ("vertsize", &vertsize),
+                    ("textheight", &textheight),
+                    ("baseline", &baseline),
+                    ("spacing", &spacing),
+                    ("horzpos", &horzpos),
+                    ("horzsize", &horzsize),
+                    ("flags", &flags),
+                ],
+            )?;
+        }
+    } else {
+        empty_tag(
+            w,
+            "hp:lineseg",
+            &[
+                ("textpos", "0"),
+                ("vertpos", "0"),
+                ("vertsize", "1000"),
+                ("textheight", "1000"),
+                ("baseline", "850"),
+                ("spacing", "600"),
+                ("horzpos", "0"),
+                ("horzsize", "42520"),
+                ("flags", "393216"),
+            ],
+        )?;
+    }
     end_tag(w, "hp:linesegarray")?;
 
     end_tag(w, "hp:p")?;

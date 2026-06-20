@@ -69,8 +69,12 @@ pub fn write_section(
     };
     vert_cursor = first_advance;
 
-    let mut out = EMPTY_SECTION_XML.replacen(TEXT_SLOT, &first_t, 1);
-    out = replace_first_linesegs(&out, &first_linesegs);
+    // 순서 주의 — replace_first_linesegs 가 EMPTY_SECTION_XML 의 *유일한* linesegarray 자리를
+    // 매칭하도록, TEXT_SLOT 교체보다 *먼저* 호출한다. first_t 안에 표 cell 의
+    // <hp:linesegarray> 자료가 박힐 수 있어, 순서가 뒤집히면 cell 의 첫 linesegarray 가
+    // 잘못 매칭되어 paragraph 0.0 의 lh 값이 cell 자리로 덮어쓰임 (Task #m600-27).
+    let mut out = replace_first_linesegs(EMPTY_SECTION_XML, &first_linesegs);
+    out = out.replacen(TEXT_SLOT, &first_t, 1);
 
     // 첫 문단 `<hp:p>` 태그를 IR 기반 속성으로 교체
     if let Some(p) = first_para {
