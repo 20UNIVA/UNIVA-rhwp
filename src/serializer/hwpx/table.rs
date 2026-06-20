@@ -276,6 +276,17 @@ fn write_sub_list<W: Write>(
         start_tag_attrs(w, "hp:run", &[("charPrIDRef", &cs_str)])?;
         // 텍스트만 출력 (탭·소프트브레이크는 Stage 3 범위에서 제외 — section.rs 와 동일 방식으로 단순화)
         write_cell_text(w, &para.text)?;
+        // Task #m600-28 — cell paragraph 의 controls 도 박음 (nested table·picture 등).
+        // 종전 자료는 `controls` 자체를 무시하여 표 안 표·표 안 그림이 round-trip 시 손실.
+        for ctrl in &para.controls {
+            match ctrl {
+                crate::model::control::Control::Table(t) => write_table(w, t, ctx)?,
+                crate::model::control::Control::Picture(pic) => {
+                    crate::serializer::hwpx::picture::write_picture(w, pic, ctx)?;
+                }
+                _ => {}
+            }
+        }
         end_tag(w, "hp:run")?;
 
         // <hp:linesegarray> — para.line_segs IR 그대로 직렬화 (Task #m600-25 fix).
@@ -437,10 +448,14 @@ fn text_flow_str(w: TextWrap) -> &'static str {
 
 fn table_page_break_str(pb: TablePageBreak) -> &'static str {
     use TablePageBreak::*;
+    // Task #m600-28 — HWPX parser (section.rs:1402-1404) 의 주석 정합:
+    //   HWPX "CELL"  ↔ HWP5 RowBreak  (한컴 명명 — 셀 안 내부 분할 허용)
+    //   HWPX "TABLE" ↔ HWP5 CellBreak (한컴 명명 — 셀 단위로 표를 나눔)
+    // 종전 매핑이 반대로 박혀 round-trip 시 RowBreak ↔ CellBreak 가 서로 바뀜.
     match pb {
         None => "NONE",
-        CellBreak => "CELL",
-        RowBreak => "TABLE",
+        RowBreak => "CELL",
+        CellBreak => "TABLE",
     }
 }
 

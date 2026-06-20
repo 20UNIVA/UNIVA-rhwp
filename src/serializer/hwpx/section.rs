@@ -76,6 +76,11 @@ pub fn write_section(
     let mut out = replace_first_linesegs(EMPTY_SECTION_XML, &first_linesegs);
     out = out.replacen(TEXT_SLOT, &first_t, 1);
 
+    // Task #m600-28 — template 의 <hp:pagePr>·<hp:margin> 가 고정값 자료라 원본 PageDef
+    // (margin·width·height) 가 round-trip 시 손실. 본문이 오른쪽으로 밀려 시각상 우측
+    // 여백이 줄어든 자리. 세션의 PageDef 자료로 덮어쓴다.
+    out = replace_page_pr(&out, &section.section_def.page_def);
+
     // 첫 문단 `<hp:p>` 태그를 IR 기반 속성으로 교체
     if let Some(p) = first_para {
         let new_p_tag = render_hp_p_open(p, 0);
@@ -635,6 +640,40 @@ fn push_lineseg_static(out: &mut String, textpos: u32, vertpos: u32) {
         r#"<hp:lineseg textpos="{}" vertpos="{}" vertsize="1000" textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="{}" flags="{}"/>"#,
         textpos, vertpos, HORZ_SIZE, LINE_FLAGS,
     ));
+}
+
+/// template 의 `<hp:pagePr ...><hp:margin .../></hp:pagePr>` 영역을 PageDef 자료로 교체.
+/// landscape·gutterType 은 template 값 그대로 유지 (PageDef 자료에 별도 매핑 부재).
+fn replace_page_pr(xml: &str, pd: &crate::model::page::PageDef) -> String {
+    let open = match xml.find("<hp:pagePr ") {
+        Some(i) => i,
+        None => return xml.to_string(),
+    };
+    let close_marker = "</hp:pagePr>";
+    let close_rel = match xml[open..].find(close_marker) {
+        Some(i) => i,
+        None => return xml.to_string(),
+    };
+    let end = open + close_rel + close_marker.len();
+    let landscape = if pd.landscape { "WIDELY" } else { "NARROWLY" };
+    let replacement = format!(
+        r#"<hp:pagePr landscape="{}" width="{}" height="{}" gutterType="LEFT_ONLY"><hp:margin header="{}" footer="{}" gutter="{}" left="{}" right="{}" top="{}" bottom="{}"/></hp:pagePr>"#,
+        landscape,
+        pd.width,
+        pd.height,
+        pd.margin_header,
+        pd.margin_footer,
+        pd.margin_gutter,
+        pd.margin_left,
+        pd.margin_right,
+        pd.margin_top,
+        pd.margin_bottom,
+    );
+    let mut out = String::with_capacity(xml.len() + replacement.len());
+    out.push_str(&xml[..open]);
+    out.push_str(&replacement);
+    out.push_str(&xml[end..]);
+    out
 }
 
 fn replace_first_linesegs(xml: &str, new_inner: &str) -> String {
