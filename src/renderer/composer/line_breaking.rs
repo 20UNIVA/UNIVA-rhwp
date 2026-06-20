@@ -919,20 +919,11 @@ pub(crate) fn reflow_line_segs(
 
     // 줄별 max_font_size에 따라 line_height/text_height/baseline_distance를 계산
     // 한컴은 줄마다 최대 폰트 크기에 맞게 다른 치수를 사용
-    // max_font_size==0 자리는 paragraph 첫 char_shape font_size 차용. char_shapes
-    // 자료 비어 있을 때만 12.0pt 최종 폴백 (Task #m600-24, 빈 셀 paragraph
-    // 폴백 12pt 자리 cell.height 폭증 결함 fix).
-    let para_first_fs = para
-        .char_shapes
-        .first()
-        .and_then(|cs| styles.char_styles.get(cs.char_shape_id as usize))
-        .map(|s| s.font_size)
-        .unwrap_or(12.0);
     let make_line_seg = |utf16_start: u32, max_font_size: f64| -> LineSeg {
         let fs = if max_font_size > 0.0 {
             max_font_size
         } else {
-            para_first_fs
+            12.0
         };
         let line_height_hwp = font_size_to_line_height(fs, dpi);
         let text_height_hwp = line_height_hwp;
@@ -1003,11 +994,16 @@ pub(crate) fn reflow_line_segs(
         } else {
             lb.start_idx as u32
         };
-        new_line_segs.push(make_line_seg(utf16_start as u32, lb.max_font_size));
+        let fs = if lb.max_font_size > 0.0 {
+            lb.max_font_size
+        } else {
+            12.0
+        };
+        new_line_segs.push(make_line_seg(utf16_start as u32, fs));
     }
 
     if new_line_segs.is_empty() {
-        new_line_segs.push(make_line_seg(0, 0.0));
+        new_line_segs.push(make_line_seg(0, 12.0));
     }
 
     // 인라인 TAC 표의 높이 반영: 표가 포함된 줄의 line_height를 표 높이 이상으로 보정
