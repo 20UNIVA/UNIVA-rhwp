@@ -87,6 +87,12 @@ pub struct SerializeContext {
     pub style_ids: IdPool<u16>,
     /// `bin_data_id` (IR) → manifest 엔트리 매핑
     pub bin_data_map: HashMap<u16, BinDataEntry>,
+    /// Task #m600-25 — HWPX cell paragraph line_segs reflow 자료 사용.
+    /// HWP5 의 *1 lineseg per paragraph* 규약이 HWPX *LinesegTextRunReflow* 비표준
+    /// 자료로 검출되어 클라 측 reflow auto-fix 가 cell.height·서식에 부수효과 유발.
+    /// 직렬화 자료에서 *셀 폭 기반 reflow 결과* 자료를 hp:lineseg 자료에 직접 박는다.
+    pub resolved_styles: Option<crate::renderer::style_resolver::ResolvedStyleSet>,
+    pub dpi: f64,
 }
 
 impl SerializeContext {
@@ -96,6 +102,13 @@ impl SerializeContext {
     /// 각 writer가 추가되면서 `reference()` 호출과 스캔 범위가 확장된다.
     pub fn collect_from_document(doc: &Document) -> Self {
         let mut ctx = Self::default();
+        // Task #m600-25 — cell paragraph line_segs reflow 자료. styles + dpi 박음.
+        ctx.dpi = crate::renderer::DEFAULT_DPI;
+        ctx.resolved_styles = Some(crate::renderer::style_resolver::resolve_styles_with_variant(
+            &doc.doc_info,
+            ctx.dpi,
+            doc.is_hwp3_variant,
+        ));
 
         // CharShape, ParaShape, BorderFill, TabDef, Numbering, Style, Font
         // 목록은 배열 인덱스가 곧 HWPX `id` 속성이 된다.
