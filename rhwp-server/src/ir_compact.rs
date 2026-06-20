@@ -711,7 +711,73 @@ pub struct BuildOptions {
     pub page_override_range: Option<(usize, usize, usize)>,
     /// 클라이언트 page map 의 총 페이지 수. `Some` 이면 응답 `doc_meta.total_pages` 에 사용.
     pub total_pages_override: Option<u32>,
+
+    // ─── 신규 응답 옵션 4 키 ─────────────────────────────────────────
+    /// 응답 세부 단계 — raw / compact / outline / structure.
+    pub detail: Detail,
+    /// run·paragraph style 강도 — full / essential / none.
+    pub include_style: StyleLevel,
+    /// 표 정보 강도 — full / structure / count.
+    pub include_tables: TableLevel,
+    /// outline / structure 단계에서 paragraph 별 텍스트 자르기 (글자 단위).
+    /// compact / raw 단계에서는 무시.
+    pub max_text_chars: Option<u32>,
 }
+
+/// 응답 세부 단계. detail query 키에 매핑.
+///
+/// - `Raw` — 현 raw 분기 그대로 (Paragraph Serialize derive 결과)
+/// - `Compact` — 현 compact 분기 그대로 (기본값)
+/// - `Outline` — paragraph 별 첫 N 글자 + style.align 만, runs 없음
+/// - `Structure` — paragraph idx + type + 글자 수만, 본문 텍스트 없음
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Detail {
+    Raw,
+    #[default]
+    Compact,
+    Outline,
+    Structure,
+}
+
+/// style 강도. include_style query 키에 매핑.
+///
+/// - `Full` — 모든 RunStyle / ParagraphStyle 키 유지 (현 compact 동작)
+/// - `Essential` — 핵심 키만 (기본값). RunStyle: bold/italic/color/highlight/font-size/font-name.
+///   ParagraphStyle: align/indent/line-height. 나머지는 omit.
+/// - `None` — style 자체 omit (paragraph·run·cell 모두)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StyleLevel {
+    Full,
+    #[default]
+    Essential,
+    None,
+}
+
+/// 표 정보 강도. include_tables query 키에 매핑.
+///
+/// - `Full` — 현 compact 동일, 셀 안 paragraph 까지 (기본값)
+/// - `Structure` — rows/cols + 셀 row/col/row_span/col_span + style.border/bgcolor 만. 셀 안 paragraph 빼기
+/// - `Count` — "표가 있다" 표시만. type/rows/cols 만, cells 자체 omit
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TableLevel {
+    #[default]
+    Full,
+    Structure,
+    Count,
+}
+
+/// essential 단계에서 유지할 RunStyle 키. 나머지 키는 omit.
+const ESSENTIAL_RUN_STYLE_KEYS: &[&str] = &[
+    "bold",
+    "italic",
+    "color",
+    "highlight",
+    "font-size",
+    "font-name",
+];
+
+/// essential 단계에서 유지할 ParagraphStyle 키.
+const ESSENTIAL_PARA_STYLE_KEYS: &[&str] = &["align", "indent", "line-height"];
 
 /// 페이지 번호 → `(sec, para_start, para_end)` 매핑.
 ///
@@ -1206,6 +1272,264 @@ pub fn build_compact_ir_slice(core: &DocumentCore, opts: &BuildOptions) -> Compa
     compact_ir_slice(build_ir_slice(core, opts))
 }
 
+// ─── outline / structure 단계 빌더 ──────────────────────────────────
+
+/// paragraph 별 본문 텍스트의 *첫 max_chars 글자* 추출 + 잘림 여부 동반 반환.
+/// `max_chars == None` 이면 잘리지 않음. 빈 텍스트는 `("", false)`.
+fn truncate_text(text: &str, max_chars: Option<u32>) -> (String, bool) {
+    match max_chars {
+        Some(n) => {
+            let n = n as usize;
+            let chars: Vec<char> = text.chars().collect();
+            if chars.len() <= n {
+                (text.to_string(), false)
+            } else {
+                (chars[..n].iter().collect(), true)
+            }
+        }
+        None => (text.to_string(), false),
+    }
+}
+
+/// outline 단계 진입 — paragraph 별 *첫 N 글자 + style.align* 만 박는다.
+///
+/// 표 paragraph 는 `type:"table"` + `rows`/`cols` 만. 셀 안 paragraph 빼기.
+/// `doc_meta` 는 compact 와 동일 (edit_session_id / page / total_pages / anchor) — 모델 입장에서
+/// 위치 좌표는 유지하되 본문은 *훑어보는 정도* 만 받음.
+pub fn build_outline_slice(core: &DocumentCore, opts: &BuildOptions) -> serde_json::Value {
+    let ir = build_ir_slice(core, opts);
+    let paragraphs: Vec<serde_json::Value> = ir
+        .paragraphs
+        .iter()
+        .map(|p| build_outline_paragraph(p, opts.max_text_chars))
+        .collect();
+    serde_json::json!({
+        "doc_meta": ir.doc_meta,
+        "paragraphs": paragraphs,
+    })
+}
+
+fn build_outline_paragraph(
+    p: &IrParagraph,
+    max_chars: Option<u32>,
+) -> serde_json::Value {
+    match p {
+        IrParagraph::Text(t) => {
+            let full_text: String = t.runs.iter().map(|r| r.text.clone()).collect();
+            let (text, truncated) = truncate_text(&full_text, max_chars);
+            let mut out = serde_json::Map::new();
+            out.insert("para".into(), serde_json::json!(t.para));
+            out.insert("text".into(), serde_json::json!(text));
+            if truncated {
+                out.insert("text_truncated".into(), serde_json::json!(true));
+            }
+            if let Some(align) = &t.style.align {
+                out.insert("style".into(), serde_json::json!({ "align": align }));
+            }
+            if let Some(cl) = &t.cell_locator {
+                out.insert(
+                    "cell_locator".into(),
+                    serde_json::to_value(cl).unwrap_or_default(),
+                );
+            }
+            serde_json::Value::Object(out)
+        }
+        IrParagraph::Table(tt) => {
+            serde_json::json!({
+                "para": tt.para,
+                "type": "table",
+                "rows": tt.rows,
+                "cols": tt.cols,
+            })
+        }
+    }
+}
+
+/// structure 단계 진입 — paragraph idx + type + 글자 수만. 본문 텍스트 없음.
+///
+/// 표 paragraph 는 rows/cols + cells 의 row/col/row_span/col_span (셀 안 paragraph 없음).
+/// `include_tables == Count` 면 cells 자리 자체 omit.
+pub fn build_structure_slice(core: &DocumentCore, opts: &BuildOptions) -> serde_json::Value {
+    let ir = build_ir_slice(core, opts);
+    let paragraphs: Vec<serde_json::Value> = ir
+        .paragraphs
+        .iter()
+        .map(|p| build_structure_paragraph(p, opts.include_tables))
+        .collect();
+    serde_json::json!({
+        "doc_meta": ir.doc_meta,
+        "paragraphs": paragraphs,
+    })
+}
+
+fn build_structure_paragraph(
+    p: &IrParagraph,
+    tables: TableLevel,
+) -> serde_json::Value {
+    match p {
+        IrParagraph::Text(t) => {
+            let char_count: usize = t.runs.iter().map(|r| r.text.chars().count()).sum();
+            let mut out = serde_json::Map::new();
+            out.insert("para".into(), serde_json::json!(t.para));
+            out.insert("char_count".into(), serde_json::json!(char_count));
+            if let Some(cl) = &t.cell_locator {
+                out.insert(
+                    "cell_locator".into(),
+                    serde_json::to_value(cl).unwrap_or_default(),
+                );
+            }
+            serde_json::Value::Object(out)
+        }
+        IrParagraph::Table(tt) => {
+            let mut out = serde_json::Map::new();
+            out.insert("para".into(), serde_json::json!(tt.para));
+            out.insert("type".into(), serde_json::json!("table"));
+            out.insert("rows".into(), serde_json::json!(tt.rows));
+            out.insert("cols".into(), serde_json::json!(tt.cols));
+            if !matches!(tables, TableLevel::Count) {
+                let cells: Vec<serde_json::Value> = tt
+                    .cells
+                    .iter()
+                    .map(|c| {
+                        let mut m = serde_json::Map::new();
+                        m.insert("row".into(), serde_json::json!(c.row));
+                        m.insert("col".into(), serde_json::json!(c.col));
+                        if let Some(rs) = c.row_span {
+                            m.insert("row_span".into(), serde_json::json!(rs));
+                        }
+                        if let Some(cs) = c.col_span {
+                            m.insert("col_span".into(), serde_json::json!(cs));
+                        }
+                        serde_json::Value::Object(m)
+                    })
+                    .collect();
+                out.insert("cells".into(), serde_json::Value::Array(cells));
+            }
+            serde_json::Value::Object(out)
+        }
+    }
+}
+
+// ─── include_style / include_tables 후처리 필터 ────────────────────
+
+/// compact 응답의 paragraph 배열에 style 강도 필터 적용.
+///
+/// `Full` 이면 무변경. `Essential` 이면 RunStyle / ParagraphStyle 화이트리스트 외 키 제거.
+/// `None` 이면 paragraph·run·cell 의 `style` 키 자체 제거.
+pub fn apply_style_filter(paragraphs: &mut [serde_json::Value], level: StyleLevel) {
+    if matches!(level, StyleLevel::Full) {
+        return;
+    }
+    for p in paragraphs.iter_mut() {
+        filter_style_in_paragraph(p, level);
+    }
+}
+
+fn filter_style_in_paragraph(p: &mut serde_json::Value, level: StyleLevel) {
+    let Some(obj) = p.as_object_mut() else {
+        return;
+    };
+
+    // paragraph 자체의 style
+    match level {
+        StyleLevel::None => {
+            obj.remove("style");
+        }
+        StyleLevel::Essential => {
+            if let Some(serde_json::Value::Object(map)) = obj.get_mut("style") {
+                map.retain(|k, _| ESSENTIAL_PARA_STYLE_KEYS.contains(&k.as_str()));
+            }
+            if let Some(serde_json::Value::Object(map)) = obj.get("style") {
+                if map.is_empty() {
+                    obj.remove("style");
+                }
+            }
+        }
+        StyleLevel::Full => {}
+    }
+
+    // runs 안 style
+    if let Some(serde_json::Value::Array(runs)) = obj.get_mut("runs") {
+        for run in runs.iter_mut() {
+            let Some(rmap) = run.as_object_mut() else {
+                continue;
+            };
+            match level {
+                StyleLevel::None => {
+                    rmap.remove("style");
+                }
+                StyleLevel::Essential => {
+                    if let Some(serde_json::Value::Object(map)) = rmap.get_mut("style") {
+                        map.retain(|k, _| ESSENTIAL_RUN_STYLE_KEYS.contains(&k.as_str()));
+                    }
+                    if let Some(serde_json::Value::Object(map)) = rmap.get("style") {
+                        if map.is_empty() {
+                            rmap.remove("style");
+                        }
+                    }
+                }
+                StyleLevel::Full => {}
+            }
+        }
+    }
+
+    // 표 셀 — cells[].style 및 cells[].paragraphs[] 재귀
+    if let Some(serde_json::Value::Array(cells)) = obj.get_mut("cells") {
+        for cell in cells.iter_mut() {
+            let Some(cmap) = cell.as_object_mut() else {
+                continue;
+            };
+            if matches!(level, StyleLevel::None) {
+                cmap.remove("style");
+            }
+            // 셀의 style 은 CellStyle (bgcolor/width/height/border/vertical-align) — essential 단계는
+            // 자체적으로 의미 있는 값이라 화이트리스트 가지치기 대신 *유지* (border 색 등 시각 식별 키).
+            // Full / Essential 둘 다 동일 처리. None 만 제거.
+            if let Some(serde_json::Value::Array(inner)) = cmap.get_mut("paragraphs") {
+                for inner_p in inner.iter_mut() {
+                    filter_style_in_paragraph(inner_p, level);
+                }
+            }
+        }
+    }
+}
+
+/// compact 응답의 paragraph 배열에 표 정보 강도 필터 적용.
+///
+/// `Full` 이면 무변경. `Structure` 이면 셀의 `paragraphs` 키 제거 (rows/cols/style/span 만 유지).
+/// `Count` 이면 표 paragraph 의 `cells` 키 자체 제거 (type/rows/cols 만 남김).
+pub fn apply_table_filter(paragraphs: &mut [serde_json::Value], level: TableLevel) {
+    if matches!(level, TableLevel::Full) {
+        return;
+    }
+    for p in paragraphs.iter_mut() {
+        let Some(obj) = p.as_object_mut() else {
+            continue;
+        };
+        // 표 paragraph 인지 — `cells` 키 보유 또는 `type:"table"`.
+        let is_table = obj.contains_key("cells")
+            || matches!(obj.get("type"), Some(serde_json::Value::String(s)) if s == "table");
+        if !is_table {
+            continue;
+        }
+        match level {
+            TableLevel::Count => {
+                obj.remove("cells");
+            }
+            TableLevel::Structure => {
+                if let Some(serde_json::Value::Array(cells)) = obj.get_mut("cells") {
+                    for cell in cells.iter_mut() {
+                        if let Some(cmap) = cell.as_object_mut() {
+                            cmap.remove("paragraphs");
+                        }
+                    }
+                }
+            }
+            TableLevel::Full => {}
+        }
+    }
+}
+
 // ─── Sub-4: patch diff 캡처 ─────────────────────────────────────────
 
 /// 편집 연산 적용 전후의 IR 스냅샷.
@@ -1383,6 +1707,7 @@ pub fn capture_before_target(core: &DocumentCore, range: &AffectedRange) -> Patc
             page: None,
             page_override_range: None,
             total_pages_override: None,
+            ..Default::default()
         },
     );
     slice_to_target(slice, range)
@@ -1400,6 +1725,7 @@ pub fn capture_after_target(core: &DocumentCore, range: &AffectedRange) -> Patch
             page: None,
             page_override_range: None,
             total_pages_override: None,
+            ..Default::default()
         },
     );
     slice_to_target(slice, range)
@@ -1904,6 +2230,7 @@ mod tests {
                 page: None,
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         assert_eq!(slice.doc_meta.anchor.sec, 0);
@@ -1930,6 +2257,7 @@ mod tests {
                 page: None,
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         assert!(slice.doc_meta.edit_session_id.starts_with("ed_"));
@@ -2150,6 +2478,7 @@ mod tests {
                 page: None,
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         // paragraphs[] 에 table kind 가 적어도 1건.
@@ -2222,6 +2551,7 @@ mod tests {
                 page: None,
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         let total = core.document().sections[0].paragraphs.len();
@@ -2253,8 +2583,6 @@ mod tests {
             doc_meta: IrDocMeta {
                 edit_session_id: "t".into(),
                 page: 1,
-                page_override_range: None,
-                total_pages_override: None,
                 total_pages: 1,
                 anchor: IrAnchor {
                     sec: 0,
@@ -2417,6 +2745,7 @@ mod tests {
                 page: None,
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         let v = serde_json::to_value(&slice).unwrap();
@@ -2457,6 +2786,7 @@ mod tests {
                 page: None,
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         let v = serde_json::to_value(&slice).unwrap();
@@ -2509,6 +2839,7 @@ mod tests {
                 page: None,
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         let v = serde_json::to_value(&slice).unwrap();
@@ -2580,6 +2911,7 @@ mod tests {
                 page: Some(0),
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         // 어느 경로든 anchor.sec 가 0 — blank 문서는 섹션이 1 개뿐.
@@ -2601,6 +2933,7 @@ mod tests {
                 page: Some(999),
                 page_override_range: None,
                 total_pages_override: None,
+                ..Default::default()
             },
         );
         // fallback 은 opts.sec / para_start / para_end 사용 — sec=0, para_start=0.
@@ -2617,8 +2950,6 @@ mod tests {
             doc_meta: IrDocMeta {
                 edit_session_id: "sim-1".into(),
                 page: 1,
-                page_override_range: None,
-                total_pages_override: None,
                 total_pages: 1,
                 anchor: IrAnchor { sec: 0, para_start: 0, para_end: 0 },
             },
@@ -2940,5 +3271,192 @@ mod tests {
         };
         let slice = build_ir_slice(&core, &opts);
         assert_eq!(slice.doc_meta.page, 3);
+    }
+
+    // ─── 신규 detail / include_style / include_tables / max_text_chars 테스트 ────────────
+
+    #[test]
+    fn build_outline_slice_blank_doc_has_doc_meta_and_paragraphs() {
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let v = build_outline_slice(
+            &core,
+            &BuildOptions {
+                detail: Detail::Outline,
+                ..Default::default()
+            },
+        );
+        // doc_meta + paragraphs 키 모두 존재.
+        assert!(v.get("doc_meta").is_some(), "doc_meta 키 누락");
+        let paras = v.get("paragraphs").and_then(|p| p.as_array()).unwrap();
+        assert!(!paras.is_empty(), "paragraphs 비어 있음");
+        // 첫 paragraph 는 text 또는 빈 텍스트 키 보유.
+        let first = &paras[0];
+        assert!(first.get("para").is_some());
+        // outline 은 본문 text 또는 type:"table" 키 박혀 있음.
+        assert!(first.get("text").is_some() || first.get("type").is_some());
+    }
+
+    #[test]
+    fn build_outline_slice_max_text_chars_truncates_and_marks() {
+        // 빈 문서라 외부 텍스트가 없어, 강제 truncate 단정 테스트는
+        // truncate_text 단위 테스트로 분리. 여기서는 호출이 panic 없이 도는지만 확인.
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let v = build_outline_slice(
+            &core,
+            &BuildOptions {
+                detail: Detail::Outline,
+                max_text_chars: Some(5),
+                ..Default::default()
+            },
+        );
+        assert!(v.get("paragraphs").is_some());
+    }
+
+    #[test]
+    fn truncate_text_short_unchanged() {
+        let (t, trunc) = truncate_text("hi", Some(10));
+        assert_eq!(t, "hi");
+        assert!(!trunc);
+    }
+
+    #[test]
+    fn truncate_text_long_cuts_and_flags() {
+        let (t, trunc) = truncate_text("abcdefghij", Some(3));
+        assert_eq!(t, "abc");
+        assert!(trunc);
+    }
+
+    #[test]
+    fn truncate_text_none_passthrough() {
+        let (t, trunc) = truncate_text("abcdef", None);
+        assert_eq!(t, "abcdef");
+        assert!(!trunc);
+    }
+
+    #[test]
+    fn truncate_text_korean_char_boundary() {
+        // 글자(char) 단위 — UTF-8 바이트 단위가 아님. 4 글자 → 4 글자 그대로.
+        let (t, trunc) = truncate_text("한글입력", Some(2));
+        assert_eq!(t, "한글");
+        assert!(trunc);
+    }
+
+    #[test]
+    fn build_structure_slice_blank_doc() {
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        let v = build_structure_slice(
+            &core,
+            &BuildOptions {
+                detail: Detail::Structure,
+                ..Default::default()
+            },
+        );
+        let paras = v.get("paragraphs").and_then(|p| p.as_array()).unwrap();
+        assert!(!paras.is_empty());
+        // structure 단계의 본문 paragraph 는 char_count 키 + para 만. 본문 text 키 없음.
+        let first = &paras[0];
+        assert!(first.get("char_count").is_some() || first.get("type").is_some());
+        assert!(first.get("text").is_none(), "structure 단계 자리 본문 text 박혀선 안 됨");
+    }
+
+    #[test]
+    fn apply_style_filter_none_strips_style_keys() {
+        let mut paragraphs = vec![serde_json::json!({
+            "para": 0,
+            "style": {"align": "center"},
+            "runs": [{"text": "x", "style": {"bold": true}}],
+        })];
+        apply_style_filter(&mut paragraphs, StyleLevel::None);
+        let p = &paragraphs[0];
+        assert!(p.get("style").is_none(), "paragraph style 미제거");
+        let runs = p.get("runs").and_then(|r| r.as_array()).unwrap();
+        assert!(runs[0].get("style").is_none(), "run style 미제거");
+    }
+
+    #[test]
+    fn apply_style_filter_essential_drops_non_whitelist_keys() {
+        let mut paragraphs = vec![serde_json::json!({
+            "para": 0,
+            "runs": [{
+                "text": "x",
+                "style": {
+                    "bold": true,
+                    "char-spacing": 50,
+                    "underline": true,
+                    "font-size": 10.0,
+                },
+            }],
+        })];
+        apply_style_filter(&mut paragraphs, StyleLevel::Essential);
+        let run = &paragraphs[0]["runs"][0];
+        let style = run.get("style").unwrap().as_object().unwrap();
+        // 화이트리스트 키만 남아야.
+        assert!(style.contains_key("bold"));
+        assert!(style.contains_key("font-size"));
+        assert!(!style.contains_key("char-spacing"));
+        assert!(!style.contains_key("underline"));
+    }
+
+    #[test]
+    fn apply_style_filter_essential_paragraph_keys() {
+        let mut paragraphs = vec![serde_json::json!({
+            "para": 0,
+            "style": {"align": "center", "indent": 100},
+            "runs": [],
+        })];
+        apply_style_filter(&mut paragraphs, StyleLevel::Essential);
+        let style = paragraphs[0].get("style").unwrap().as_object().unwrap();
+        assert!(style.contains_key("align"));
+        assert!(style.contains_key("indent"));
+    }
+
+    #[test]
+    fn apply_table_filter_count_removes_cells_key() {
+        let mut paragraphs = vec![serde_json::json!({
+            "para": 0,
+            "type": "table",
+            "rows": 2,
+            "cols": 2,
+            "cells": [{"row": 0, "col": 0}],
+        })];
+        apply_table_filter(&mut paragraphs, TableLevel::Count);
+        let p = &paragraphs[0];
+        assert!(p.get("cells").is_none(), "Count 자리 cells 키 미제거");
+        assert!(p.get("rows").is_some());
+        assert!(p.get("cols").is_some());
+    }
+
+    #[test]
+    fn apply_table_filter_structure_drops_cell_paragraphs() {
+        let mut paragraphs = vec![serde_json::json!({
+            "para": 0,
+            "type": "table",
+            "rows": 1,
+            "cols": 1,
+            "cells": [{
+                "row": 0,
+                "col": 0,
+                "style": {"bgcolor": "#FFFFFF"},
+                "paragraphs": [{"para": -1, "text": "셀 본문"}],
+            }],
+        })];
+        apply_table_filter(&mut paragraphs, TableLevel::Structure);
+        let cell = &paragraphs[0]["cells"][0];
+        assert!(cell.get("paragraphs").is_none(), "Structure 자리 cell.paragraphs 미제거");
+        assert!(cell.get("style").is_some(), "Structure 자리 style 보존");
+    }
+
+    #[test]
+    fn apply_table_filter_full_no_op() {
+        let original = serde_json::json!({
+            "para": 0, "type": "table", "rows": 1, "cols": 1,
+            "cells": [{"row": 0, "col": 0, "paragraphs": [{"para": -1, "text": "x"}]}],
+        });
+        let mut paragraphs = vec![original.clone()];
+        apply_table_filter(&mut paragraphs, TableLevel::Full);
+        assert_eq!(paragraphs[0], original);
     }
 }
