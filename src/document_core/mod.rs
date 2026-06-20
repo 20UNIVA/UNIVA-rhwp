@@ -7,7 +7,7 @@ pub(crate) mod helpers;
 pub(crate) use helpers::*;
 
 pub mod builders;
-mod commands;
+pub mod commands;
 pub use commands::edit_op::{
     AffectedRange, BorderLine, BorderSpec, CellFocus, EditOperation, ElementType, ParaRange,
     PartialCellStyle, PartialParagraphStyle, PartialRunStyle, RunSpec,
