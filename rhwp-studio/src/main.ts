@@ -631,71 +631,71 @@ const commandServices: CommandServices = {
         return true;
       }
     : undefined,
-  // SSR 환경에서 *다른 이름으로 저장* — rhwp studio 자체 modal 안에 vfinder save-as
-  // iframe 을 띄우는 자리. agent 부모창 자리와 무관하게 동작 — *iframe 안 iframe* 흐름.
-  // rhwp 와 vfinder 가 같은 host 라 same-origin 룰로 자연 통과.
-  saveAsViaVfinder: SSR_MODE
-    ? async () => {
-        if (!currentSsrFileId) return false;
-        // 디바운스 큐에 남은 편집 먼저 반영
-        await sessionClient?.flushOps();
-
-        // 1) modal 띄움 + 사용자 선택 대기
-        const target = await new Promise<
-          { path: string; name: string; overwrite: boolean } | null
-        >((resolve) => {
-          let settled = false;
-          const handle = mountVfinderModal({
-            mode: 'save-as',
-            suggestedName: wasm.fileName,
-            userId: SSR_USER_ID,
-            onSaveAs: (result) => {
-              if (settled) return;
-              settled = true;
-              resolve(result);
-            },
-            onCancel: () => {
-              if (settled) return;
-              settled = true;
-              resolve(null);
-            },
-          });
-          // 5분 타임아웃 — modal 이 열려 있는 자리에서 사용자가 잊었을 자리.
-          window.setTimeout(() => {
+  // *vfinder save-as picker iframe* 만 띄움 — 결과만 반환. picker 책임 분리로
+  // file.ts 가 picker 결과를 *server forward* 와 *client direct vfinder upload* 양쪽
+  // 어느 흐름에든 *같은 target* 으로 흘릴 수 있게 한다 (picker 가 한 번만 뜨도록).
+  pickVfinderSaveAsTarget: async (suggestedName: string) => {
+    return await new Promise<{ path: string; name: string; overwrite: boolean } | null>(
+      (resolve) => {
+        let settled = false;
+        const handle = mountVfinderModal({
+          mode: 'save-as',
+          suggestedName,
+          userId: SSR_USER_ID,
+          onSaveAs: (result) => {
             if (settled) return;
             settled = true;
-            handle.close();
+            resolve(result);
+          },
+          onCancel: () => {
+            if (settled) return;
+            settled = true;
             resolve(null);
-          }, 5 * 60 * 1000);
+          },
         });
-
-        if (!target) return false;
-
-        // 2) /save-as 호출
-        const saveAsHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (SSR_USER_ID) saveAsHeaders['X-Rhwp-User'] = SSR_USER_ID;
+        // 5 분 timeout — modal 자리에서 사용자가 잊었을 자리.
+        window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          handle.close();
+          resolve(null);
+        }, 5 * 60 * 1000);
+      },
+    );
+  },
+  // SSR 활성 자리 *server-side `/save-as` forward*. picker 결과 (`target`) 를 인자로 받음.
+  // server-side 흐름이 깨졌을 때 (502 등) caller 가 *같은 target 으로* client direct
+  // vfinder upload 로 흘릴 수 있도록 picker 호출은 본 함수 밖에 둔다.
+  forwardSaveAsToServer: SSR_MODE
+    ? async (target) => {
+        if (!currentSsrFileId) return false;
+        await sessionClient?.flushOps();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (SSR_USER_ID) headers['X-Rhwp-User'] = SSR_USER_ID;
         const res = await fetch(
           `${SSR_BASE_URL}/sessions/${encodeURIComponent(currentSsrFileId)}/save-as`,
-          {
-            method: 'POST',
-            headers: saveAsHeaders,
-            body: JSON.stringify(target),
-          },
+          { method: 'POST', headers, body: JSON.stringify(target) },
         );
         if (!res.ok) {
           const body = await res.text().catch(() => '');
           throw new Error(`save-as HTTP ${res.status}: ${body}`);
         }
         const body = (await res.json()) as { fileId: string; path: string };
-
-        // 3) 새 fileId 로 URL 갱신 — 이후 새로고침·공유 자리에서 새 id 로 진입.
         const url = new URL(window.location.href);
         url.searchParams.set('fileId', body.fileId);
         window.history.replaceState({}, '', url.toString());
         currentSsrFileId = body.fileId;
         wasm.fileName = target.name;
-
         return true;
+      }
+    : undefined,
+  // *호환성 보장* — 외부 e2e/툴 자리 `saveAsViaVfinder` 직접 호출이 있을 자리. 내부
+  // 구현은 신설 두 함수 조합 (picker + server forward).
+  saveAsViaVfinder: SSR_MODE
+    ? async () => {
+        const target = await commandServices.pickVfinderSaveAsTarget!(wasm.fileName);
+        if (!target) return false;
+        return await commandServices.forwardSaveAsToServer!(target);
       }
     : undefined,
   // SSR 환경에서 *파일 열기* — rhwp studio 자체 modal 안에 vfinder picker iframe.
