@@ -108,10 +108,13 @@ async function uploadCurrentDocumentToVfinder(
 
   try {
     if (target) {
-      // path 모드 (신규/덮어쓰기) — picker 결과 그대로.
+      // path 모드 (신규/덮어쓰기) — picker 가 반환한 이름에 *확장자 자동 부여* 후
+      // multipart 전송. vfinder picker 자리 사용자가 확장자 없이 입력해도 `.hwp` 가
+      // 강제로 붙어 저장 (요청 정합 — 다른 이름으로 저장 자리 항상 .hwp 으로 끝).
+      const correctedName = hwpSaveFileName(target.name);
       const result = await uploadToVfinder({
         blob,
-        fileName: target.name,
+        fileName: correctedName,
         vfinderBase: services.vfinderBase,
         userId: services.vfinderUserId,
         path: target.path,
@@ -179,28 +182,37 @@ export async function saveCurrentDocument(services: CommandServices): Promise<Sa
         console.log('[file:save] SSR 서버 저장 완료');
         return 'saved';
       }
-      // saveToServer 가 false 반환 — 세션 식별자 누락 등. agent iframe 환경이면
-      // *vfinder 직호출 흐름* 으로 자동 fallback (사용자가 저장 결과를 보게).
-      if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
-        console.warn('[file:save] SSR 서버 저장 거부 — vfinder 직호출로 fallback');
-        return await saveCurrentDocumentViaVfinder(services);
-      }
+      // saveToServer 가 false 반환 — 세션 식별자 누락 등. *cross-origin 체크 없이*
+      // vfinder 직호출 흐름으로 자동 fallback. top window 자리 (VM URL 직접 진입)
+      // 에서도 vfinder 가 같은 host 라 자연 작동 — 사용자 의도가 *저장이 실제로 이뤄짐*
+      // 인데 cross-origin 만 체크하면 top window 진입 자리에서 로컬 폴백으로 흐른다.
+      console.warn('[file:save] SSR 서버 저장 거부 — vfinder 직호출로 fallback');
+      const r1 = await saveCurrentDocumentViaVfinder(services);
+      if (r1 !== 'failed') return r1;
+      console.warn('[file:save] vfinder 직호출도 실패 — 로컬 폴백');
     } catch (e) {
-      // SSR 활성 상태의 *진짜 서버 실패* (502·timeout 등). agent iframe 환경이면
-      // 다운로드 폴백 의미 없음 — *vfinder 직호출* 로 자동 fallback. top window·
-      // same-origin iframe 만 로컬 폴백.
-      if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[file:save] SSR 서버 저장 실패 (${msg}) — vfinder 직호출로 fallback`);
-        return await saveCurrentDocumentViaVfinder(services);
+      // SSR 활성 상태의 *진짜 서버 실패* (502·timeout 등). cross-origin 체크 없이
+      // vfinder 직호출 시도. vfinder 자체도 실패하면 로컬 폴백.
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[file:save] SSR 서버 저장 실패 (${msg}) — vfinder 직호출로 fallback`);
+      try {
+        const r1 = await saveCurrentDocumentViaVfinder(services);
+        if (r1 !== 'failed') return r1;
+      } catch (e2) {
+        console.warn('[file:save] vfinder 직호출도 실패 — 로컬 폴백', e2);
       }
-      console.warn('[file:save] 서버 저장 실패 — 로컬 저장으로 폴백', e);
     }
   } else if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
     // SSR 비활성 + cross-origin iframe (agent VM iframe). agent host 의 SSR 파라미터
     // 부착에 의존하지 않고 *VM 내부 vfinder /api/upload 직호출* 흐름으로 저장.
-    return await saveCurrentDocumentViaVfinder(services);
+    try {
+      const r1 = await saveCurrentDocumentViaVfinder(services);
+      if (r1 !== 'failed') return r1;
+    } catch (e) {
+      console.warn('[file:save] vfinder 직호출 실패 — 로컬 폴백', e);
+    }
   }
+  // SSR 비활성 + top window / same-origin 자리 — 기존 file picker / download 흐름.
   try {
     const saveName = services.wasm.fileName;
     const sourceFormat = services.wasm.getSourceFormat();
@@ -437,14 +449,20 @@ export const fileCommands: CommandDef[] = [
     shortcutLabel: 'Ctrl+Shift+S',
     canExecute: (ctx) => ctx.hasDocument,
     async execute(services) {
-      // cross-origin iframe (agent VM) 자리 — picker 가 *정확히 한 번* 만 뜨도록
-      // picker 호출 과 저장 위임 을 명시적으로 분리:
-      //   1) pickSaveAsTarget → SaveAsTarget 받음 (한 번)
-      //   2) SSR 활성 자리 server-side `/save-as` forward 시도
-      //   3) server-side 실패 (false·throw) 자리 *같은 target* 으로 vfinder direct upload
-      //
-      // SSR 비활성 자리 (2) 건너뛰고 곧장 (3). 어느 경로든 picker 두 번 안 뜸.
-      if (isCrossOriginEmbedded(window as FileSystemWindowLike)) {
+      // *vfinder 흐름 우선* — SSR 활성 자리 (forwardSaveAsToServer 정의) 또는
+      // cross-origin iframe (agent VM iframe) 자리. *cross-origin 만 체크하면* top
+      // window 로 VM URL 진입한 자리 (vfinder 도 같은 host) 에서도 로컬 폴백으로
+      // 흘러 사용자 의도 위반. SSR 활성 도 진입 조건 에 추가.
+      const useVfinderFlow =
+        !!services.forwardSaveAsToServer ||
+        isCrossOriginEmbedded(window as FileSystemWindowLike);
+      if (useVfinderFlow) {
+        // picker 가 *정확히 한 번* 만 뜨도록 picker 호출 과 저장 위임 을 명시적 분리:
+        //   1) pickSaveAsTarget → SaveAsTarget 받음 (한 번)
+        //   2) SSR 활성 자리 server-side `/save-as` forward 시도
+        //   3) server-side 실패 (false·throw) 자리 *같은 target* 으로 vfinder direct upload
+        //
+        // SSR 비활성 자리 (2) 건너뛰고 곧장 (3). 어느 경로든 picker 두 번 안 뜸.
         const suggested = hwpSaveFileName(services.wasm.fileName);
         const target = await pickSaveAsTarget(services, suggested);
         if (!target) return; // 사용자 취소
@@ -464,21 +482,11 @@ export const fileCommands: CommandDef[] = [
           }
         }
 
-        // (3) client direct vfinder upload — picker 결과 그대로 재활용
-        await uploadCurrentDocumentToVfinder(services, target);
-        return;
-      }
-      // top window / same-origin iframe 자리 — SSR 활성이면 server forward 흐름 우선.
-      if (services.saveAsViaVfinder) {
-        try {
-          if (await services.saveAsViaVfinder()) {
-            services.documentState.markClean('save');
-            console.log('[file:save-as] vfinder 저장 완료');
-            return;
-          }
-        } catch (e) {
-          console.warn('[file:save-as] vfinder 저장 실패 — 로컬 저장으로 폴백', e);
-        }
+        // (3) client direct vfinder upload — picker 결과 그대로 재활용. 확장자 자동 부여는
+        // uploadCurrentDocumentToVfinder 내부 자리 hwpSaveFileName(target.name) 자리.
+        const r = await uploadCurrentDocumentToVfinder(services, target);
+        if (r !== 'failed') return;
+        console.warn('[file:save-as] vfinder 직호출도 실패 — 로컬 폴백');
       }
       try {
         const sourceFormat = services.wasm.getSourceFormat();

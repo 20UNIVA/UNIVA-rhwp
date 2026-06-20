@@ -314,9 +314,10 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
-                  // [4-4 fix] 서버가 변환해 보낸 cell_idx 우선 사용 — 다중 사용자 race 회피.
-                  // 없으면 wasm.findCellIdx fallback (구 서버 호환).
-                  const ctrlIdx = 0;
+                  // [4-4 fix] 서버가 변환해 보낸 cell_idx + ctrl_idx 우선 사용 — 다중 사용자 race 회피.
+                  // 없으면 wasm.findCellIdx fallback (구 서버 호환). ctrl_idx 는 paragraph 안
+                  // Table 위치 (section_def + column_def 가 앞에 박힐 때 0 이 아님).
+                  const ctrlIdx = typeof op.ctrl_idx === 'number' ? op.ctrl_idx : 0;
                   const cellIdx = typeof op.cell_idx === 'number'
                     ? op.cell_idx
                     : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
@@ -332,8 +333,11 @@ function buildSessionClient(fileId: string): SessionClient {
                   console.warn('[main] merge_cells payload 미일치 — 무시', op);
                   break;
                 }
-                wasm.mergeTableCells(op.section, op.table_para, 0, op.row_start, op.col_start, op.row_end, op.col_end);
-                appliedCount += 1;
+                {
+                  const ctrlIdx = typeof op.ctrl_idx === 'number' ? op.ctrl_idx : 0;
+                  wasm.mergeTableCells(op.section, op.table_para, ctrlIdx, op.row_start, op.col_start, op.row_end, op.col_end);
+                  appliedCount += 1;
+                }
                 break;
               case 'replace_cell_runs':
                 if (typeof op.section !== 'number' || typeof op.table_para !== 'number' ||
@@ -343,8 +347,8 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
-                  // [4-4 fix] cell_idx 우선 + fallback.
-                  const ctrlIdx = 0;
+                  // [4-4 fix] cell_idx + ctrl_idx 우선 + fallback.
+                  const ctrlIdx = typeof op.ctrl_idx === 'number' ? op.ctrl_idx : 0;
                   const cellIdx = typeof op.cell_idx === 'number'
                     ? op.cell_idx
                     : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
@@ -361,8 +365,8 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
-                  // [4-4 fix] cell_idx 우선 + fallback.
-                  const ctrlIdx = 0;
+                  // [4-4 fix] cell_idx + ctrl_idx 우선 + fallback.
+                  const ctrlIdx = typeof op.ctrl_idx === 'number' ? op.ctrl_idx : 0;
                   const cellIdx = typeof op.cell_idx === 'number'
                     ? op.cell_idx
                     : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);
@@ -382,8 +386,8 @@ function buildSessionClient(fileId: string): SessionClient {
                   break;
                 }
                 {
-                  // [4-4 fix] cell_idx 우선 + fallback.
-                  const ctrlIdx = 0;
+                  // [4-4 fix] cell_idx + ctrl_idx 우선 + fallback.
+                  const ctrlIdx = typeof op.ctrl_idx === 'number' ? op.ctrl_idx : 0;
                   const cellIdx = typeof op.cell_idx === 'number'
                     ? op.cell_idx
                     : wasm.findCellIdx(op.section, op.table_para, ctrlIdx, op.row, op.col);

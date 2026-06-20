@@ -339,6 +339,10 @@ pub enum EditOperation {
         col: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cell_idx: Option<usize>,
+        /// paragraph 안 Table control 인덱스. 서버 workbench 가 broadcast 전에
+        /// `find_table_ctrl_idx` 결과로 채운다. 미지정 시 native 적용 단계에서 자동 탐색.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ctrl_idx: Option<usize>,
         style: PartialCellStyle,
     },
     /// 표 셀 범위 병합. merge_table_cells_native 위임.
@@ -349,6 +353,9 @@ pub enum EditOperation {
         col_start: usize,
         row_end: usize,
         col_end: usize,
+        /// paragraph 안 Table control 인덱스. 미지정 시 자동 탐색.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ctrl_idx: Option<usize>,
     },
     /// 셀 내 문단 runs 통째 교체. replace_cell_runs_native 위임.
     /// `cell_idx` 가 채워져 있으면 변환 생략하고 그대로 사용.
@@ -359,6 +366,8 @@ pub enum EditOperation {
         col: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cell_idx: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ctrl_idx: Option<usize>,
         cell_para: usize,
         runs: Vec<RunSpec>,
     },
@@ -371,6 +380,8 @@ pub enum EditOperation {
         col: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cell_idx: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ctrl_idx: Option<usize>,
         cell_para: usize,
         offset: usize,
         text: String,
@@ -386,6 +397,8 @@ pub enum EditOperation {
         col: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cell_idx: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ctrl_idx: Option<usize>,
         cell_para_start: usize,
         char_start: usize,
         cell_para_end: usize,
@@ -888,6 +901,39 @@ impl DocumentCore {
             })
     }
 
+    /// paragraph 안 *첫 Table control* 의 인덱스를 찾는다. 섹션의 첫 문단처럼
+    /// `SectionDef`/`ColumnDef` 같은 다른 control 이 Table 앞에 동거하는 자리에서도
+    /// 셀 단위 native 호출의 `ctrl_idx` 가 정합 동작하도록 자동 보정한다.
+    /// `find_cell_idx` 의 fallback 과 동일 규약 (가장 앞 Table) 을 따라 한 paragraph
+    /// 안에서 두 함수가 같은 Table 을 가리킨다.
+    pub fn find_table_ctrl_idx(
+        &self,
+        section_idx: usize,
+        table_para_idx: usize,
+    ) -> Result<usize, HwpError> {
+        let para = self
+            .document
+            .sections
+            .get(section_idx)
+            .and_then(|s| s.paragraphs.get(table_para_idx))
+            .ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "find_table_ctrl_idx: 좌표 부적합 (sec={}, table_para={})",
+                    section_idx, table_para_idx
+                ))
+            })?;
+        para.controls
+            .iter()
+            .position(|c| matches!(c, crate::model::control::Control::Table(_)))
+            .ok_or_else(|| {
+                HwpError::RenderError(format!(
+                    "find_table_ctrl_idx: table_para={} 에 Table control 없음 (controls_len={})",
+                    table_para_idx,
+                    para.controls.len()
+                ))
+            })
+    }
+
     /// 편집 연산을 정방향 적용한다.
     pub fn apply_edit_op(&mut self, op: &EditOperation) -> Result<(), HwpError> {
         match op {
@@ -961,8 +1007,11 @@ impl DocumentCore {
                     .count();
                 self.create_table_native(*section, *insert_after_para, para_len, *rows, *cols)?;
             }
-            EditOperation::SetCellStyle { section, table_para, row, col, cell_idx, style } => {
-                let ctrl_idx = 0usize;
+            EditOperation::SetCellStyle { section, table_para, row, col, cell_idx, ctrl_idx, style } => {
+                let ctrl_idx = match ctrl_idx {
+                    Some(idx) => *idx,
+                    None => self.find_table_ctrl_idx(*section, *table_para)?,
+                };
                 let resolved_cell_idx = match cell_idx {
                     Some(idx) => *idx,
                     None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
@@ -972,16 +1021,22 @@ impl DocumentCore {
                 let json = partial_cell_style_to_native_json(style);
                 self.set_cell_properties_native(*section, *table_para, ctrl_idx, resolved_cell_idx, &json)?;
             }
-            EditOperation::MergeCells { section, table_para, row_start, col_start, row_end, col_end } => {
-                let ctrl_idx = 0usize;
+            EditOperation::MergeCells { section, table_para, row_start, col_start, row_end, col_end, ctrl_idx } => {
+                let ctrl_idx = match ctrl_idx {
+                    Some(idx) => *idx,
+                    None => self.find_table_ctrl_idx(*section, *table_para)?,
+                };
                 self.merge_table_cells_native(
                     *section, *table_para, ctrl_idx,
                     *row_start as u16, *col_start as u16,
                     *row_end as u16, *col_end as u16,
                 )?;
             }
-            EditOperation::ReplaceCellRuns { section, table_para, row, col, cell_idx, cell_para, runs } => {
-                let ctrl_idx = 0usize;
+            EditOperation::ReplaceCellRuns { section, table_para, row, col, cell_idx, ctrl_idx, cell_para, runs } => {
+                let ctrl_idx = match ctrl_idx {
+                    Some(idx) => *idx,
+                    None => self.find_table_ctrl_idx(*section, *table_para)?,
+                };
                 let resolved_cell_idx = match cell_idx {
                     Some(idx) => *idx,
                     None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
@@ -990,8 +1045,11 @@ impl DocumentCore {
                 let runs_json = runs_to_native_json(self, runs)?;
                 self.replace_cell_runs_native(*section, *table_para, ctrl_idx, resolved_cell_idx, *cell_para, &runs_json)?;
             }
-            EditOperation::InsertTextInCell { section, table_para, row, col, cell_idx, cell_para, offset, text, style } => {
-                let ctrl_idx = 0usize;
+            EditOperation::InsertTextInCell { section, table_para, row, col, cell_idx, ctrl_idx, cell_para, offset, text, style } => {
+                let ctrl_idx = match ctrl_idx {
+                    Some(idx) => *idx,
+                    None => self.find_table_ctrl_idx(*section, *table_para)?,
+                };
                 let resolved_cell_idx = match cell_idx {
                     Some(idx) => *idx,
                     None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
@@ -1012,8 +1070,11 @@ impl DocumentCore {
                     )?;
                 }
             }
-            EditOperation::DeleteRangeInCell { section, table_para, row, col, cell_idx, cell_para_start, char_start, cell_para_end, char_end } => {
-                let ctrl_idx = 0usize;
+            EditOperation::DeleteRangeInCell { section, table_para, row, col, cell_idx, ctrl_idx, cell_para_start, char_start, cell_para_end, char_end } => {
+                let ctrl_idx = match ctrl_idx {
+                    Some(idx) => *idx,
+                    None => self.find_table_ctrl_idx(*section, *table_para)?,
+                };
                 let resolved_cell_idx = match cell_idx {
                     Some(idx) => *idx,
                     None => self.find_cell_idx(*section, *table_para, ctrl_idx, *row as u16, *col as u16)?,
@@ -1460,6 +1521,7 @@ mod tests {
             row: 0,
             col: 0,
             cell_idx: None,
+            ctrl_idx: None,
             style: PartialCellStyle {
                 vertical_align: Some("middle".to_string()),
                 ..Default::default()
@@ -1490,6 +1552,7 @@ mod tests {
             row: 0,
             col: 0,
             cell_idx: None,
+            ctrl_idx: None,
             cell_para_start: 0,
             char_start: 1,
             cell_para_end: 0,
@@ -1510,6 +1573,7 @@ mod tests {
             row: 0,
             col: 0,
             cell_idx: None,
+            ctrl_idx: None,
             cell_para: 0,
             offset: 0,
             text: "셀텍스트".to_string(),
@@ -1533,6 +1597,7 @@ mod tests {
             row: 0,
             col: 0,
             cell_idx: None,
+            ctrl_idx: None,
             cell_para: 0,
             runs: vec![RunSpec { text: "변경".to_string(), style: None }],
         };
@@ -1559,6 +1624,7 @@ mod tests {
             col_start: 0,
             row_end: 0,
             col_end: 1,
+            ctrl_idx: None,
         };
         core.apply_edit_op(&op).unwrap();
         let cells_after = {
@@ -1653,7 +1719,7 @@ mod tests {
     fn affected_range_set_cell_style_carries_cell_focus() {
         let op = EditOperation::SetCellStyle {
             section: 0, table_para: 4, row: 2, col: 3,
-            cell_idx: Some(11), style: PartialCellStyle::default(),
+            cell_idx: Some(11), ctrl_idx: None, style: PartialCellStyle::default(),
         };
         let r = op.affected_range();
         assert_eq!(r.before, ParaRange::single(4));
@@ -1670,7 +1736,7 @@ mod tests {
     fn affected_range_replace_cell_runs_carries_cell_para() {
         let op = EditOperation::ReplaceCellRuns {
             section: 0, table_para: 4, row: 1, col: 2,
-            cell_idx: Some(6), cell_para: 0, runs: vec![],
+            cell_idx: Some(6), ctrl_idx: None, cell_para: 0, runs: vec![],
         };
         let r = op.affected_range();
         let cell = r.cell.expect("cell focus 필요");
@@ -1683,6 +1749,7 @@ mod tests {
         let op = EditOperation::MergeCells {
             section: 0, table_para: 4,
             row_start: 1, col_start: 2, row_end: 3, col_end: 5,
+            ctrl_idx: None,
         };
         let r = op.affected_range();
         let cell = r.cell.expect("cell focus 필요");
@@ -1923,6 +1990,7 @@ mod tests {
             row: 0,
             col: 0,
             cell_idx: None,
+            ctrl_idx: None,
             style: PartialCellStyle {
                 bgcolor: Some("#FFC0CB".to_string()),
                 ..Default::default()
