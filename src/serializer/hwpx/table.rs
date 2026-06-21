@@ -267,27 +267,66 @@ fn write_sub_list<W: Write>(
             ],
         )?;
 
-        let cs = para
-            .char_shapes
-            .first()
-            .map(|r| r.char_shape_id)
-            .unwrap_or(0);
-        let cs_str = cs.to_string();
-        start_tag_attrs(w, "hp:run", &[("charPrIDRef", &cs_str)])?;
-        // 텍스트만 출력 (탭·소프트브레이크는 Stage 3 범위에서 제외 — section.rs 와 동일 방식으로 단순화)
-        write_cell_text(w, &para.text)?;
-        // Task #m600-28 — cell paragraph 의 controls 도 박음 (nested table·picture 등).
-        // 종전 자료는 `controls` 자체를 무시하여 표 안 표·표 안 그림이 round-trip 시 손실.
-        for ctrl in &para.controls {
-            match ctrl {
-                crate::model::control::Control::Table(t) => write_table(w, t, ctx)?,
-                crate::model::control::Control::Picture(pic) => {
-                    crate::serializer::hwpx::picture::write_picture(w, pic, ctx)?;
-                }
-                _ => {}
+        // Task #m600-30 — char_shapes 자료를 자체 자체 자체 별도 <hp:run> 자체 박음.
+        // 종전 자료는 char_shapes.first() 의 char_shape_id 자체 자체 자체 자체 단일 run 만
+        // 박아 *부분 char_shape (run-level styling — bold·italic·color)* 손실. char_shapes
+        // 의 start_pos 자료는 paragraph.text 의 utf16 offset 자체.
+        let text_u16: Vec<u16> = para.text.encode_utf16().collect();
+        let total_u16 = text_u16.len() as u32;
+        let css = &para.char_shapes;
+        if css.is_empty() || text_u16.is_empty() {
+            // text 가 비어있어도 char_shapes 의 첫 char_shape_id 자료는 보존해야 한다 —
+            // 빈 paragraph 자체 자체 자체 자체 자체 char_shape 자료 (다음 단락의 기본
+            // 스타일·후속 paragraph 의 cascade 기준) 가 손실되면 round-trip 시 결함.
+            let cs = css.first().map(|r| r.char_shape_id).unwrap_or(0);
+            if let Some(c) = css.first() {
+                ctx.char_shape_ids.reference(c.char_shape_id);
             }
+            let cs_str = cs.to_string();
+            start_tag_attrs(w, "hp:run", &[("charPrIDRef", &cs_str)])?;
+            write_cell_text(w, &para.text)?;
+            end_tag(w, "hp:run")?;
+        } else {
+            for (i, cs_ref) in css.iter().enumerate() {
+                ctx.char_shape_ids.reference(cs_ref.char_shape_id);
+                // char_shapes.start_pos 자체 자체 PARA_CHAR_SHAPE record 자료라 paragraph end
+                // marker·control 자체 자체 포함된 utf16 자료. text_u16.len() 자체 자체 clamp.
+                let start = (cs_ref.start_pos as usize).min(text_u16.len());
+                let end_raw = css
+                    .get(i + 1)
+                    .map(|c| c.start_pos as usize)
+                    .unwrap_or(text_u16.len());
+                let end = end_raw.min(text_u16.len());
+                if end <= start {
+                    continue;
+                }
+                let segment_u16 = &text_u16[start..end];
+                let segment = String::from_utf16_lossy(segment_u16);
+                let cs_str = cs_ref.char_shape_id.to_string();
+                start_tag_attrs(w, "hp:run", &[("charPrIDRef", &cs_str)])?;
+                write_cell_text(w, &segment)?;
+                end_tag(w, "hp:run")?;
+            }
+            let _ = total_u16;
         }
-        end_tag(w, "hp:run")?;
+        // Task #m600-28 — cell paragraph 의 controls 도 박음 (nested table·picture 등).
+        // 종전 자료는 controls 자체 자체 자체 무시하여 표 안 표·표 안 그림이 round-trip 시 손실.
+        // controls 자체 자체 자체 별도 hp:run 으로 박음 (char_shape run 자체 자체 자체 자체 분리).
+        if !para.controls.is_empty() {
+            let ctrl_cs = css.first().map(|r| r.char_shape_id).unwrap_or(0);
+            let ctrl_cs_str = ctrl_cs.to_string();
+            start_tag_attrs(w, "hp:run", &[("charPrIDRef", &ctrl_cs_str)])?;
+            for ctrl in &para.controls {
+                match ctrl {
+                    crate::model::control::Control::Table(t) => write_table(w, t, ctx)?,
+                    crate::model::control::Control::Picture(pic) => {
+                        crate::serializer::hwpx::picture::write_picture(w, pic, ctx)?;
+                    }
+                    _ => {}
+                }
+            }
+            end_tag(w, "hp:run")?;
+        }
 
         // <hp:linesegarray> — para.line_segs IR 그대로 직렬화 (Task #m600-25 fix).
         // 종전 자료가 *cell paragraph 의 line_segs 자료를 무시하고 단일 정적 lineseg
