@@ -272,6 +272,73 @@ function buildSessionClient(fileId: string): SessionClient {
                   appliedCount += 1;
                 }
                 break;
+              case 'press_enter': {
+                // 한컴 Enter / Ctrl+Enter — 본문 / 셀 모드 분기 (table_para 키 박힘 = 셀 모드).
+                // 내부 자체 split_paragraph / split_paragraph_in_cell 헬퍼 호출 — wasm-bridge 의
+                // 기존 함수 자체 자체 활용. count 회 반복, page_break 자세 자체 첫 회만 적용.
+                const opPe = op as unknown as {
+                  section?: number;
+                  para?: number;
+                  table_para?: number;
+                  row?: number;
+                  col?: number;
+                  cell_idx?: number;
+                  cell_para?: number;
+                  char_offset?: number;
+                  count?: number;
+                  style?: unknown;
+                  page_break?: boolean;
+                };
+                if (typeof opPe.section !== 'number') {
+                  console.warn('[main] press_enter section 누락 — 무시', op);
+                  break;
+                }
+                const charOffsetRaw = typeof opPe.char_offset === 'number' ? opPe.char_offset : -1;
+                const count = typeof opPe.count === 'number' ? opPe.count : 1;
+                const pageBreak = opPe.page_break === true;
+                const cellMode = typeof opPe.table_para === 'number';
+
+                if (cellMode) {
+                  if (pageBreak) {
+                    console.warn('[main] press_enter 셀 모드 + page_break:true — 무시 (셀 안 page_break 미지원)', op);
+                    break;
+                  }
+                  if (typeof opPe.row !== 'number' || typeof opPe.col !== 'number' ||
+                      typeof opPe.cell_para !== 'number' || typeof opPe.cell_idx !== 'number') {
+                    console.warn('[main] press_enter 셀 모드 payload 미일치 (cell_idx fill 부재) — 무시', op);
+                    break;
+                  }
+                  // 셀 char_offset = -1 자세 자체 자체 자체 자체 자체 splitParagraphInCell 자세 자체 자체
+                  // 자체 자체 *u32 받음* — -1 자체 자체 자체 자체 *큰 양수* 자체 자체 자체 자체 split
+                  // helper 의 `.min(total_chars)` clamp 자세 자체 자체.
+                  const cellCharOffset = charOffsetRaw < 0 ? 0x7FFFFFFF : charOffsetRaw;
+                  for (let i = 0; i < count; i++) {
+                    const targetCellPara = opPe.cell_para + i;
+                    const targetOffset = i === 0 ? cellCharOffset : 0;
+                    wasm.splitParagraphInCell(opPe.section, opPe.table_para!, 0, opPe.cell_idx, targetCellPara, targetOffset);
+                  }
+                } else {
+                  if (typeof opPe.para !== 'number') {
+                    console.warn('[main] press_enter 본문 모드 para 누락 — 무시', op);
+                    break;
+                  }
+                  // 본문 char_offset = -1 자세 자체 자체 자체 자체 자체 큰 양수 자체 자세 split clamp.
+                  const bodyCharOffset = charOffsetRaw < 0 ? 0x7FFFFFFF : charOffsetRaw;
+                  for (let i = 0; i < count; i++) {
+                    const targetPara = opPe.para + i;
+                    const targetOffset = i === 0 ? bodyCharOffset : 0;
+                    wasm.splitParagraph(opPe.section, targetPara, targetOffset);
+                    if (opPe.style && typeof opPe.style === 'object') {
+                      wasm.applyParaFormat(opPe.section, targetPara + 1, JSON.stringify(opPe.style));
+                    }
+                    if (i === 0 && pageBreak) {
+                      wasm.insertPageBreak(opPe.section, targetPara + 1, 0);
+                    }
+                  }
+                }
+                appliedCount += 1;
+                break;
+              }
               case 'delete_element':
                 if (typeof op.section !== 'number' || typeof op.para !== 'number' ||
                     typeof op.element_type !== 'string') {

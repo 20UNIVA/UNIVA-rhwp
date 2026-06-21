@@ -609,18 +609,23 @@ async fn export(
     Query(q): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
     let session = get_or_restore(&state, &file_id, &user_id).await?;
-    let s = session.lock().unwrap();
-    let doc = s.core.document();
-    let fmt = q.fmt.as_deref().unwrap_or(&s.format);
+    let mut s = session.lock().unwrap();
+    let fmt = q.fmt.as_deref().unwrap_or(&s.format).to_string();
 
-    let (bytes, ext) = match fmt {
+    // Task #m600-42 — HWP 직렬화는 export_hwp_with_adapter 를 거쳐야 한다. HWPX 출처
+    // (server 가 snapshot 을 HWPX 로 박는 자리) 의 IR 은 FileHeader.compressed=false,
+    // flags=0, raw_data=None 으로 박혀 있어, serialize_document 를 직접 부르면
+    // properties=0x00000000 인 HWP 가 박힌다 — 한컴 편집기가 "손상 문서" 알람을 띄움.
+    // adapter 는 source_format=Hwp 면 no-op 이라 HWP 출처에는 영향 없음.
+    let (bytes, ext) = match fmt.as_str() {
         "hwpx" => (
-            rhwp::serializer::serialize_hwpx(doc)
+            rhwp::serializer::serialize_hwpx(s.core.document())
                 .map_err(|e| AppError::internal(format!("hwpx 직렬화 실패: {e:?}")))?,
             "hwpx",
         ),
         _ => (
-            rhwp::serialize_document(doc)
+            s.core
+                .export_hwp_with_adapter()
                 .map_err(|e| AppError::internal(format!("hwp 직렬화 실패: {e:?}")))?,
             "hwp",
         ),
@@ -648,12 +653,15 @@ async fn save_document(
     // lock 안에서 동기 직렬화 → guard drop 후 await upload (MutexGuard는 await 경계를 넘지 않음).
     // session 의 user 를 함께 추출 — *세션 주인* 의 user 로 storage 호출.
     let (bytes, filename, session_user) = {
-        let s = session.lock().unwrap();
-        let doc = s.core.document();
+        let mut s = session.lock().unwrap();
+        // Task #m600-42 — save_document HWP 자리에도 adapter 경유 (loss of compressed
+        // flag 결함, server export 자리와 동일 원인).
         let bytes = match s.format.as_str() {
-            "hwpx" => rhwp::serializer::serialize_hwpx(doc)
+            "hwpx" => rhwp::serializer::serialize_hwpx(s.core.document())
                 .map_err(|e| AppError::internal(format!("hwpx 직렬화 실패: {e:?}")))?,
-            _ => rhwp::serialize_document(doc)
+            _ => s
+                .core
+                .export_hwp_with_adapter()
                 .map_err(|e| AppError::internal(format!("hwp 직렬화 실패: {e:?}")))?,
         };
         (bytes, s.filename.clone(), s.user_id.clone())
@@ -682,12 +690,14 @@ async fn save_as(
 ) -> Result<Json<SaveAsResp>, AppError> {
     let session = get_or_restore(&state, &file_id, &user_id).await?;
     let (bytes, session_user) = {
-        let s = session.lock().unwrap();
-        let doc = s.core.document();
+        let mut s = session.lock().unwrap();
+        // Task #m600-42 — save_as HWP 자리도 adapter 경유 (compressed flag 결함, 같은 원인).
         let bytes = match s.format.as_str() {
-            "hwpx" => rhwp::serializer::serialize_hwpx(doc)
+            "hwpx" => rhwp::serializer::serialize_hwpx(s.core.document())
                 .map_err(|e| AppError::internal(format!("hwpx 직렬화 실패: {e:?}")))?,
-            _ => rhwp::serialize_document(doc)
+            _ => s
+                .core
+                .export_hwp_with_adapter()
                 .map_err(|e| AppError::internal(format!("hwp 직렬화 실패: {e:?}")))?,
         };
         (bytes, s.user_id.clone())
@@ -727,6 +737,41 @@ pub(crate) async fn apply_op_with_stash(
     op: rhwp::document_core::EditOperation,
     origin_client_id: Option<String>,
 ) -> Result<(i64, Option<ir_compact::PatchDiff>), AppError> {
+    // PressEnter 셀 모드 broadcast 직전 cell_idx / ctrl_idx fill — studio 자체 자체 자체 자체
+    // broadcast 받았을 때 (row, col) 자체 자체 자체 resolve 부담 0건. broadcast 자체 자체
+    // 자체 자체 자체 자체 fill 된 op 자체 자체 자체 흘러감.
+    let mut op = op;
+    if let rhwp::document_core::EditOperation::PressEnter {
+        section,
+        table_para: Some(tp),
+        row: Some(r),
+        col: Some(c),
+        ctrl_idx,
+        cell_idx,
+        ..
+    } = &mut op
+    {
+        let s = session.lock().unwrap();
+        let resolved_ctrl_idx = match ctrl_idx {
+            Some(idx) => *idx,
+            None => s
+                .core
+                .find_table_ctrl_idx(*section, *tp)
+                .map_err(|e| AppError::unprocessable(format!("find_table_ctrl_idx: {e}")))?,
+        };
+        if cell_idx.is_none() {
+            let resolved = s
+                .core
+                .find_cell_idx(*section, *tp, resolved_ctrl_idx, *r as u16, *c as u16)
+                .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?;
+            *cell_idx = Some(resolved);
+        }
+        if ctrl_idx.is_none() {
+            *ctrl_idx = Some(resolved_ctrl_idx);
+        }
+        drop(s);
+    }
+
     // affected_range — apply 전후 IR 슬라이스 캡처 범위.
     let range = op.affected_range();
 
@@ -942,6 +987,62 @@ async fn workbench(
                 section: payload.section,
                 para: payload.para,
                 offset: payload.offset,
+            };
+            let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
+            Ok(Json(WorkbenchResp {
+                seq,
+                applied: "ops".to_string(),
+                info: None,
+                diff,
+            }))
+        }
+        "press_enter" => {
+            // 한컴 Enter / Ctrl+Enter 와 동등. payload key 자체로 본문/셀 모드 분기.
+            // table_para 박혀 있으면 셀 모드, 부재면 본문 모드. 자세한 시맨틱은
+            // EditOperation::PressEnter doc-string 참조.
+            fn one() -> usize { 1 }
+            fn default_offset() -> i64 { -1 }
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                section: usize,
+                #[serde(default)]
+                para: Option<usize>,
+                #[serde(default)]
+                table_para: Option<usize>,
+                #[serde(default)]
+                row: Option<usize>,
+                #[serde(default)]
+                col: Option<usize>,
+                #[serde(default)]
+                cell_para: Option<usize>,
+                #[serde(default)]
+                ctrl_idx: Option<usize>,
+                #[serde(default)]
+                cell_idx: Option<usize>,
+                #[serde(default = "default_offset")]
+                char_offset: i64,
+                #[serde(default = "one")]
+                count: usize,
+                #[serde(default)]
+                style: Option<rhwp::document_core::PartialParagraphStyle>,
+                #[serde(default)]
+                page_break: Option<bool>,
+            }
+            let payload: Payload = serde_json::from_value(req.payload.clone())
+                .map_err(|e| AppError::bad_request(format!("INVALID_PAYLOAD: {e}")))?;
+            let op = rhwp::document_core::EditOperation::PressEnter {
+                section: payload.section,
+                para: payload.para,
+                table_para: payload.table_para,
+                row: payload.row,
+                col: payload.col,
+                cell_para: payload.cell_para,
+                ctrl_idx: payload.ctrl_idx,
+                cell_idx: payload.cell_idx,
+                char_offset: payload.char_offset,
+                count: payload.count,
+                style: payload.style,
+                page_break: payload.page_break,
             };
             let (seq, diff) = apply_op_with_stash(&state, &file_id, session.clone(), op, None).await?;
             Ok(Json(WorkbenchResp {

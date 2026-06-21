@@ -1368,6 +1368,53 @@ impl HwpDocument {
             .map_err(|e| e.into())
     }
 
+    /// 한컴 Enter / Ctrl+Enter — 커서 위치 (char_offset) 에서 Enter.
+    ///
+    /// 본문 모드: `para` 박힘, `table_para` 부재.
+    /// 셀 모드: `table_para` / `row` / `col` / `cell_para` 4 키 모두 박힘, `para` 부재.
+    ///
+    /// `char_offset` 시맨틱:
+    /// - `-1` 또는 음수 → 본문/셀 paragraph 끝
+    /// - `0` → 시작
+    /// - `len` 이상 → clamp to len
+    /// - 중간값 → split
+    ///
+    /// `count`: 같은 자리 Enter N 회 (= N 개 빈 paragraph 누적).
+    /// `page_break`: true 면 첫 번째 새 paragraph 만 페이지 분리. 셀 모드 + true → INVALID_PAYLOAD 에러.
+    #[wasm_bindgen(js_name = pressEnter)]
+    pub fn press_enter(
+        &mut self,
+        section: u32,
+        para: Option<u32>,
+        table_para: Option<u32>,
+        row: Option<u32>,
+        col: Option<u32>,
+        cell_para: Option<u32>,
+        char_offset: i64,
+        count: u32,
+        page_break: bool,
+    ) -> Result<String, JsValue> {
+        let op = crate::document_core::EditOperation::PressEnter {
+            section: section as usize,
+            para: para.map(|v| v as usize),
+            table_para: table_para.map(|v| v as usize),
+            row: row.map(|v| v as usize),
+            col: col.map(|v| v as usize),
+            cell_para: cell_para.map(|v| v as usize),
+            ctrl_idx: None,
+            cell_idx: None,
+            char_offset,
+            count: count as usize,
+            style: None,
+            page_break: Some(page_break),
+        };
+        self.apply_edit_op(&op).map_err(JsValue::from)?;
+        Ok(format!(
+            "{{\"status\":\"ok\",\"action\":\"press_enter\",\"count\":{}}}",
+            count
+        ))
+    }
+
     // ─── Phase 1: 기본 편집 보조 API ───────────────────────────
 
     /// 구역(Section) 수를 반환한다.
