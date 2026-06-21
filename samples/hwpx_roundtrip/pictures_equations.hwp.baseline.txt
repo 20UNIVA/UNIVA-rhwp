@@ -1,2 +1,0 @@
-[HWPX] s0.p179.c0.tbl.cell(1,1).p0.controls.len() 1 != 0
-[HWPX] s0.p179.c0.tbl.cell(2,1).p0.controls.len() 1 != 0

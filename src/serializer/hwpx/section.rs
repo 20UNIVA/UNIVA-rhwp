@@ -508,7 +508,7 @@ fn render_endnote(note: &Endnote, ctx: &mut SerializeContext) -> String {
     render_note_sublist("endNote", note.number, &note.paragraphs, ctx)
 }
 
-fn render_equation(eq: &Equation) -> String {
+pub(super) fn render_equation(eq: &Equation) -> String {
     let c = &eq.common;
     let id = c.instance_id.to_string();
     let z_order = c.z_order.to_string();

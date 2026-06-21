@@ -324,13 +324,15 @@ fn write_sub_list<W: Write>(
         if !para.controls.is_empty() {
             let ctrl_cs = css.first().map(|r| r.char_shape_id).unwrap_or(0);
             let ctrl_cs_str = ctrl_cs.to_string();
-            // hp:run 안 자체 자체 자체 박는 자료 — Table·Picture (HWPX 자체 자체 자체 hp:run
-            // 자식 자체 자체 박힘).
+            // hp:run 자식으로 박는 자료 — Table·Picture·Equation·CharOverlap.
+            // HWPX 표준에서 이 네 종류는 `<hp:run>` 안에 직접 들어간다.
             let has_inline_in_run = para.controls.iter().any(|c| {
                 matches!(
                     c,
                     crate::model::control::Control::Table(_)
                         | crate::model::control::Control::Picture(_)
+                        | crate::model::control::Control::Equation(_)
+                        | crate::model::control::Control::CharOverlap(_)
                 )
             });
             if has_inline_in_run {
@@ -340,6 +342,26 @@ fn write_sub_list<W: Write>(
                         crate::model::control::Control::Table(t) => write_table(w, t, ctx)?,
                         crate::model::control::Control::Picture(pic) => {
                             crate::serializer::hwpx::picture::write_picture(w, pic, ctx)?;
+                        }
+                        // Task #m600-37 — cell Equation 박음. render_equation 재사용
+                        // (body 자리와 동일 출력). raw bytes 로 inner writer 에 박는다.
+                        crate::model::control::Control::Equation(eq) => {
+                            use std::io::Write;
+                            let xml = crate::serializer::hwpx::section::render_equation(eq);
+                            w.get_mut().write_all(xml.as_bytes()).map_err(|e| {
+                                crate::serializer::hwpx::SerializeError::XmlError(format!(
+                                    "cell Equation raw write 실패: {}",
+                                    e
+                                ))
+                            })?;
+                        }
+                        // Task #m600-37 — cell CharOverlap 최소 wrapper. parser 의
+                        // parse_paragraph 가 `<hp:compose>` Start tag 만 인식하므로
+                        // Empty tag 가 아닌 Start+End 쌍으로 박는다. 정확한 attribute
+                        // (circleType·charSz·composeText) 복원은 별 cycle.
+                        crate::model::control::Control::CharOverlap(_) => {
+                            start_tag(w, "hp:compose")?;
+                            end_tag(w, "hp:compose")?;
                         }
                         _ => {}
                     }
@@ -368,6 +390,14 @@ fn write_sub_list<W: Write>(
                         start_tag(w, "hp:ctrl")?;
                         crate::serializer::hwpx::field::write_hyperlink_begin(w, link, 0)?;
                         crate::serializer::hwpx::field::write_field_end(w, 0)?;
+                        end_tag(w, "hp:ctrl")?;
+                    }
+                    // Task #m600-37 — cell ColumnDef. HWPX 의 `<hp:p><hp:ctrl><hp:colPr/>`
+                    // 형식. parse_col_pr 가 attribute 가 없어도 ColumnDef::default() 로
+                    // 한 건을 인식. 정확한 attribute (열 수·간격) 복원은 별 cycle.
+                    crate::model::control::Control::ColumnDef(_) => {
+                        start_tag(w, "hp:ctrl")?;
+                        empty_tag(w, "hp:colPr", &[])?;
                         end_tag(w, "hp:ctrl")?;
                     }
                     _ => {}
