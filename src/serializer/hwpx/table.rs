@@ -355,12 +355,60 @@ fn write_sub_list<W: Write>(
                                 ))
                             })?;
                         }
-                        // Task #m600-37 — cell CharOverlap 최소 wrapper. parser 의
-                        // parse_paragraph 가 `<hp:compose>` Start tag 만 인식하므로
-                        // Empty tag 가 아닌 Start+End 쌍으로 박는다. 정확한 attribute
-                        // (circleType·charSz·composeText) 복원은 별 cycle.
-                        crate::model::control::Control::CharOverlap(_) => {
-                            start_tag(w, "hp:compose")?;
+                        // Task #m600-40 — cell CharOverlap 정밀 복원. cycle 37 의 minimal
+                        // wrapper 가 attribute 를 default 로 덮어써 *겹쳐질 글자 자체* 가
+                        // round-trip 후 사라지던 자리. parser parse_compose 와 동등하게
+                        // circleType·charSz·composeType + <hp:composeText> 자식 + <hp:charPr>
+                        // 자식 박는다.
+                        crate::model::control::Control::CharOverlap(co) => {
+                            let circle_type = match co.border_type {
+                                0 => "CHAR",
+                                1 => "SHAPE_CIRCLE",
+                                2 => "SHAPE_REVERSAL_CIRCLE",
+                                3 => "SHAPE_RECTANGLE",
+                                4 => "SHAPE_REVERSAL_RECTANGLE",
+                                5 => "SHAPE_TRIANGLE",
+                                6 => "SHAPE_REVERSAL_TIRANGLE",
+                                _ => "CHAR",
+                            };
+                            let compose_type =
+                                if co.expansion == 1 { "OVERLAP" } else { "SPREAD" };
+                            let char_sz = co.inner_char_size.to_string();
+                            start_tag_attrs(
+                                w,
+                                "hp:compose",
+                                &[
+                                    ("circleType", circle_type),
+                                    ("charSz", &char_sz),
+                                    ("composeType", compose_type),
+                                ],
+                            )?;
+                            if !co.chars.is_empty() {
+                                use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+                                let compose_text: String = co.chars.iter().collect();
+                                w.write_event(Event::Start(BytesStart::new("hp:composeText")))
+                                    .map_err(|e| {
+                                        crate::serializer::hwpx::SerializeError::XmlError(
+                                            e.to_string(),
+                                        )
+                                    })?;
+                                w.write_event(Event::Text(BytesText::new(&compose_text)))
+                                    .map_err(|e| {
+                                        crate::serializer::hwpx::SerializeError::XmlError(
+                                            e.to_string(),
+                                        )
+                                    })?;
+                                w.write_event(Event::End(BytesEnd::new("hp:composeText")))
+                                    .map_err(|e| {
+                                        crate::serializer::hwpx::SerializeError::XmlError(
+                                            e.to_string(),
+                                        )
+                                    })?;
+                            }
+                            for &cs_id in &co.char_shape_ids {
+                                let id_str = cs_id.to_string();
+                                empty_tag(w, "hp:charPr", &[("prIDRef", &id_str)])?;
+                            }
                             end_tag(w, "hp:compose")?;
                         }
                         _ => {}
