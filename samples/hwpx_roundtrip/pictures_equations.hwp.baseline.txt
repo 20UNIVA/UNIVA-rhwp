@@ -1,6 +1,3 @@
 [HWPX] s0.p1.controls.len() 1 != 0
 [HWPX] s0.p179.c0.tbl.cell(1,1).p0.controls.len() 1 != 0
 [HWPX] s0.p179.c0.tbl.cell(2,1).p0.controls.len() 1 != 0
-[HWPX] s0.p182.c0.tbl.cell(1,0).p0.line_segs.len() 1 != 2
-[HWPX] s0.p203.c0.tbl.cell(6,0).p0.line_segs.len() 1 != 2
-[HWPX] s0.p224.c0.tbl.cell(6,0).p0.line_segs.len() 1 != 2
