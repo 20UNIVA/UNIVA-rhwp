@@ -370,10 +370,12 @@ fn serialize_para_header_with_mask(
         let extra = &para.raw_header_extra[6..];
         w.write_bytes(extra).unwrap();
     } else {
-        // 새 문단 (HWPX 출처, raw_header_extra 없음): instanceId(4)만 기록.
-        // 한컴 정답지 footnote-01.hwp 의 PARA_HEADER size=22 = 18 (heading) + 4 (instanceId).
-        // 변경추적 UINT16 (size=24 형식) 은 한컴 정답지에 미사용.
-        w.write_u32(0).unwrap();
+        // Task #m600-44 — HWPX 출처 paragraph의 PARA_HEADER 크기를 한컴 정답지(24 bytes)
+        // 정합으로 맞춤. 종전은 instanceId(4)만 박아 22 bytes. 한컴은 변경추적 UINT16(2)
+        // 까지 포함한 24 bytes를 기대 → 짧으면 손상 인식.
+        // 한컴 5.0.3.2+ 정답지(사업관리 참조표.hwp 등)는 모든 PARA_HEADER가 24 bytes.
+        w.write_u32(0).unwrap(); // instanceId
+        w.write_u16(0).unwrap(); // change_track_id
     }
 
     w.into_bytes()
