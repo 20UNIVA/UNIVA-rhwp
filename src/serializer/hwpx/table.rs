@@ -298,6 +298,15 @@ fn write_sub_list<W: Write>(
                     .unwrap_or(text_u16.len());
                 let end = end_raw.min(text_u16.len());
                 if end <= start {
+                    // Task #m600-34 — text segment 자체 자체 자체 자체 자체 자체 자체 자체 빈 hp:run
+                    // 박음. cycle 30 자체 자체 자체 자체 *continue* 자체 자체 자체 자체 자체 *마지막
+                    // char_shape 자체 자체 paragraph end 자체 자체 자체 자체 자체 자체 자체 자체
+                    // skip* 자체 자체 자체 round-trip 자체 자체 자체 자체 char_shapes.len() N-1
+                    // 자체 자체 자체. 빈 hp:run charPrIDRef 자체 자체 자체 자체 자체 parser
+                    // 자체 자체 자체 자체 char_shape 자체 자체 자체 자체 자체 자체 자체 보존 자체.
+                    let cs_str = cs_ref.char_shape_id.to_string();
+                    start_tag_attrs(w, "hp:run", &[("charPrIDRef", &cs_str)])?;
+                    end_tag(w, "hp:run")?;
                     continue;
                 }
                 let segment_u16 = &text_u16[start..end];
@@ -315,17 +324,133 @@ fn write_sub_list<W: Write>(
         if !para.controls.is_empty() {
             let ctrl_cs = css.first().map(|r| r.char_shape_id).unwrap_or(0);
             let ctrl_cs_str = ctrl_cs.to_string();
-            start_tag_attrs(w, "hp:run", &[("charPrIDRef", &ctrl_cs_str)])?;
+            // hp:run 자식으로 박는 자료 — Table·Picture·Equation·CharOverlap.
+            // HWPX 표준에서 이 네 종류는 `<hp:run>` 안에 직접 들어간다.
+            let has_inline_in_run = para.controls.iter().any(|c| {
+                matches!(
+                    c,
+                    crate::model::control::Control::Table(_)
+                        | crate::model::control::Control::Picture(_)
+                        | crate::model::control::Control::Equation(_)
+                        | crate::model::control::Control::CharOverlap(_)
+                )
+            });
+            if has_inline_in_run {
+                start_tag_attrs(w, "hp:run", &[("charPrIDRef", &ctrl_cs_str)])?;
+                for ctrl in &para.controls {
+                    match ctrl {
+                        crate::model::control::Control::Table(t) => write_table(w, t, ctx)?,
+                        crate::model::control::Control::Picture(pic) => {
+                            crate::serializer::hwpx::picture::write_picture(w, pic, ctx)?;
+                        }
+                        // Task #m600-37 — cell Equation 박음. render_equation 재사용
+                        // (body 자리와 동일 출력). raw bytes 로 inner writer 에 박는다.
+                        crate::model::control::Control::Equation(eq) => {
+                            use std::io::Write;
+                            let xml = crate::serializer::hwpx::section::render_equation(eq);
+                            w.get_mut().write_all(xml.as_bytes()).map_err(|e| {
+                                crate::serializer::hwpx::SerializeError::XmlError(format!(
+                                    "cell Equation raw write 실패: {}",
+                                    e
+                                ))
+                            })?;
+                        }
+                        // Task #m600-40 — cell CharOverlap 정밀 복원. cycle 37 의 minimal
+                        // wrapper 가 attribute 를 default 로 덮어써 *겹쳐질 글자 자체* 가
+                        // round-trip 후 사라지던 자리. parser parse_compose 와 동등하게
+                        // circleType·charSz·composeType + <hp:composeText> 자식 + <hp:charPr>
+                        // 자식 박는다.
+                        crate::model::control::Control::CharOverlap(co) => {
+                            let circle_type = match co.border_type {
+                                0 => "CHAR",
+                                1 => "SHAPE_CIRCLE",
+                                2 => "SHAPE_REVERSAL_CIRCLE",
+                                3 => "SHAPE_RECTANGLE",
+                                4 => "SHAPE_REVERSAL_RECTANGLE",
+                                5 => "SHAPE_TRIANGLE",
+                                6 => "SHAPE_REVERSAL_TIRANGLE",
+                                _ => "CHAR",
+                            };
+                            let compose_type =
+                                if co.expansion == 1 { "OVERLAP" } else { "SPREAD" };
+                            let char_sz = co.inner_char_size.to_string();
+                            start_tag_attrs(
+                                w,
+                                "hp:compose",
+                                &[
+                                    ("circleType", circle_type),
+                                    ("charSz", &char_sz),
+                                    ("composeType", compose_type),
+                                ],
+                            )?;
+                            if !co.chars.is_empty() {
+                                use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+                                let compose_text: String = co.chars.iter().collect();
+                                w.write_event(Event::Start(BytesStart::new("hp:composeText")))
+                                    .map_err(|e| {
+                                        crate::serializer::hwpx::SerializeError::XmlError(
+                                            e.to_string(),
+                                        )
+                                    })?;
+                                w.write_event(Event::Text(BytesText::new(&compose_text)))
+                                    .map_err(|e| {
+                                        crate::serializer::hwpx::SerializeError::XmlError(
+                                            e.to_string(),
+                                        )
+                                    })?;
+                                w.write_event(Event::End(BytesEnd::new("hp:composeText")))
+                                    .map_err(|e| {
+                                        crate::serializer::hwpx::SerializeError::XmlError(
+                                            e.to_string(),
+                                        )
+                                    })?;
+                            }
+                            for &cs_id in &co.char_shape_ids {
+                                let id_str = cs_id.to_string();
+                                empty_tag(w, "hp:charPr", &[("prIDRef", &id_str)])?;
+                            }
+                            end_tag(w, "hp:compose")?;
+                        }
+                        _ => {}
+                    }
+                }
+                end_tag(w, "hp:run")?;
+            }
+            // Task #m600-33 — cell paragraph 의 Field·Bookmark·Hyperlink 박음.
+            // 종전 자료는 _ 자체 무시되어 cell 안 페이지번호·날짜·하이퍼링크·책갈피 자체
+            // round-trip 시 손실. HWPX 자체 자체 자체 자체 *hp:p > hp:ctrl > hp:fieldBegin*
+            // wrapper 자체 자체 자체 (hp:run 자식 자체 자체 — parser 자체 자체 자체 hp:run
+            // 자체 자체 자체 자체 자체 자체 hp:fieldBegin 자체 자체 자체 자체 자체 skip).
             for ctrl in &para.controls {
                 match ctrl {
-                    crate::model::control::Control::Table(t) => write_table(w, t, ctx)?,
-                    crate::model::control::Control::Picture(pic) => {
-                        crate::serializer::hwpx::picture::write_picture(w, pic, ctx)?;
+                    crate::model::control::Control::Field(f) => {
+                        start_tag(w, "hp:ctrl")?;
+                        crate::serializer::hwpx::field::write_field_begin(w, f)?;
+                        crate::serializer::hwpx::field::write_field_end(w, f.field_id)?;
+                        end_tag(w, "hp:ctrl")?;
+                    }
+                    crate::model::control::Control::Bookmark(bm) => {
+                        start_tag(w, "hp:ctrl")?;
+                        crate::serializer::hwpx::field::write_bookmark(w, bm)?;
+                        end_tag(w, "hp:ctrl")?;
+                    }
+                    crate::model::control::Control::Hyperlink(link) => {
+                        start_tag(w, "hp:ctrl")?;
+                        crate::serializer::hwpx::field::write_hyperlink_begin(w, link, 0)?;
+                        crate::serializer::hwpx::field::write_field_end(w, 0)?;
+                        end_tag(w, "hp:ctrl")?;
+                    }
+                    // Task #m600-37 — cell ColumnDef. HWPX 의 `<hp:p><hp:ctrl><hp:colPr/>`
+                    // 형식. parse_col_pr 가 attribute 가 없어도 ColumnDef::default() 로
+                    // 한 건을 인식. 정확한 attribute (열 수·간격) 복원은 별 cycle.
+                    crate::model::control::Control::ColumnDef(_) => {
+                        start_tag(w, "hp:ctrl")?;
+                        empty_tag(w, "hp:colPr", &[])?;
+                        end_tag(w, "hp:ctrl")?;
                     }
                     _ => {}
                 }
             }
-            end_tag(w, "hp:run")?;
         }
 
         // <hp:linesegarray> — para.line_segs IR 그대로 직렬화 (Task #m600-25 fix).
@@ -336,8 +461,14 @@ fn write_sub_list<W: Write>(
         // HWPX *LinesegTextRunReflow* 비표준으로 검출되어 클라 reflow auto-fix 가 cell
         // 서식·border 자료에 부수효과. 셀 폭 기반 reflow_line_segs 호출 결과 자료를
         // HWPX 정합 line_segs 자료로 직렬화. paragraph 자료 자체는 mutate 안 함 (clone).
+        // Task #m600-35 — 원본 line_segs 자체 자체 자체 자체 자체 자체 자체 자체 자체 보존.
+        // cycle 25 자체 자체 자체 자체 *len() <= 1 자체 자체 자체 자체 자체 reflow* 자체 자체 자체
+        // 자체 자체 자체 *원본 자체 자체 자체 자체 1 줄 자체 자체 자체 자체 자체 자체 자체 자체
+        // 자체 자체 cell 폭 자체 자체 자체 자체 자체 자체 자체 2+ 줄로 자체 자체 자체 자체 자체*.
+        // round-trip 자체 자체 자체 자체 자체 line_segs.len() 자체 자체 자체 자체. *empty 자체
+        // 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체* 자체 자체 자체 reflow.
         let reflowed_segs: Vec<crate::model::paragraph::LineSeg> =
-            if !para.text.is_empty() && para.line_segs.len() <= 1 {
+            if !para.text.is_empty() && para.line_segs.is_empty() {
                 if let Some(styles) = &ctx.resolved_styles {
                     let mut p = para.clone();
                     let available_px = (cell.width as f64) * ctx.dpi / 7200.0;

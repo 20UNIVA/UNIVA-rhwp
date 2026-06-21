@@ -108,7 +108,12 @@ pub fn write_section(
             extra.push_str(&render_hp_p_open(p, idx as u32));
             extra.push_str(&format!(r#"<hp:run charPrIDRef="{}">"#, cs));
             extra.push_str(&t);
-            extra.push_str(r#"</hp:run><hp:linesegarray>"#);
+            extra.push_str(r#"</hp:run>"#);
+            // Task #m600-36 — hp:ctrl wrapper 자체 자체 PageNumberPos 자체 자체 자체 자체.
+            // HWPX 자체 자체 자체 자체 자체 자체 *hp:p > hp:ctrl > hp:pageNum* 자체 자체 (parser
+            // parse_ctrl 자체 자체 자체 자체 자체 자체 hp:ctrl 자식 자체 자체 자체 자체).
+            extra.push_str(&render_paragraph_ctrls(p));
+            extra.push_str(r#"<hp:linesegarray>"#);
             extra.push_str(&linesegs);
             extra.push_str(r#"</hp:linesegarray></hp:p>"#);
         }
@@ -307,6 +312,58 @@ fn flush_text_fragment(out: &mut String, text_buf: &mut String) {
     }
 }
 
+/// Task #m600-36 — paragraph 자체 자체 자체 자체 hp:ctrl wrapper 자체 자체 자체 자체 자체
+/// (Equation·Table·Picture·Shape·Footnote·Endnote 자체 자체 자체 hp:run 자체 자체).
+/// PageNumberPos·PageHide·NewNumber·Bookmark 자체 자체 자체 자체.
+fn render_paragraph_ctrls(para: &Paragraph) -> String {
+    let mut out = String::new();
+    for ctrl in &para.controls {
+        match ctrl {
+            Control::PageNumberPos(pn) => {
+                out.push_str("<hp:ctrl>");
+                out.push_str(&render_page_num(pn));
+                out.push_str("</hp:ctrl>");
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn render_page_num(pn: &crate::model::control::PageNumberPos) -> String {
+    let pos = match pn.position {
+        0 => "NONE",
+        1 => "TOP_LEFT",
+        2 => "TOP_CENTER",
+        3 => "TOP_RIGHT",
+        4 => "BOTTOM_LEFT",
+        5 => "BOTTOM_CENTER",
+        6 => "BOTTOM_RIGHT",
+        7 => "OUTSIDE_TOP",
+        8 => "OUTSIDE_BOTTOM",
+        9 => "INSIDE_TOP",
+        10 => "INSIDE_BOTTOM",
+        _ => "BOTTOM_CENTER",
+    };
+    let format_str = match pn.format {
+        0 => "DIGIT",
+        1 => "CIRCLE_DIGIT",
+        2 => "ROMAN_CAPITAL",
+        3 => "ROMAN_SMALL",
+        4 => "LATIN_CAPITAL",
+        5 => "LATIN_SMALL",
+        6 => "HANGUL",
+        7 => "HANJA",
+        _ => "DIGIT",
+    };
+    // dash_char 자체 자체 자체 자체 자체 ASCII (자체 자체 자체 '-') 자체 자체 자체 자체. XML escape 자체 자체 자체 자체.
+    let dash = if pn.dash_char == '\0' { '-' } else { pn.dash_char };
+    format!(
+        r#"<hp:pageNum pos="{}" formatType="{}" sideChar="{}"/>"#,
+        pos, format_str, dash
+    )
+}
+
 fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeContext) {
     match control {
         Control::Equation(eq) => {
@@ -451,7 +508,7 @@ fn render_endnote(note: &Endnote, ctx: &mut SerializeContext) -> String {
     render_note_sublist("endNote", note.number, &note.paragraphs, ctx)
 }
 
-fn render_equation(eq: &Equation) -> String {
+pub(super) fn render_equation(eq: &Equation) -> String {
     let c = &eq.common;
     let id = c.instance_id.to_string();
     let z_order = c.z_order.to_string();

@@ -258,11 +258,21 @@ mod tests {
 
     /// 원본 hwp 의 nested 3x2 표 fixture. cycle 28 의 dump_nested 자료로 확인한
     /// 자리 — s0.p4.c0 outer 1x1 → cell[0].paragraphs[8].controls[0] = nested 3x2.
-    const SAMPLE_HWP: &str =
-        "/Users/yuniba_01/Downloads/icon/1. (★사업중 필독) 사업관리 참조표.hwp";
+    ///
+    /// Task #m600-38 — 종전 hardcoded 작업자 머신 외부 경로
+    /// (`/Users/yuniba_01/Downloads/...`) 가 다른 환경에서 테스트를 깨뜨려, cycle 31
+    /// 의 round-trip deep diff fixture 와 동일한 in-tree 경로로 옮긴다. `CARGO_MANIFEST_DIR`
+    /// 기준 상대 경로라 어느 머신에서도 동작한다.
+    const SAMPLE_HWP_REL: &str = "samples/hwpx_roundtrip/baseline_business_table.hwp";
+
+    fn sample_hwp_path() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(SAMPLE_HWP_REL)
+    }
 
     fn load_core() -> DocumentCore {
-        let data = fs::read(SAMPLE_HWP).expect("sample hwp 자료 자체 자체");
+        let path = sample_hwp_path();
+        let data = fs::read(&path)
+            .unwrap_or_else(|e| panic!("sample hwp 읽기 실패 ({}): {}", path.display(), e));
         DocumentCore::from_bytes(&data).expect("parse")
     }
 
