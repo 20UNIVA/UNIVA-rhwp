@@ -315,17 +315,55 @@ fn write_sub_list<W: Write>(
         if !para.controls.is_empty() {
             let ctrl_cs = css.first().map(|r| r.char_shape_id).unwrap_or(0);
             let ctrl_cs_str = ctrl_cs.to_string();
-            start_tag_attrs(w, "hp:run", &[("charPrIDRef", &ctrl_cs_str)])?;
+            // hp:run 안 자체 자체 자체 박는 자료 — Table·Picture (HWPX 자체 자체 자체 hp:run
+            // 자식 자체 자체 박힘).
+            let has_inline_in_run = para.controls.iter().any(|c| {
+                matches!(
+                    c,
+                    crate::model::control::Control::Table(_)
+                        | crate::model::control::Control::Picture(_)
+                )
+            });
+            if has_inline_in_run {
+                start_tag_attrs(w, "hp:run", &[("charPrIDRef", &ctrl_cs_str)])?;
+                for ctrl in &para.controls {
+                    match ctrl {
+                        crate::model::control::Control::Table(t) => write_table(w, t, ctx)?,
+                        crate::model::control::Control::Picture(pic) => {
+                            crate::serializer::hwpx::picture::write_picture(w, pic, ctx)?;
+                        }
+                        _ => {}
+                    }
+                }
+                end_tag(w, "hp:run")?;
+            }
+            // Task #m600-33 — cell paragraph 의 Field·Bookmark·Hyperlink 박음.
+            // 종전 자료는 _ 자체 무시되어 cell 안 페이지번호·날짜·하이퍼링크·책갈피 자체
+            // round-trip 시 손실. HWPX 자체 자체 자체 자체 *hp:p > hp:ctrl > hp:fieldBegin*
+            // wrapper 자체 자체 자체 (hp:run 자식 자체 자체 — parser 자체 자체 자체 hp:run
+            // 자체 자체 자체 자체 자체 자체 hp:fieldBegin 자체 자체 자체 자체 자체 skip).
             for ctrl in &para.controls {
                 match ctrl {
-                    crate::model::control::Control::Table(t) => write_table(w, t, ctx)?,
-                    crate::model::control::Control::Picture(pic) => {
-                        crate::serializer::hwpx::picture::write_picture(w, pic, ctx)?;
+                    crate::model::control::Control::Field(f) => {
+                        start_tag(w, "hp:ctrl")?;
+                        crate::serializer::hwpx::field::write_field_begin(w, f)?;
+                        crate::serializer::hwpx::field::write_field_end(w, f.field_id)?;
+                        end_tag(w, "hp:ctrl")?;
+                    }
+                    crate::model::control::Control::Bookmark(bm) => {
+                        start_tag(w, "hp:ctrl")?;
+                        crate::serializer::hwpx::field::write_bookmark(w, bm)?;
+                        end_tag(w, "hp:ctrl")?;
+                    }
+                    crate::model::control::Control::Hyperlink(link) => {
+                        start_tag(w, "hp:ctrl")?;
+                        crate::serializer::hwpx::field::write_hyperlink_begin(w, link, 0)?;
+                        crate::serializer::hwpx::field::write_field_end(w, 0)?;
+                        end_tag(w, "hp:ctrl")?;
                     }
                     _ => {}
                 }
             }
-            end_tag(w, "hp:run")?;
         }
 
         // <hp:linesegarray> — para.line_segs IR 그대로 직렬화 (Task #m600-25 fix).
