@@ -706,6 +706,18 @@ impl DocumentCore {
                 target_row_span,
                 &new_borders,
             );
+
+            // [Task #m600-51] cell 색 변경 후 셀 안 paragraph 의 *흰색 paragraph 배경* 과
+            // *흰색 글자 음영* 자료를 함께 제거한다. 한컴 원본은 paragraph 마다 흰색 +
+            // 회색 무늬 박힌 ps.border_fill_id 와 흰색 cs.border_fill_id 가 박혀 있는데,
+            // cell 배경이 흰색일 때는 시각 충돌이 없어 사용자에게 보이지 않다가, cell
+            // 배경이 다른 색으로 바뀌는 자리에서 글자 영역만 흰 박스로 도드라진다.
+            self.normalize_cell_white_paragraph_overlay(
+                section_idx,
+                parent_para_idx,
+                control_idx,
+                cell_idx,
+            );
         }
 
         self.document.sections[section_idx].raw_stream = None;
@@ -713,6 +725,91 @@ impl DocumentCore {
         self.paginate_if_needed();
 
         Ok("{\"ok\":true}".to_string())
+    }
+
+    /// [Task #m600-51] 셀 배경이 바뀌면 셀 안 paragraph 의 *흰색 paragraph 배경* 과
+    /// *흰색 글자 음영* 자료를 함께 제거한다.
+    ///
+    /// 한컴 원본 hwp 는 paragraph 마다 ps.border_fill_id 가 *Solid 흰색 + 회색 무늬*
+    /// (예: bf[1] = Solid(bg=0xFFFFFFFF, pc=0x00999999)) 박힌 자료를, 글자마다
+    /// cs.border_fill_id 가 *Solid 흰색* (bf[2] = Solid(0xFFFFFFFF)) 박힌 자료를
+    /// 가진다. 셀 배경이 흰색일 때는 시각 충돌이 없어 보이지 않다가, 사용자가 셀
+    /// 배경을 다른 색으로 바꾸는 자리에서 글자 영역만 흰 박스로 도드라진다.
+    ///
+    /// 새로 박은 BorderFill 의 배경색이 흰색이 아닐 때만 paragraph/char_shape 의
+    /// 흰 자료를 제거한다. 셀이 흰색으로 *되돌아가는* 자리에서는 손대지 않아 라운드
+    /// 트립 자료를 보존한다.
+    fn normalize_cell_white_paragraph_overlay(
+        &mut self,
+        section_idx: usize,
+        parent_para_idx: usize,
+        control_idx: usize,
+        cell_idx: usize,
+    ) {
+        use crate::model::style::FillType;
+
+        let is_white = |bf_id: u16, bfs: &[crate::model::style::BorderFill]| -> bool {
+            if bf_id == 0 { return false; }
+            let bf_idx = (bf_id as usize).saturating_sub(1);
+            bfs.get(bf_idx).map(|bf| {
+                bf.fill.fill_type == FillType::Solid
+                    && bf.fill.solid.as_ref()
+                        .map(|s| (s.background_color & 0x00FFFFFF) == 0x00FFFFFF)
+                        .unwrap_or(false)
+            }).unwrap_or(false)
+        };
+
+        // 새로 박은 셀 BorderFill 이 흰색이면 normalize 안 함 (원본 자료 보존).
+        let bfs_snapshot = self.document.doc_info.border_fills.clone();
+        let cell_bf_id = match self.get_table_mut(section_idx, parent_para_idx, control_idx) {
+            Ok(t) => match t.cells.get(cell_idx) {
+                Some(c) => c.border_fill_id,
+                None => return,
+            },
+            Err(_) => return,
+        };
+        if is_white(cell_bf_id, &bfs_snapshot) { return; }
+
+        // 셀 안 paragraph 가 가리키는 ps·cs 인덱스 수집.
+        let (ps_ids, cs_ids): (std::collections::HashSet<u16>, std::collections::HashSet<u32>) = {
+            let table = match self.get_table_mut(section_idx, parent_para_idx, control_idx) {
+                Ok(t) => t,
+                Err(_) => return,
+            };
+            let cell = match table.cells.get(cell_idx) {
+                Some(c) => c,
+                None => return,
+            };
+            let mut ps_ids = std::collections::HashSet::new();
+            let mut cs_ids = std::collections::HashSet::new();
+            for cp in &cell.paragraphs {
+                ps_ids.insert(cp.para_shape_id);
+                for cs_ref in &cp.char_shapes {
+                    cs_ids.insert(cs_ref.char_shape_id);
+                }
+            }
+            (ps_ids, cs_ids)
+        };
+
+        // 흰 paragraph 배경 제거.
+        for ps_id in ps_ids {
+            if let Some(ps) = self.document.doc_info.para_shapes.get_mut(ps_id as usize) {
+                if is_white(ps.border_fill_id, &bfs_snapshot) {
+                    ps.border_fill_id = 0;
+                    ps.raw_data = None;
+                }
+            }
+        }
+        // 흰 글자 음영 제거.
+        for cs_id in cs_ids {
+            if let Some(cs) = self.document.doc_info.char_shapes.get_mut(cs_id as usize) {
+                if is_white(cs.border_fill_id, &bfs_snapshot) {
+                    cs.border_fill_id = 0;
+                    cs.raw_data = None;
+                }
+            }
+        }
+        self.document.doc_info.raw_stream_dirty = true;
     }
 
     /// 셀 테두리 변경 시 이웃 셀의 공유 엣지 테두리를 동기화한다.
@@ -2119,6 +2216,89 @@ mod tests {
             solid.background_color, 0x000000FF,
             "단색 빨강 기대 (r=FF,g=00,b=00 → BGR 0x000000FF)"
         );
+    }
+
+    /// [Task #m600-51] 셀 배경이 흰색이 아닌 색으로 바뀌면 셀 안 paragraph 의 *흰
+    /// paragraph 배경* (ps.border_fill_id 가 Solid 흰색 bf 가리키는 자리) 과 *흰 글자
+    /// 음영* (cs.border_fill_id 가 Solid 흰색 bf 가리키는 자리) 이 0 으로 박혀야 한다.
+    #[test]
+    fn set_cell_color_clears_white_paragraph_and_char_shape_overlay() {
+        use crate::document_core::DocumentCore;
+        use crate::model::style::{
+            BorderFill, BorderLine, DiagonalLine, Fill, FillType, SolidFill,
+        };
+
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+
+        // 흰색 Solid BorderFill 을 doc_info 에 박는다 (한컴 원본의 ps·cs 가 참조하는 자리).
+        let white_bf = BorderFill {
+            raw_data: Some(vec![0xAA; 53]),
+            attr: 0,
+            borders: [BorderLine::default(); 4],
+            diagonal: DiagonalLine::default(),
+            fill: Fill {
+                fill_type: FillType::Solid,
+                solid: Some(SolidFill {
+                    background_color: 0x00FFFFFF,
+                    pattern_color: 0x00999999,
+                    pattern_type: -1,
+                }),
+                ..Default::default()
+            },
+        };
+        core.document.doc_info.border_fills.push(white_bf);
+        let white_bf_id = core.document.doc_info.border_fills.len() as u16;
+
+        // 빈 문서 의 ps[0]·cs[0] 가 위 흰 bf 를 가리키도록 박는다.
+        core.document.doc_info.para_shapes[0].border_fill_id = white_bf_id;
+        core.document.doc_info.para_shapes[0].raw_data = Some(vec![0xBB; 64]);
+        core.document.doc_info.char_shapes[0].border_fill_id = white_bf_id;
+        core.document.doc_info.char_shapes[0].raw_data = Some(vec![0xCC; 74]);
+
+        // 2x2 표 생성 후 cell 색 변경.
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+        let section = &core.document.sections[0];
+        let mut tpi = None;
+        let mut ci = None;
+        for (pi, para) in section.paragraphs.iter().enumerate() {
+            for (cii, ctrl) in para.controls.iter().enumerate() {
+                if let crate::model::control::Control::Table(_) = ctrl {
+                    tpi = Some(pi);
+                    ci = Some(cii);
+                    break;
+                }
+            }
+            if tpi.is_some() { break; }
+        }
+        let tpi = tpi.unwrap();
+        let ci = ci.unwrap();
+
+        // 셀 (0,0) 에 분홍 박기.
+        core.set_cell_properties_native(0, tpi, ci, 0, r##"{"bgcolor":"#FFD1DC"}"##).unwrap();
+
+        // 셀 안 paragraph 가 가리키는 ps·cs 가 흰 bf 참조에서 0 으로 박혀야 한다.
+        let section = &core.document.sections[0];
+        let para = &section.paragraphs[tpi];
+        let table = match &para.controls[ci] {
+            crate::model::control::Control::Table(t) => t,
+            _ => panic!("Table 컨트롤 기대"),
+        };
+        let cell = &table.cells[0];
+        for cp in &cell.paragraphs {
+            let ps = &core.document.doc_info.para_shapes[cp.para_shape_id as usize];
+            assert_ne!(
+                ps.border_fill_id, white_bf_id,
+                "흰 paragraph 배경 자리는 0 으로 박혀야 함"
+            );
+            for cs_ref in &cp.char_shapes {
+                let cs = &core.document.doc_info.char_shapes[cs_ref.char_shape_id as usize];
+                assert_ne!(
+                    cs.border_fill_id, white_bf_id,
+                    "흰 글자 음영 자리는 0 으로 박혀야 함"
+                );
+            }
+        }
     }
 
     #[test]
