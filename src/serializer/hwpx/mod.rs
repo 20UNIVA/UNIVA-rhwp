@@ -65,8 +65,26 @@ pub fn serialize_hwpx(doc: &Document) -> Result<Vec<u8>, SerializeError> {
     }
 
     // 5. Preview/PrvText.txt + Preview/PrvImage.png
-    z.write_deflated("Preview/PrvText.txt", PRV_TEXT)?;
-    z.write_deflated("Preview/PrvImage.png", PRV_IMAGE_PNG)?;
+    // Task #m600-43 — 원본 Preview (IR 의 doc.preview) 가 있으면 그대로 박는다. 종전
+    // 자료는 항상 1×1 투명 PNG + "\r\n" 으로 덮어써 HWPX → HWP round-trip 시 원본
+    // 썸네일·미리보기 텍스트가 사라지던 자리. 한컴 편집기의 파일 목록 썸네일·문서
+    // 미리보기 기능에 영향.
+    // HWPX 의 Preview/PrvText.txt 는 UTF-8 (parser contract_streams.rs 의 utf8.encode_utf16
+    // 변환과 정합). Preview.text 는 String 이라 그대로 as_bytes 사용.
+    let prv_text_bytes: Vec<u8> = doc
+        .preview
+        .as_ref()
+        .and_then(|p| p.text.as_ref())
+        .map(|t| t.as_bytes().to_vec())
+        .unwrap_or_else(|| PRV_TEXT.to_vec());
+    z.write_deflated("Preview/PrvText.txt", &prv_text_bytes)?;
+    let prv_image_bytes: &[u8] = doc
+        .preview
+        .as_ref()
+        .and_then(|p| p.image.as_ref())
+        .map(|img| img.data.as_slice())
+        .unwrap_or(PRV_IMAGE_PNG);
+    z.write_deflated("Preview/PrvImage.png", prv_image_bytes)?;
 
     // 6. settings.xml
     z.write_deflated("settings.xml", SETTINGS_XML.as_bytes())?;
