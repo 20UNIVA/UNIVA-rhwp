@@ -922,6 +922,16 @@ fn parse_para_shape_child(
         b"breakSetting" => {
             for attr in ce.attributes().flatten() {
                 match attr.key.as_ref() {
+                    b"breakLatinWord" => {
+                        // Task #m600-50 — HWP5 ParaShape attr1 bit 8: Latin line-break unit.
+                        // KEEP_WORD=1, BREAK_WORD=0 (HWPX 정답지 관찰값).
+                        let value = attr_str(&attr);
+                        if value == "KEEP_WORD" {
+                            ps.attr1 |= 1 << 8;
+                        } else {
+                            ps.attr1 &= !(1 << 8);
+                        }
+                    }
                     b"breakNonLatinWord" => {
                         // HWP5 ParaShape attr1 bit 7: non-Latin line-break unit.
                         //
