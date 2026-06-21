@@ -1,9 +1,5 @@
 [HWPX] s0.p0.c2.tbl.cell(1,0).p0.char_shapes.len() 2 != 1
 [HWPX] s0.p1.controls.len() 1 != 0
-[HWPX] s0.p166.c0.tbl.cell(1,5).p0.controls.len() 1 != 0
-[HWPX] s0.p166.c0.tbl.cell(2,5).p0.controls.len() 1 != 0
-[HWPX] s0.p166.c0.tbl.cell(3,5).p0.controls.len() 1 != 0
-[HWPX] s0.p166.c0.tbl.cell(4,5).p0.controls.len() 1 != 0
 [HWPX] s0.p179.c0.tbl.cell(1,1).p0.controls.len() 1 != 0
 [HWPX] s0.p179.c0.tbl.cell(2,1).p0.controls.len() 1 != 0
 [HWPX] s0.p182.c0.tbl.cell(1,0).p0.line_segs.len() 1 != 2
