@@ -550,12 +550,26 @@ fn write_char_pr<W: Write>(
             &[("type", outline_type_str(cs.outline_type))],
         )?;
     }
-    if cs.shadow_type != 0 {
+    // Task #m600-46 — shadow_type=0 (NONE) 이어도 offset/color 값이 0 이 아니면 박는다.
+    // 원본 사업관리 참조표.hwp 의 char_shapes[0] 은 shadow_type=0 이지만 offset=(10,10)·
+    // color=0xb2b2b2 가 박혀 있어 round-trip 시 손실되던 자리. parser parse_char_shape
+    // (header.rs:712-714) 는 type=NONE 인 경우에도 offsetX·offsetY·color 자료를 읽는다
+    // (test_parse_char_pr_preserves_shadow_offsets_even_when_shadow_is_none 자료).
+    if cs.shadow_type != 0
+        || cs.shadow_offset_x != 0
+        || cs.shadow_offset_y != 0
+        || cs.shadow_color != 0
+    {
+        let shadow_type_str = if cs.shadow_type != 0 {
+            "CONTINUOUS"
+        } else {
+            "NONE"
+        };
         empty_tag(
             w,
             "hh:shadow",
             &[
-                ("type", "CONTINUOUS"),
+                ("type", shadow_type_str),
                 ("color", &color_hex(cs.shadow_color)),
                 ("offsetX", &cs.shadow_offset_x.to_string()),
                 ("offsetY", &cs.shadow_offset_y.to_string()),
