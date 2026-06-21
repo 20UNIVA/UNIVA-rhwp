@@ -86,15 +86,25 @@ pub fn write_section(
         let new_p_tag = render_hp_p_open(p, 0);
         out = out.replacen(TEMPLATE_FIRST_P_TAG, &new_p_tag, 1);
 
-        // 첫 문단의 텍스트용 <hp:run> 의 charPrIDRef 를 IR 기반으로 교체
-        // 템플릿에서 TEXT_SLOT 이 있던 자리 바로 앞의 <hp:run charPrIDRef="0"> 패턴.
-        let first_run_cs = first_run_char_shape_id(p);
-        let new_run = format!(r#"<hp:run charPrIDRef="{}">"#, first_run_cs);
-        let replacement = format!("{}{}", new_run, &first_t);
-        // 이미 first_t 는 out 에 들어갔으므로 그 직전의 <hp:run charPrIDRef="0"> 만 변경
-        let anchor = format!("{}{}", r#"<hp:run charPrIDRef="0">"#, &first_t);
-        if out.contains(&anchor) {
-            out = out.replacen(&anchor, &replacement, 1);
+        // Task #m600-48 — 첫 paragraph 의 char_shapes 자체 자체 자체 hp:run 박음.
+        // 종전은 단일 hp:run 자체 자체 char_shapes[0] 자체 자체 박아 자체 자체 자체 자체
+        // char_shapes (제목 자체 자체 자체 큰 글씨 자체) round-trip 시 손실.
+        let template_run_with_text = format!(
+            r#"<hp:run charPrIDRef="0">{}</hp:run>"#,
+            &first_t
+        );
+        if out.contains(&template_run_with_text) {
+            let runs_xml = render_runs_with_char_shapes(p, ctx);
+            out = out.replacen(&template_run_with_text, &runs_xml, 1);
+        } else {
+            // fallback — template 자체 자체 자체 자체 자체 자체 자체 자체 종전 자체 자체
+            let first_run_cs = first_run_char_shape_id(p);
+            let new_run = format!(r#"<hp:run charPrIDRef="{}">"#, first_run_cs);
+            let replacement = format!("{}{}", new_run, &first_t);
+            let anchor = format!("{}{}", r#"<hp:run charPrIDRef="0">"#, &first_t);
+            if out.contains(&anchor) {
+                out = out.replacen(&anchor, &replacement, 1);
+            }
         }
     }
 
@@ -102,13 +112,12 @@ pub fn write_section(
     if section.paragraphs.len() > 1 {
         let mut extra = String::new();
         for (idx, p) in section.paragraphs.iter().enumerate().skip(1) {
-            let (t, linesegs, advance) = render_paragraph_parts(p, vert_cursor, ctx);
+            let (_t, linesegs, advance) = render_paragraph_parts(p, vert_cursor, ctx);
             vert_cursor = advance;
-            let cs = first_run_char_shape_id(p);
             extra.push_str(&render_hp_p_open(p, idx as u32));
-            extra.push_str(&format!(r#"<hp:run charPrIDRef="{}">"#, cs));
-            extra.push_str(&t);
-            extra.push_str(r#"</hp:run>"#);
+            // Task #m600-48 — 추가 paragraph 자체 자체 자체 char_shapes 자체 자체 자체
+            // hp:run 박음 (단일 hp:run 자체 자체 종전 자체 자체).
+            extra.push_str(&render_runs_with_char_shapes(p, ctx));
             // Task #m600-36 — hp:ctrl wrapper 자체 자체 PageNumberPos 자체 자체 자체 자체.
             // HWPX 자체 자체 자체 자체 자체 자체 *hp:p > hp:ctrl > hp:pageNum* 자체 자체 (parser
             // parse_ctrl 자체 자체 자체 자체 자체 자체 hp:ctrl 자식 자체 자체 자체 자체).
@@ -148,6 +157,73 @@ fn render_hp_p_open(p: &Paragraph, id: u32) -> String {
 /// 비어있으면 0 (기본 글자모양) 반환.
 fn first_run_char_shape_id(p: &Paragraph) -> u32 {
     p.char_shapes.first().map(|r| r.char_shape_id).unwrap_or(0)
+}
+
+/// Task #m600-48 — body paragraph 의 char_shapes 자체 자체 자체 별도 hp:run 박는 자체.
+///
+/// 종전: write_section 자체 자체 paragraph 자체 자체 자체 char_shapes[0] 자체 자체 박은
+/// 단일 hp:run 자체 자체 박음. char_shapes 자체 자체 자체 자체 자체 자체 자체 자체
+/// (예: "애국가" 제목 paragraph 의 두 번째 char_shape: 28pt·진청색·bold) round-trip 시
+/// 손실 자체 자체 자체.
+///
+/// Fix: 각 char_shape 자체 자체 자체 hp:run + 해당 text segment 박음. cell paragraph
+/// (cycle 30·34) 자체 자체 자체 자체 자체.
+///
+/// 자체 자체 자체:
+///   - char_shapes.len() <= 1: 자체 자체 자체 자체 (control 자체 자체 자체 자체)
+///   - char_shapes.len() >= 2 && controls 자체 자체 자체: 각 char_shape 자체 자체 hp:run
+///   - controls 자체 자체 자체 paragraph: 종전 render_run_content (control 자체 자체 자체)
+fn render_runs_with_char_shapes(p: &Paragraph, ctx: &mut SerializeContext) -> String {
+    // inline_slot control (Table·Picture·Equation·Footnote 등) 자체 자체 자체 paragraph 자체
+    // 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체. SectionDef·ColumnDef·
+    // PageNumberPos 자체 자체 자체 *inline_slot 자체 자체* — paragraph 자체 자체 hp:ctrl
+    // 자체 자체 박혀 hp:run 자체 자체 자체 자체.
+    let has_inline_slot = p.controls.iter().any(|c| is_hwpx_inline_slot(c));
+    if p.char_shapes.len() <= 1 || has_inline_slot {
+        // 단일 char_shape 또는 inline_slot 자체 자체 자체 paragraph → 종전 자체 자체
+        let cs = first_run_char_shape_id(p);
+        let t_xml = render_run_content(p, ctx);
+        return format!(r#"<hp:run charPrIDRef="{}">{}</hp:run>"#, cs, t_xml);
+    }
+
+    // body paragraph 의 char_shapes.start_pos 는 *paragraph 안 전체 utf16 자체* —
+    // visible text + control placeholder (각 8 utf16) 포함. p.text 는 visible text 만.
+    // 즉 char_shape 자체 자체 visible text segment 박을 때 *p.char_offsets 자체 자체 자체
+    // visible char 자체 자체 자체 paragraph utf16 position*. 그 매핑 사용.
+    let text_chars: Vec<char> = p.text.chars().collect();
+    let para_utf16_len = p.char_count as usize;
+    let mut out = String::new();
+    let css = &p.char_shapes;
+    for (i, cs_ref) in css.iter().enumerate() {
+        ctx.char_shape_ids.reference(cs_ref.char_shape_id);
+        let cs_start = cs_ref.start_pos as usize;
+        let cs_end = css
+            .get(i + 1)
+            .map(|c| c.start_pos as usize)
+            .unwrap_or(para_utf16_len);
+        // 이 char_shape 범위 [cs_start, cs_end) 안에 들어가는 visible char 모음.
+        let mut segment = String::new();
+        for (k, c) in text_chars.iter().enumerate() {
+            let pos = p.char_offsets.get(k).copied().unwrap_or(0) as usize;
+            if pos >= cs_start && pos < cs_end {
+                segment.push(*c);
+            }
+        }
+        if segment.is_empty() {
+            // 빈 hp:run — char_shape_id 보존 (cycle 34 자체 자체 자체).
+            out.push_str(&format!(
+                r#"<hp:run charPrIDRef="{}"></hp:run>"#,
+                cs_ref.char_shape_id
+            ));
+            continue;
+        }
+        let t_xml = render_hp_t_content(&segment);
+        out.push_str(&format!(
+            r#"<hp:run charPrIDRef="{}">{}</hp:run>"#,
+            cs_ref.char_shape_id, t_xml
+        ));
+    }
+    out
 }
 
 /// Paragraph 하나를 (`<hp:t>` XML, lineseg XML, 다음 vert_cursor)로 변환.

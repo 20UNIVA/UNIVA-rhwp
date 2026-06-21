@@ -903,12 +903,22 @@ fn write_para_pr<W: Write>(
     write_margin_child(w, "hh:next", ps.spacing_after)?;
     end_tag(w, "hh:margin")?;
 
+    // Task #m600-47 — line_spacing_v2 (5.0.2.5+) 자체 자체 자체 박음. 한컴 정답지는
+    // line_spacing 필드(legacy)와 line_spacing_v2 가 다른 자체 자체 자체 자체 박는
+    // 자체 (예: 사업관리 참조표.hwp ps[20]: line_spacing=2, line_spacing_v2=160).
+    // 종전은 ps.line_spacing 박아 round-trip 시 한컴이 *legacy 자체 자체 자체 적용*하여
+    // paragraph 줄 간격이 거의 0 으로 박혀 paragraph 자체 겹쳐 보이던 자리.
+    let line_spacing_value = if ps.line_spacing_v2 != 0 {
+        ps.line_spacing_v2 as i32
+    } else {
+        ps.line_spacing
+    };
     empty_tag(
         w,
         "hh:lineSpacing",
         &[
             ("type", line_spacing_type_str(ps.line_spacing_type)),
-            ("value", &ps.line_spacing.to_string()),
+            ("value", &line_spacing_value.to_string()),
             ("unit", "HWPUNIT"),
         ],
     )?;
