@@ -298,6 +298,15 @@ fn write_sub_list<W: Write>(
                     .unwrap_or(text_u16.len());
                 let end = end_raw.min(text_u16.len());
                 if end <= start {
+                    // Task #m600-34 — text segment 자체 자체 자체 자체 자체 자체 자체 자체 빈 hp:run
+                    // 박음. cycle 30 자체 자체 자체 자체 *continue* 자체 자체 자체 자체 자체 *마지막
+                    // char_shape 자체 자체 paragraph end 자체 자체 자체 자체 자체 자체 자체 자체
+                    // skip* 자체 자체 자체 round-trip 자체 자체 자체 자체 char_shapes.len() N-1
+                    // 자체 자체 자체. 빈 hp:run charPrIDRef 자체 자체 자체 자체 자체 parser
+                    // 자체 자체 자체 자체 char_shape 자체 자체 자체 자체 자체 자체 자체 보존 자체.
+                    let cs_str = cs_ref.char_shape_id.to_string();
+                    start_tag_attrs(w, "hp:run", &[("charPrIDRef", &cs_str)])?;
+                    end_tag(w, "hp:run")?;
                     continue;
                 }
                 let segment_u16 = &text_u16[start..end];

@@ -1,4 +1,0 @@
-[HWPX] s0.p1.c0.tbl.cell(0,0).p0.char_shapes.len() 10 != 9
-[HWPX] s0.p2.c0.tbl.cell(1,2).p3.char_shapes.len() 4 != 3
-[HWPX] s0.p2.c0.tbl.cell(2,1).p0.char_shapes.len() 4 != 3
-[HWPX] s0.p2.c0.tbl.cell(2,1).p2.char_shapes.len() 4 != 3
