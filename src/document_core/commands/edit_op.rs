@@ -430,9 +430,53 @@ pub enum EditOperation {
         cell_para: usize,
         runs: Vec<RunSpec>,
     },
+    /// 한컴 Enter / Ctrl+Enter 와 동등. 커서 위치 (char_offset) 에서 Enter.
+    ///
+    /// payload 키 분기 (단일 variant 안에서 본문/셀 모드):
+    /// - `table_para` 부재 → 본문 모드. 필수: section, para
+    /// - `table_para` 박힘 → 셀 모드. 필수: section, table_para, row, col, cell_para
+    ///
+    /// char_offset (i64):
+    /// - `-1` 또는 음수 → 본문/셀 paragraph 끝 자리 (default)
+    /// - `0` → 시작 자리
+    /// - `len` 이상 → clamp to len (= 끝 자리. silent fail 0건)
+    /// - 중간값 → split
+    ///
+    /// count: 같은 자리 Enter N 회 (N 개 빈 paragraph 누적). default 1.
+    /// page_break: true → 첫 번째 새 paragraph 만 페이지 분리. 셀 모드 + true 면 RenderError("INVALID_PAYLOAD: ...").
+    PressEnter {
+        section: usize,
+        // 본문 모드 키 (table_para 부재 시 필수)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        para: Option<usize>,
+        // 셀 모드 키 (table_para 박힘 시 필수)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        table_para: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        row: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        col: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_para: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ctrl_idx: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_idx: Option<usize>,
+        // 공통 키
+        #[serde(default = "default_char_offset")]
+        char_offset: i64,
+        #[serde(default = "one_count")]
+        count: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<PartialParagraphStyle>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        page_break: Option<bool>,
+    },
 }
 
 fn one_count() -> usize { 1 }
+
+fn default_char_offset() -> i64 { -1 }
 
 // ─── Sub-7: Partial*Style → native fn JSON 변환 ─────────────────────────────
 //
@@ -868,6 +912,32 @@ impl EditOperation {
                     cell: None,
                 }
             }
+            EditOperation::PressEnter { section, para, table_para, row, col, cell_para, cell_idx, count, .. } => {
+                if let Some(tp) = table_para {
+                    // 셀 모드 — cell focus
+                    AffectedRange {
+                        section: *section,
+                        before: ParaRange::single(*tp),
+                        after: ParaRange::single(*tp),
+                        cell: Some(CellFocus {
+                            table_para: *tp,
+                            row: row.unwrap_or(0),
+                            col: col.unwrap_or(0),
+                            cell_idx: *cell_idx,
+                            cell_para: (*cell_para).map(|cp| cp + *count),
+                        }),
+                    }
+                } else {
+                    // 본문 모드 — para .. para + count + 1 (새 paragraph 들 자리)
+                    let p = para.unwrap_or(0);
+                    AffectedRange {
+                        section: *section,
+                        before: ParaRange::single(p),
+                        after: ParaRange { start: p, end: p + 1 + *count },
+                        cell: None,
+                    }
+                }
+            }
         }
     }
 }
@@ -1118,6 +1188,110 @@ impl DocumentCore {
                 let runs_json = runs_to_native_json(self, runs)?;
                 self.replace_cell_runs_at_path_native(*section, path, *cell_para, &runs_json)?;
             }
+            // 한컴 Enter / Ctrl+Enter. 본문/셀 모드 분기는 payload key 자체로.
+            EditOperation::PressEnter {
+                section, para, table_para, row, col, cell_para,
+                ctrl_idx, cell_idx, char_offset, count, style, page_break,
+            } => {
+                if let Some(tp) = table_para {
+                    // ─── 셀 모드 ───────────────────────────────────────────
+                    // page_break + 셀 모드 = 미지원. silent 무시 0건.
+                    if page_break.unwrap_or(false) {
+                        return Err(HwpError::RenderError(
+                            "INVALID_PAYLOAD: 셀 안 page_break 미지원. 셀 모드에서 page_break:true 박지 마세요.".to_string()
+                        ));
+                    }
+                    let row = row.ok_or_else(|| HwpError::RenderError(
+                        "INVALID_PAYLOAD: 셀 모드 row 누락".to_string()
+                    ))?;
+                    let col = col.ok_or_else(|| HwpError::RenderError(
+                        "INVALID_PAYLOAD: 셀 모드 col 누락".to_string()
+                    ))?;
+                    let cell_para = cell_para.ok_or_else(|| HwpError::RenderError(
+                        "INVALID_PAYLOAD: 셀 모드 cell_para 누락".to_string()
+                    ))?;
+                    let ctrl_idx = match ctrl_idx {
+                        Some(idx) => *idx,
+                        None => self.find_table_ctrl_idx(*section, *tp)?,
+                    };
+                    let resolved_cell_idx = match cell_idx {
+                        Some(idx) => *idx,
+                        None => self.find_cell_idx(*section, *tp, ctrl_idx, row as u16, col as u16)?,
+                    };
+
+                    // 셀 paragraph 의 본문 길이 추출
+                    let cell_text_len = {
+                        let table_p = &self.document.sections[*section].paragraphs[*tp];
+                        let ctrl = table_p.controls.get(ctrl_idx).ok_or_else(|| HwpError::RenderError(
+                            format!("ctrl_idx {} 범위 초과", ctrl_idx)
+                        ))?;
+                        match ctrl {
+                            crate::model::control::Control::Table(t) => {
+                                let cell = t.cells.get(resolved_cell_idx).ok_or_else(|| HwpError::RenderError(
+                                    format!("cell_idx {} 범위 초과", resolved_cell_idx)
+                                ))?;
+                                let para = cell.paragraphs.get(cell_para).ok_or_else(|| HwpError::RenderError(
+                                    format!("cell_para {} 범위 초과", cell_para)
+                                ))?;
+                                para.text.chars().count()
+                            }
+                            _ => return Err(HwpError::RenderError(
+                                format!("ctrl_idx {} 은 Table 이 아닙니다", ctrl_idx)
+                            )),
+                        }
+                    };
+
+                    let resolved_offset = if *char_offset < 0 {
+                        cell_text_len
+                    } else {
+                        (*char_offset as usize).min(cell_text_len)
+                    };
+
+                    for i in 0..*count {
+                        let target_cell_para = cell_para + i;
+                        let target_offset = if i == 0 { resolved_offset } else { 0 };
+                        self.split_paragraph_in_cell_native(
+                            *section, *tp, ctrl_idx, resolved_cell_idx, target_cell_para, target_offset,
+                        )?;
+                        // style 옵션 — 셀 자리에는 별도 cell paragraph format helper 부재.
+                        // 본문 paragraph apply_para_format 자세는 셀 자리에 직접 적용 못함.
+                        // 향후 사이클에서 apply_cell_para_format_native 신설 자세 필요.
+                        let _ = style;
+                    }
+                } else {
+                    // ─── 본문 모드 ─────────────────────────────────────────
+                    let para = para.ok_or_else(|| HwpError::RenderError(
+                        "INVALID_PAYLOAD: 본문 모드 para 누락".to_string()
+                    ))?;
+
+                    let para_text_len = self.document.sections.get(*section)
+                        .ok_or_else(|| HwpError::RenderError(format!("section {} 범위 초과", section)))?
+                        .paragraphs.get(para)
+                        .ok_or_else(|| HwpError::RenderError(format!("para {} 범위 초과", para)))?
+                        .text.chars().count();
+
+                    let resolved_offset = if *char_offset < 0 {
+                        para_text_len
+                    } else {
+                        (*char_offset as usize).min(para_text_len)
+                    };
+
+                    for i in 0..*count {
+                        let target_para = para + i;
+                        let target_offset = if i == 0 { resolved_offset } else { 0 };
+                        self.split_paragraph_native(*section, target_para, target_offset)?;
+                        if let Some(s) = style {
+                            // 새 paragraph 자리 = target_para + 1
+                            let props_json = partial_paragraph_style_to_native_json(s);
+                            self.apply_para_format_native(*section, target_para + 1, &props_json)?;
+                        }
+                        // page_break — 첫 번째 새 paragraph 만 페이지 분리
+                        if i == 0 && page_break.unwrap_or(false) {
+                            self.insert_page_break_native(*section, target_para + 1, 0)?;
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -1189,6 +1363,9 @@ impl DocumentCore {
             }
             EditOperation::DeleteRangeInCell { .. } => {
                 unreachable!("Sub-2 variants use snapshot stash for inverse");
+            }
+            EditOperation::PressEnter { .. } => {
+                unreachable!("PressEnter variant uses snapshot stash for inverse");
             }
             EditOperation::InsertPageBreak { .. } => {
                 unreachable!("Sub-8 variant uses snapshot stash for inverse");
@@ -1496,6 +1673,308 @@ mod tests {
         if let EditOperation::InsertParagraph { count, .. } = op {
             assert_eq!(count, 1);
         } else { panic!("Wrong variant"); }
+    }
+
+    // ─── PressEnter 단위 테스트 ────────────────────────────────────────────
+    // 본문 모드 7 + 셀 모드 7 + 에러 5 = 19 케이스 (spec docs/25 §6 단계 1.3)
+
+    /// 본문 끝 (char_offset=-1) Enter — 원 본문 그대로, 새 빈 paragraph 가 +1 자리.
+    /// `insert_paragraph` 의 *이름 ↔ 동작 어긋남* 사고 자체 해결 자세 검증.
+    #[test]
+    fn test_press_enter_body_end_default() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 2);
+        assert_eq!(para_text(&core, 0, 0), "hello", "원 본문 그대로");
+        assert_eq!(para_text(&core, 0, 1), "", "새 빈 paragraph 가 +1 자리");
+    }
+
+    /// 본문 시작 (char_offset=0) Enter — 빈 paragraph 가 앞, 원 본문이 +1 자리.
+    /// 옛 `insert_paragraph` 의 동작 자세 (좌측 커서 + Enter).
+    #[test]
+    fn test_press_enter_body_start() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: 0, count: 1, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 2);
+        assert_eq!(para_text(&core, 0, 0), "", "앞에 빈 paragraph");
+        assert_eq!(para_text(&core, 0, 1), "hello", "원 본문이 +1 자리");
+    }
+
+    /// char_offset = len 자세 → -1 (끝) 과 동등.
+    #[test]
+    fn test_press_enter_body_offset_equals_len() {
+        let mut core = core_with_text("hello"); // len = 5
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: 5, count: 1, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "hello");
+        assert_eq!(para_text(&core, 0, 1), "");
+    }
+
+    /// char_offset > len 자세 → clamp to len. silent fail 0건.
+    #[test]
+    fn test_press_enter_body_offset_overflow_clamp() {
+        let mut core = core_with_text("hello"); // len = 5
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: 100, count: 1, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(para_text(&core, 0, 0), "hello");
+        assert_eq!(para_text(&core, 0, 1), "");
+    }
+
+    /// 본문 중간 (char_offset=2) → "he" / "llo" 분할.
+    #[test]
+    fn test_press_enter_body_middle_split() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: 2, count: 1, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 2);
+        assert_eq!(para_text(&core, 0, 0), "he");
+        assert_eq!(para_text(&core, 0, 1), "llo");
+    }
+
+    /// count = 3, char_offset = -1 → 원 본문 + 3 개 빈 paragraph 누적.
+    #[test]
+    fn test_press_enter_body_count_multi() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 3, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+        assert_eq!(core.document.sections[0].paragraphs.len(), 4, "원 1 + 새 3");
+        assert_eq!(para_text(&core, 0, 0), "hello");
+        assert_eq!(para_text(&core, 0, 1), "");
+        assert_eq!(para_text(&core, 0, 2), "");
+        assert_eq!(para_text(&core, 0, 3), "");
+    }
+
+    /// JSON deserialize — char_offset 기본값 -1, count 기본값 1.
+    #[test]
+    fn test_press_enter_deserialize_defaults() {
+        let json = r#"{"op":"press_enter","section":0,"para":3}"#;
+        let op: EditOperation = serde_json::from_str(json).unwrap();
+        if let EditOperation::PressEnter { char_offset, count, para, table_para, .. } = op {
+            assert_eq!(char_offset, -1);
+            assert_eq!(count, 1);
+            assert_eq!(para, Some(3));
+            assert_eq!(table_para, None);
+        } else { panic!("Wrong variant"); }
+    }
+
+    // ─── 셀 모드 ─────────────────────────────────────────────────────────
+
+    /// 셀 모드 끝 Enter — 셀 paragraph 가 추가 자세.
+    #[test]
+    fn test_press_enter_cell_end() {
+        let mut core = core_with_text("");
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+        // table paragraph 자리 = 1 (create_table_native 후 paragraphs[1] 이 표 자리).
+        // 셀 (0,0) 의 첫 paragraph 에 본문 박음.
+        let ctrl_idx = core.find_table_ctrl_idx(0, 1).unwrap();
+        let cell_idx = core.find_cell_idx(0, 1, ctrl_idx, 0, 0).unwrap();
+        core.insert_text_in_cell_native(0, 1, ctrl_idx, cell_idx, 0, 0, "AB").unwrap();
+
+        let op = EditOperation::PressEnter {
+            section: 0, para: None,
+            table_para: Some(1), row: Some(0), col: Some(0), cell_para: Some(0),
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+
+        // 셀 (0,0) 의 paragraphs 개수가 2 가 되어야.
+        let table_p = &core.document.sections[0].paragraphs[1];
+        if let crate::model::control::Control::Table(t) = &table_p.controls[ctrl_idx] {
+            let cell = &t.cells[cell_idx];
+            assert_eq!(cell.paragraphs.len(), 2);
+            assert_eq!(cell.paragraphs[0].text, "AB", "원 본문 그대로");
+            assert_eq!(cell.paragraphs[1].text, "", "새 빈 paragraph");
+        } else { panic!("Not a Table"); }
+    }
+
+    /// 셀 모드 시작 Enter — 빈 paragraph 가 앞.
+    #[test]
+    fn test_press_enter_cell_start() {
+        let mut core = core_with_text("");
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+        let ctrl_idx = core.find_table_ctrl_idx(0, 1).unwrap();
+        let cell_idx = core.find_cell_idx(0, 1, ctrl_idx, 0, 0).unwrap();
+        core.insert_text_in_cell_native(0, 1, ctrl_idx, cell_idx, 0, 0, "AB").unwrap();
+
+        let op = EditOperation::PressEnter {
+            section: 0, para: None,
+            table_para: Some(1), row: Some(0), col: Some(0), cell_para: Some(0),
+            ctrl_idx: None, cell_idx: None,
+            char_offset: 0, count: 1, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+
+        let table_p = &core.document.sections[0].paragraphs[1];
+        if let crate::model::control::Control::Table(t) = &table_p.controls[ctrl_idx] {
+            let cell = &t.cells[cell_idx];
+            assert_eq!(cell.paragraphs.len(), 2);
+            assert_eq!(cell.paragraphs[0].text, "", "빈 paragraph 앞");
+            assert_eq!(cell.paragraphs[1].text, "AB", "원 본문 +1 자리");
+        } else { panic!("Not a Table"); }
+    }
+
+    /// 셀 모드 중간 분할 — 셀 paragraph 본문 "ABCD" + char_offset=2 → "AB" / "CD".
+    #[test]
+    fn test_press_enter_cell_middle_split() {
+        let mut core = core_with_text("");
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+        let ctrl_idx = core.find_table_ctrl_idx(0, 1).unwrap();
+        let cell_idx = core.find_cell_idx(0, 1, ctrl_idx, 0, 0).unwrap();
+        core.insert_text_in_cell_native(0, 1, ctrl_idx, cell_idx, 0, 0, "ABCD").unwrap();
+
+        let op = EditOperation::PressEnter {
+            section: 0, para: None,
+            table_para: Some(1), row: Some(0), col: Some(0), cell_para: Some(0),
+            ctrl_idx: None, cell_idx: None,
+            char_offset: 2, count: 1, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+
+        let table_p = &core.document.sections[0].paragraphs[1];
+        if let crate::model::control::Control::Table(t) = &table_p.controls[ctrl_idx] {
+            let cell = &t.cells[cell_idx];
+            assert_eq!(cell.paragraphs.len(), 2);
+            assert_eq!(cell.paragraphs[0].text, "AB");
+            assert_eq!(cell.paragraphs[1].text, "CD");
+        } else { panic!("Not a Table"); }
+    }
+
+    /// 셀 모드 count > 1 — 새 paragraph N 개 누적.
+    #[test]
+    fn test_press_enter_cell_count_multi() {
+        let mut core = core_with_text("");
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+        let ctrl_idx = core.find_table_ctrl_idx(0, 1).unwrap();
+        let cell_idx = core.find_cell_idx(0, 1, ctrl_idx, 0, 0).unwrap();
+        core.insert_text_in_cell_native(0, 1, ctrl_idx, cell_idx, 0, 0, "X").unwrap();
+
+        let op = EditOperation::PressEnter {
+            section: 0, para: None,
+            table_para: Some(1), row: Some(0), col: Some(0), cell_para: Some(0),
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 3, style: None, page_break: None,
+        };
+        core.apply_edit_op(&op).unwrap();
+
+        let table_p = &core.document.sections[0].paragraphs[1];
+        if let crate::model::control::Control::Table(t) = &table_p.controls[ctrl_idx] {
+            let cell = &t.cells[cell_idx];
+            assert_eq!(cell.paragraphs.len(), 4, "원 1 + 새 3");
+            assert_eq!(cell.paragraphs[0].text, "X");
+            assert_eq!(cell.paragraphs[1].text, "");
+            assert_eq!(cell.paragraphs[2].text, "");
+            assert_eq!(cell.paragraphs[3].text, "");
+        } else { panic!("Not a Table"); }
+    }
+
+    // ─── 에러 케이스 ──────────────────────────────────────────────────────
+
+    /// 본문 모드 + para 누락 → INVALID_PAYLOAD.
+    #[test]
+    fn test_press_enter_body_missing_para() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::PressEnter {
+            section: 0, para: None,
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: None,
+        };
+        let err = core.apply_edit_op(&op).unwrap_err();
+        assert!(format!("{}", err).contains("INVALID_PAYLOAD"), "에러 메시지: {}", err);
+        assert!(format!("{}", err).contains("para 누락"));
+    }
+
+    /// 셀 모드 + page_break:true → INVALID_PAYLOAD (셀 안 페이지 분리 미지원).
+    #[test]
+    fn test_press_enter_cell_page_break_rejected() {
+        let mut core = core_with_text("");
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+
+        let op = EditOperation::PressEnter {
+            section: 0, para: None,
+            table_para: Some(1), row: Some(0), col: Some(0), cell_para: Some(0),
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: Some(true),
+        };
+        let err = core.apply_edit_op(&op).unwrap_err();
+        assert!(format!("{}", err).contains("INVALID_PAYLOAD"));
+        assert!(format!("{}", err).contains("page_break"));
+    }
+
+    /// 셀 모드 + row 누락 → INVALID_PAYLOAD.
+    #[test]
+    fn test_press_enter_cell_missing_row() {
+        let mut core = core_with_text("");
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+
+        let op = EditOperation::PressEnter {
+            section: 0, para: None,
+            table_para: Some(1), row: None, col: Some(0), cell_para: Some(0),
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: None,
+        };
+        let err = core.apply_edit_op(&op).unwrap_err();
+        assert!(format!("{}", err).contains("INVALID_PAYLOAD"));
+        assert!(format!("{}", err).contains("row 누락"));
+    }
+
+    /// 본문 모드 + section 범위 초과 → 에러.
+    #[test]
+    fn test_press_enter_body_section_out_of_range() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::PressEnter {
+            section: 99, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: None,
+        };
+        assert!(core.apply_edit_op(&op).is_err());
+    }
+
+    /// 본문 모드 + para 범위 초과 → 에러.
+    #[test]
+    fn test_press_enter_body_para_out_of_range() {
+        let mut core = core_with_text("hello");
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(99),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: None,
+        };
+        assert!(core.apply_edit_op(&op).is_err());
     }
 
     #[test]

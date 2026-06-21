@@ -737,6 +737,41 @@ pub(crate) async fn apply_op_with_stash(
     op: rhwp::document_core::EditOperation,
     origin_client_id: Option<String>,
 ) -> Result<(i64, Option<ir_compact::PatchDiff>), AppError> {
+    // PressEnter 셀 모드 broadcast 직전 cell_idx / ctrl_idx fill — studio 자체 자체 자체 자체
+    // broadcast 받았을 때 (row, col) 자체 자체 자체 resolve 부담 0건. broadcast 자체 자체
+    // 자체 자체 자체 자체 fill 된 op 자체 자체 자체 흘러감.
+    let mut op = op;
+    if let rhwp::document_core::EditOperation::PressEnter {
+        section,
+        table_para: Some(tp),
+        row: Some(r),
+        col: Some(c),
+        ctrl_idx,
+        cell_idx,
+        ..
+    } = &mut op
+    {
+        let s = session.lock().unwrap();
+        let resolved_ctrl_idx = match ctrl_idx {
+            Some(idx) => *idx,
+            None => s
+                .core
+                .find_table_ctrl_idx(*section, *tp)
+                .map_err(|e| AppError::unprocessable(format!("find_table_ctrl_idx: {e}")))?,
+        };
+        if cell_idx.is_none() {
+            let resolved = s
+                .core
+                .find_cell_idx(*section, *tp, resolved_ctrl_idx, *r as u16, *c as u16)
+                .map_err(|e| AppError::unprocessable(format!("find_cell_idx: {e}")))?;
+            *cell_idx = Some(resolved);
+        }
+        if ctrl_idx.is_none() {
+            *ctrl_idx = Some(resolved_ctrl_idx);
+        }
+        drop(s);
+    }
+
     // affected_range — apply 전후 IR 슬라이스 캡처 범위.
     let range = op.affected_range();
 
