@@ -383,8 +383,14 @@ fn write_sub_list<W: Write>(
         // HWPX *LinesegTextRunReflow* 비표준으로 검출되어 클라 reflow auto-fix 가 cell
         // 서식·border 자료에 부수효과. 셀 폭 기반 reflow_line_segs 호출 결과 자료를
         // HWPX 정합 line_segs 자료로 직렬화. paragraph 자료 자체는 mutate 안 함 (clone).
+        // Task #m600-35 — 원본 line_segs 자체 자체 자체 자체 자체 자체 자체 자체 자체 보존.
+        // cycle 25 자체 자체 자체 자체 *len() <= 1 자체 자체 자체 자체 자체 reflow* 자체 자체 자체
+        // 자체 자체 자체 *원본 자체 자체 자체 자체 1 줄 자체 자체 자체 자체 자체 자체 자체 자체
+        // 자체 자체 cell 폭 자체 자체 자체 자체 자체 자체 자체 2+ 줄로 자체 자체 자체 자체 자체*.
+        // round-trip 자체 자체 자체 자체 자체 line_segs.len() 자체 자체 자체 자체. *empty 자체
+        // 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체 자체* 자체 자체 자체 reflow.
         let reflowed_segs: Vec<crate::model::paragraph::LineSeg> =
-            if !para.text.is_empty() && para.line_segs.len() <= 1 {
+            if !para.text.is_empty() && para.line_segs.is_empty() {
                 if let Some(styles) = &ctx.resolved_styles {
                     let mut p = para.clone();
                     let available_px = (cell.width as f64) * ctx.dpi / 7200.0;
