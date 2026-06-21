@@ -354,35 +354,20 @@ fn materialize_following_section_break_type(
 }
 
 fn normalize_paragraph_char_border_fills(doc: &mut Document, report: &mut AdapterReport) {
-    let para_char_refs = collect_paragraph_char_border_fill_refs(doc);
-    if para_char_refs.is_empty() {
-        return;
-    }
-
-    let object_refs = collect_object_border_fill_refs(doc);
-    for id in para_char_refs {
-        if id == 0 || object_refs.contains(&id) {
-            continue;
-        }
-
-        let Some(border_fill) = doc
-            .doc_info
-            .border_fills
-            .get_mut(id.saturating_sub(1) as usize)
-        else {
-            continue;
-        };
-
-        if is_transparent_paragraph_no_fill_candidate(border_fill) {
-            border_fill.fill.fill_type = FillType::None;
-            border_fill.fill.solid = None;
-            border_fill.fill.gradient = None;
-            border_fill.fill.image = None;
-            border_fill.fill.alpha = 0;
-            border_fill.raw_data = None;
-            report.border_fills_no_fill_normalized += 1;
-        }
-    }
+    // Task #m600-49 — normalize 자체 자체 *비활성화*.
+    //
+    // 종전 코드는 paragraph·char_shape 만 참조하는 border_fill 중 background=0xffffffff +
+    // 모든 border=None + alpha=0 인 자료를 None 으로 박았다. 그러나 한컴이 박은 원본 hwp
+    // (사업관리 참조표.hwp) 의 bf[1]=Solid(white, pattern=999, pattern_type=-1) 처럼
+    // *Solid white 박힌 자료가 paragraph 자체 자체 자체 자체 자체 page background 의
+    // 참조 자료로 사용*되는 자리가 있어, 그 자료를 None 박으면 round-trip 시 한컴이 다른
+    // bf 의 색을 page background 로 잘못 표시 (예: 사용자 보고 — 4행3열 셀 분홍 변경
+    // 후 한컴에서 페이지 전체가 분홍색 박힘).
+    //
+    // 자료가 보존되도록 normalize 자체 자체 자체 박지 않음. 향후 paragraph background
+    // 정합 자료가 정확히 필요한 자리가 식별되면 더 좁은 조건으로 재도입.
+    let _ = doc;
+    let _ = report;
 }
 
 fn collect_paragraph_char_border_fill_refs(doc: &Document) -> std::collections::HashSet<u16> {
