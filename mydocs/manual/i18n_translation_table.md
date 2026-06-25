@@ -190,6 +190,49 @@ m700-1.1 sub-cycle 자리에서 박은 자리. compare-dialog·compare-result-wi
 | `history.deleted` | 삭제했습니다. | Deleted. | 削除しました。 | 토스트 |
 | `history.select_to_delete` | 삭제할 항목을 목록에서 먼저 선택하세요. | Select an item to delete first. | まず削除する項目を選択してください。 | 검증 |
 | `history.read_failed` | 스냅샷 데이터를 읽을 수 없습니다. | Cannot read snapshot data. | スナップショットデータを読み込めません。 | 에러 |
+| `history.dialog_title` | 문서 이력 관리 | Document history | 文書履歴管理 | dialog 타이틀 |
+| `history.intro_hint` | 이력은 문단 stable_id가 보존된 IR 스냅샷(JSON)으로 저장됩니다. 같은 편집 세션에서는 identity (Map) 비교가 가능합니다. 옛 항목(HWP 바이트만 보존)은 텍스트 정렬로 폴백합니다. | History is saved as IR snapshots (JSON) with stable_id preserved. The same edit session keeps identity (Map) comparison; legacy items fall back to text alignment. | 履歴は文単位の stable_id を保持した IR スナップショット (JSON) として保存します。同じ編集セッションでは identity (Map) 比較ができます。古い項目（HWP バイトのみ保存）はテキスト整列にフォールバックします。 | 안내 |
+| `history.snapshot_label` | 이력 스냅샷 | History snapshot | 履歴スナップショット | 라벨 |
+| `history.current_doc_filename` | 현재 문서.hwp | Current document.hwp | 現在の文書.hwp | placeholder filename |
+| `history.body_id_map` | 본문=id(Map) | body=id(Map) | 本文=id(Map) | 진단 라벨 |
+| `history.body_alignment` | 본문=정렬(alignment) | body=alignment | 本文=整列(alignment) | 진단 라벨 |
+| `history.none` | (없음) | (none) | (なし) | 빈 값 |
+| `history.empty_value` | (빈값) | (empty) | (空) | 빈 값 |
+| `history.old_bytes` | 구바이트 | Legacy bytes | 旧バイト | 라벨 |
+| `compare.file_select` | 파일 선택 | Choose file | ファイル選択 | 버튼 |
+| `compare.no_selection` | (선택 안 됨) | (none selected) | (未選択) | 빈 상태 |
+| `compare.hwp_only` | HWP/HWPX 파일만 선택할 수 있습니다. | Only HWP/HWPX files can be selected. | HWP/HWPX ファイルのみ選択できます。 | 검증 |
+| `compare.open_two_windows` | 2개 창 띄우기 | Open two windows | 2つのウィンドウで表示 | 버튼 |
+| `compare.unsaved_warning` | 저장하지 않은 변경이 있으면 잃을 수 있습니다. | Unsaved changes may be lost. | 保存していない変更が失われる可能性があります。 | 경고 |
+| `compare.left_overwrite_warning` | 현재 편집 중인 문서가 오른쪽과 다르면 에디터 내용이 오른쪽 파일로 바뀝니다. | If the currently edited document differs from the right, the editor content will be replaced with the right file. | 現在編集中の文書が右と異なる場合、エディター内容は右のファイルに置き換わります。 | 경고 |
+| `compare.load_after_run_confirm` | 비교를 실행한 뒤 오른쪽 문서를 에디터에 불러옵니다.\n{detail}\n계속할까요? | After running compare, the right document will be loaded into the editor.\n{detail}\nContinue? | 比較を実行した後、右の文書をエディターに読み込みます。\n{detail}\n続行しますか? | confirm |
+| `compare.right_load_failed` | 오른쪽 문서 로드 실패 | Failed to load right document | 右の文書の読み込みに失敗 | 에러 |
+| `compare.right_load_timeout` | 오른쪽 문서 로드 타임아웃 | Right document load timeout | 右の文書の読み込みタイムアウト | 에러 |
+| `compare.diff.before` | 기존 | Before | 変更前 | diff 라벨 |
+| `compare.diff.changed` | 변경 | Changed | 変更 | diff 라벨 |
+| `compare.diff.new_value` | 변경값 | New value | 変更値 | diff 라벨 |
+| `compare.diff.changed_cells_n` | 변경 셀 {n}개 | {n} changed cells | 変更セル {n} 個 | diff 요약 (placeholder) |
+| `compare.diff.row` | 행 | Row | 行 | diff 라벨 |
+| `compare.diff.col` | 열 | Column | 列 | diff 라벨 |
+| `compare.diff.text` | 텍스트 | Text | テキスト | diff 라벨 |
+| `compare.diff.cell_text` | 셀 텍스트 | Cell text | セルテキスト | diff 라벨 |
+| `compare.diff.text_hash` | 텍스트 해시 | Text hash | テキストハッシュ | diff 라벨 |
+| `compare.diff.prop_hash` | 속성 해시 | Property hash | 属性ハッシュ | diff 라벨 |
+| `compare.diff.size` | 크기 | Size | サイズ | diff 라벨 |
+| `compare.diff.signature` | 시그니처 | Signature | 署名 | diff 라벨 |
+| `compare.diff.crop` | 자르기 | Crop | トリミング | diff 라벨 |
+| `compare.diff.effects` | 효과 | Effects | 効果 | diff 라벨 |
+| `compare.diff.brightness_contrast` | 밝기/대비 | Brightness/Contrast | 明るさ/コントラスト | diff 라벨 |
+| `compare.diff.rotate` | 회전 | Rotate | 回転 | diff 라벨 |
+| `compare.diff.flip` | 대칭 | Flip | 反転 | diff 라벨 |
+| `compare.diff.body_layout` | 본문배치 | Body layout | 本文配置 | diff 라벨 |
+| `compare.diff.basis` | 기준 | Basis | 基準 | diff 라벨 |
+| `compare.diff.visual` | 시각 내용 | Visual | 視覚 | diff 라벨 |
+| `compare.diff.table` | 표 | Table | 表 | diff 라벨 |
+| `compare.diff.shape` | 도형 | Shape | 図形 | diff 라벨 |
+| `compare.diff.image` | 이미지 | Image | 画像 | diff 라벨 |
+| `compare.diff.graph` | 그래프 | Graph | グラフ | diff 라벨 |
+| `compare.diff.meta` | 메타 | Meta | メタ | diff 라벨 |
 
 ## 11. 글자 모양 대화상자 — `char_shape.*`
 
@@ -558,6 +601,13 @@ m700-1.4 sub-cycle 자리. table-create-dialog + table-cell-props-dialog 자리.
 | `table.text_dir.vertical_align` | 세로 정렬 | Vertical align | 縦の整列 | 라벨 |
 | `table.text_dir.rotate_angle` | 회전각 | Rotation | 回転角 | 라벨 |
 | `table.text_dir.skew` | 기울이기 | Skew | 傾斜 | 라벨 |
+
+### 셀 대각선 (`cell.*`)
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `cell.diagonal_direction` | 대각선 방향 | Diagonal direction | 対角線の方向 | 라벨 |
+| `cell.diagonal_x` | X자 | X-shape | X字 | 옵션 |
 
 ### 테두리·배경
 
@@ -1123,6 +1173,32 @@ m700-2 sub-cycle 자리. symbols-dialog. 유니코드 영역 라벨 자리.
 | `charmap.area.halfwidth_fullwidth` | 반각·전각 형태 | Halfwidth/Fullwidth | 半角·全角形 | 영역 |
 | `charmap.area.katakana` | 가타카나 | Katakana | カタカナ | 영역 |
 | `charmap.area.space_chars` | 공백 변환 문자 | Space chars | スペース変換文字 | 영역 |
+| `charmap.area.ipa_extensions` | IPA 확장 | IPA Extensions | IPA拡張 | 영역 |
+| `charmap.area.combining_diacriticals` | 조합 분음 부호 | Combining Diacritical Marks | 合成可能なダイアクリティカルマーク | 영역 |
+| `charmap.area.cyrillic` | 키릴 문자 | Cyrillic | キリル文字 | 영역 |
+| `charmap.area.general_punctuation` | 일반 구두점 | General Punctuation | 一般句読点 | 영역 |
+| `charmap.area.super_sub_scripts` | 위 첨자·아래 첨자 | Superscripts and Subscripts | 上付き・下付き | 영역 |
+| `charmap.area.currency_symbols` | 통화 기호 | Currency Symbols | 通貨記号 | 영역 |
+| `charmap.area.number_forms` | 숫자 형태 | Number Forms | 数字に準じるもの | 영역 |
+| `charmap.area.arrows` | 화살표 | Arrows | 矢印 | 영역 |
+| `charmap.area.control_pictures` | 제어 그림 문자 | Control Pictures | 制御文字用記号 | 영역 |
+| `charmap.area.box_drawing` | 테두리 문자 | Box Drawing | 罫線素片 | 영역 |
+| `charmap.area.misc_symbols` | 여러 가지 기호 | Miscellaneous Symbols | その他の記号 | 영역 |
+| `charmap.area.misc_math_a` | 여러 가지 수학 기호-A | Misc. Mathematical Symbols-A | その他の数学記号-A | 영역 |
+| `charmap.area.supplemental_arrows_a` | 화살표 보충-A | Supplemental Arrows-A | 補助矢印-A | 영역 |
+| `charmap.area.braille` | 점자 패턴 | Braille Patterns | 点字記号 | 영역 |
+| `charmap.area.supplemental_arrows_b` | 화살표 보충-B | Supplemental Arrows-B | 補助矢印-B | 영역 |
+| `charmap.area.misc_math_b` | 여러 가지 수학 기호-B | Misc. Mathematical Symbols-B | その他の数学記号-B | 영역 |
+| `charmap.area.cjk_symbols_punctuation` | CJK 기호 및 구두점 | CJK Symbols and Punctuation | CJK記号と句読点 | 영역 |
+| `charmap.area.hiragana` | 히라가나 | Hiragana | ひらがな | 영역 |
+| `charmap.area.hangul_compat_jamo` | 한글 호환 자모 | Hangul Compatibility Jamo | ハングル互換字母 | 영역 |
+| `charmap.area.cjk_compat` | CJK 호환 문자 | CJK Compatibility | CJK互換文字 | 영역 |
+| `charmap.area.cjk_unified_partial` | CJK 통합 한자 (일부) | CJK Unified Ideographs (partial) | CJK統合漢字 (一部) | 영역 |
+| `charmap.area.hangul_syllables_ga_gih` | 한글 음절 (가~깋) | Hangul Syllables (가~깋) | ハングル音節 (가~깋) | 영역 |
+| `charmap.area.hangul_syllables_na_nih` | 한글 음절 (나~닣) | Hangul Syllables (나~닣) | ハングル音節 (나~닣) | 영역 |
+| `charmap.unicode_label` | 유니코드(U): | Unicode(U): | Unicode(U): | 라벨 |
+| `charmap.recent_label` | 최근 사용한 문자(Q): | Recent characters(Q): | 最近使用した文字(Q): | 라벨 |
+| `charmap.empty_recent` | 최근에 [문자표]에서 사용한 문자가 없습니다. | No recently used characters. | 最近使用した文字がありません。 | 빈 상태 |
 
 ## 14. 편집 용지·구역·격자 (`page.*`)
 
