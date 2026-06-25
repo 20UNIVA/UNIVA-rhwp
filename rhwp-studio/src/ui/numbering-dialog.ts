@@ -30,6 +30,7 @@ import type { WasmBridge } from '@/core/wasm-bridge';
 import type { EventBus } from '@/core/event-bus';
 import { ModalDialog } from './dialog';
 import { BULLET_PRESETS } from '@/core/numbering-defaults';
+import { t } from '@/i18n/t';
 
 /** 번호 형식 코드 (HWP 표 43) */
 const NUM_FMT = {
@@ -142,7 +143,7 @@ function generatePreview(preset: NumberingPreset, startNumber: number): string {
     const numStr = formatNumber(startNumber, preset.numberFormats[level]);
     // ^(level+1)을 numStr로 치환
     const marker = fmt.replace(`^${level + 1}`, numStr);
-    lines.push(`${indent}수준 ${level + 1}: ${marker}`);
+    lines.push(`${indent}${t('numbering.level_with_marker', { level: level + 1, marker })}`);
   }
   return lines.join('\n');
 }
@@ -177,7 +178,7 @@ export class NumberingDialog extends ModalDialog {
     private wasm: WasmBridge,
     private eventBus: EventBus,
   ) {
-    super('문단 번호/글머리표', 480);
+    super(t('numbering.dialog_title'), 480);
   }
 
   protected createBody(): HTMLElement {
@@ -189,11 +190,11 @@ export class NumberingDialog extends ModalDialog {
     tabBar.className = 'nd-tab-bar';
     const tabNumber = document.createElement('button');
     tabNumber.className = 'nd-tab active';
-    tabNumber.textContent = '문단 번호';
+    tabNumber.textContent = t('numbering.tab.number');
     tabNumber.addEventListener('click', () => this.switchTab('number'));
     const tabBullet = document.createElement('button');
     tabBullet.className = 'nd-tab';
-    tabBullet.textContent = '글머리표';
+    tabBullet.textContent = t('numbering.tab.bullet');
     tabBullet.addEventListener('click', () => this.switchTab('bullet'));
     tabBar.appendChild(tabNumber);
     tabBar.appendChild(tabBullet);
@@ -241,7 +242,7 @@ export class NumberingDialog extends ModalDialog {
     // (없음)
     const noneCell = document.createElement('div');
     noneCell.className = 'nd-bullet-cell';
-    noneCell.textContent = '(없음)';
+    noneCell.textContent = t('numbering.none_paren');
     noneCell.addEventListener('click', () => {
       grid.querySelectorAll('.nd-bullet-cell').forEach(c => c.classList.remove('selected'));
       noneCell.classList.add('selected');
@@ -280,7 +281,7 @@ export class NumberingDialog extends ModalDialog {
     fmtSection.className = 'dialog-section';
     const fmtTitle = document.createElement('div');
     fmtTitle.className = 'dialog-section-title';
-    fmtTitle.textContent = '번호 형식';
+    fmtTitle.textContent = t('numbering.format_section');
     fmtSection.appendChild(fmtTitle);
 
     const radioGroup = document.createElement('div');
@@ -316,15 +317,15 @@ export class NumberingDialog extends ModalDialog {
     restartSection.className = 'dialog-section';
     const restartTitle = document.createElement('div');
     restartTitle.className = 'dialog-section-title';
-    restartTitle.textContent = '시작 번호 방식';
+    restartTitle.textContent = t('numbering.restart_section');
     restartSection.appendChild(restartTitle);
 
     const restartRadioGroup = document.createElement('div');
     restartRadioGroup.className = 'nd-restart-group';
     const restartModes = [
-      { value: '0', label: '앞 번호 목록에 이어(C)', checked: this.restartMode === 0 },
-      { value: '1', label: '이전 번호 목록에 이어(P)', checked: this.restartMode === 1 },
-      { value: '2', label: '새 번호 목록 시작(G)', checked: this.restartMode === 2 },
+      { value: '0', label: t('numbering.restart.continue_c'), checked: this.restartMode === 0 },
+      { value: '1', label: t('numbering.restart.previous_p'), checked: this.restartMode === 1 },
+      { value: '2', label: t('numbering.restart.new_g'), checked: this.restartMode === 2 },
     ];
     for (const mode of restartModes) {
       const lbl = document.createElement('label');
@@ -356,7 +357,7 @@ export class NumberingDialog extends ModalDialog {
     startSection.className = 'nd-start-section';
     const startLabel = document.createElement('label');
     startLabel.className = 'dialog-label';
-    startLabel.textContent = '시작 번호';
+    startLabel.textContent = t('numbering.start_number');
     const startInput = document.createElement('input');
     startInput.type = 'number';
     startInput.className = 'dialog-input';
@@ -378,7 +379,7 @@ export class NumberingDialog extends ModalDialog {
     previewSection.className = 'nd-preview-section';
     const previewTitle = document.createElement('div');
     previewTitle.className = 'dialog-section-title';
-    previewTitle.textContent = '미리보기';
+    previewTitle.textContent = t('para_shape.preview.title');
     this.previewEl = document.createElement('pre');
     this.previewEl.className = 'nd-preview';
     previewSection.appendChild(previewTitle);

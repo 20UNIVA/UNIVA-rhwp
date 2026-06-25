@@ -5,6 +5,7 @@
  * 사용된 외부 크레이트의 오픈소스 라이선스 목록도 표시한다.
  */
 import { ModalDialog } from './dialog';
+import { t } from '@/i18n/t';
 
 /** 외부 크레이트 라이선스 정보 */
 const THIRD_PARTY_LICENSES = [
@@ -20,7 +21,7 @@ const THIRD_PARTY_LICENSES = [
 
 export class AboutDialog extends ModalDialog {
   constructor() {
-    super('제품 정보', 460);
+    super(t('menu.file.about'), 460);
   }
 
   protected createBody(): HTMLElement {
@@ -99,7 +100,7 @@ export class AboutDialog extends ModalDialog {
       footer.replaceChildren();
       const closeBtn = document.createElement('button');
       closeBtn.className = 'dialog-btn dialog-btn-primary';
-      closeBtn.textContent = '닫기';
+      closeBtn.textContent = t('button.close');
       closeBtn.addEventListener('click', () => this.hide());
       footer.appendChild(closeBtn);
     }

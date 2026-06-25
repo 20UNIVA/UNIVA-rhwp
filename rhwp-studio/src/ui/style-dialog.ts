@@ -25,6 +25,7 @@ import type { WasmBridge } from '@/core/wasm-bridge';
 import type { EventBus } from '@/core/event-bus';
 import type { CharProperties, ParaProperties } from '@/core/types';
 import { ModalDialog } from './dialog';
+import { t } from '@/i18n/t';
 
 interface StyleEntry {
   id: number;
@@ -36,14 +37,15 @@ interface StyleEntry {
   charShapeId: number;
 }
 
-const ALIGN_LABELS: Record<string, string> = {
-  justify: '양쪽', left: '왼쪽', right: '오른쪽',
-  center: '가운데', distribute: '배분', split: '나눔',
-};
-
-const LS_TYPE_LABELS: Record<string, string> = {
-  Percent: '%', Fixed: 'pt', SpaceOnly: 'pt', Minimum: 'pt',
-};
+function alignLabel(key: string | undefined): string {
+  // 짧은 정렬 라벨 — 사전 단일 키 부재 (style.align.justify·distribute·split 미정의)
+  // 사전 도입 전 임시 인라인 (보고)
+  const map: Record<string, string> = {
+    justify: '양쪽', left: '왼쪽', right: '오른쪽',
+    center: '가운데', distribute: '배분', split: '나눔',
+  };
+  return map[key ?? 'justify'] ?? key ?? '';
+}
 
 export class StyleDialog extends ModalDialog {
   private styleList!: HTMLDivElement;
@@ -63,7 +65,7 @@ export class StyleDialog extends ModalDialog {
     private wasm: WasmBridge,
     private eventBus: EventBus,
   ) {
-    super('스타일', 560);
+    super(t('menu.format.style'), 560);
   }
 
   protected createBody(): HTMLElement {
@@ -76,7 +78,7 @@ export class StyleDialog extends ModalDialog {
 
     const listLabel = document.createElement('div');
     listLabel.className = 'sd-list-label';
-    listLabel.textContent = '스타일 목록(M):';
+    listLabel.textContent = t('style.list_label_m');
     leftCol.appendChild(listLabel);
 
     this.styleList = document.createElement('div');
@@ -87,13 +89,13 @@ export class StyleDialog extends ModalDialog {
     const iconBar = document.createElement('div');
     iconBar.className = 'sd-icon-bar';
 
-    const btnAdd = this.createIconBtn('+', '스타일 추가', () => {
+    const btnAdd = this.createIconBtn('+', t('style.btn.add'), () => {
       this.onAddRequest?.();
     });
-    const btnEdit = this.createIconBtn('✎', '스타일 편집', () => {
+    const btnEdit = this.createIconBtn('✎', t('style.btn.edit'), () => {
       this.onEditRequest?.(this.selectedId);
     });
-    const btnDelete = this.createIconBtn('−', '스타일 삭제', () => {
+    const btnDelete = this.createIconBtn('−', t('style.btn.delete'), () => {
       this.handleDelete();
     });
     iconBar.appendChild(btnAdd);
@@ -105,7 +107,7 @@ export class StyleDialog extends ModalDialog {
     const curInfo = document.createElement('div');
     curInfo.className = 'sd-cur-style';
     const curLabel = document.createElement('span');
-    curLabel.textContent = '현재 커서 위치 스타일: ';
+    curLabel.textContent = t('style.current_cursor_style');
     this.currentStyleLabel = document.createElement('span');
     this.currentStyleLabel.className = 'sd-cur-style-name';
     curInfo.appendChild(curLabel);
@@ -150,7 +152,7 @@ export class StyleDialog extends ModalDialog {
       const typeIcon = document.createElement('span');
       typeIcon.className = 'sd-type-icon';
       typeIcon.textContent = s.type === 0 ? '¶' : 'A';
-      typeIcon.title = s.type === 0 ? '문단 스타일' : '글자 스타일';
+      typeIcon.title = s.type === 0 ? t('style.kind.paragraph') : t('style.kind.character');
 
       const name = document.createElement('span');
       name.className = 'sd-style-name';
@@ -178,20 +180,23 @@ export class StyleDialog extends ModalDialog {
 
       // 문단 모양 정보
       if (style?.type === 0) {
-        this.addInfoSection('문단 모양 정보', this.buildParaInfo(detail.paraProps));
+        this.addInfoSection(t('style.section.para_info'), this.buildParaInfo(detail.paraProps));
       }
 
       // 글자 모양 정보
-      this.addInfoSection('글자 모양 정보', this.buildCharInfo(detail.charProps));
+      this.addInfoSection(t('style.section.char_info'), this.buildCharInfo(detail.charProps));
 
       // 번호/글머리표 정보
       const headType = detail.paraProps?.headType ?? 'None';
       const headLabel: Record<string, string> = {
-        None: '없음', Outline: '개요', Number: '번호', Bullet: '글머리표',
+        None: t('char_shape.misc.none'),
+        Outline: t('style.head.outline'),
+        Number: t('style.head.number'),
+        Bullet: t('style.head.bullet'),
       };
-      this.addInfoSection('문단 번호/글머리표 정보', `종류: ${headLabel[headType] ?? headType}`);
+      this.addInfoSection(t('style.section.numbering_info'), t('style.section.kind_with_value', { value: headLabel[headType] ?? headType }));
     } catch {
-      this.infoPanel.textContent = '속성 조회 실패';
+      this.infoPanel.textContent = t('style.props_query_failed');
     }
   }
 
@@ -218,15 +223,21 @@ export class StyleDialog extends ModalDialog {
 
   private buildParaInfo(pp: ParaProperties): string {
     const pxToPt = (v: number) => (v * 72 / 96).toFixed(1);
-    const align = ALIGN_LABELS[pp.alignment ?? 'justify'] ?? pp.alignment;
+    const align = alignLabel(pp.alignment);
     const lsType = pp.lineSpacingType ?? 'Percent';
     const ls = pp.lineSpacing ?? 160;
     const ml = pp.marginLeft != null ? pxToPt(pp.marginLeft) : '0.0';
     const mr = pp.marginRight != null ? pxToPt(pp.marginRight) : '0.0';
     const indent = pp.indent != null ? pxToPt(pp.indent) : '0.0';
     const indentPt = parseFloat(indent);
-    const firstLine = indentPt > 0 ? `들여쓰기 ${indent} pt` : indentPt < 0 ? `내어쓰기 ${Math.abs(indentPt).toFixed(1)} pt` : '보통';
-    const lsStr = lsType === 'Percent'
+    const firstLine = indentPt > 0
+      ? t('style.indent.indent_pt', { v: indent })
+      : indentPt < 0
+        ? t('style.indent.hanging_pt', { v: Math.abs(indentPt).toFixed(1) })
+        : t('style.indent.normal');
+    // 사전 단일 키 부재 — line-spacing 단위 인라인 (lsType 비사용 변수 정리)
+    void lsType;
+    const lsStr = (pp.lineSpacingType ?? 'Percent') === 'Percent'
       ? `${ls} %`
       : `${pxToPt(ls)} pt`;
 
@@ -236,10 +247,10 @@ export class StyleDialog extends ModalDialog {
     const nextStyleName = nextStyle?.name ?? style?.name ?? '';
 
     return [
-      `왼쪽 여백: ${ml} pt&nbsp;&nbsp;&nbsp;첫 줄: ${firstLine}`,
-      `오른쪽 여백: ${mr} pt&nbsp;&nbsp;&nbsp;정렬 방식: ${align}`,
-      `줄 간격: ${lsStr}`,
-      `다음 스타일: ${nextStyleName}`,
+      t('style.para_info.line1', { ml, firstLine }),
+      t('style.para_info.line2', { mr, align }),
+      t('style.para_info.line3_linespacing', { ls: lsStr }),
+      t('style.para_info.line4_next_style', { name: nextStyleName }),
     ].join('<br>');
   }
 
@@ -249,20 +260,20 @@ export class StyleDialog extends ModalDialog {
     const ratio = cp.ratios?.[0] ?? 100;
     const spacing = cp.spacings?.[0] ?? 0;
     return [
-      `글꼴: ${font}`,
-      `크기: ${size} pt`,
-      `장평: ${ratio}%&nbsp;&nbsp;자간: ${spacing}%`,
+      t('style.char_info.font', { font }),
+      t('style.char_info.size_pt', { size }),
+      t('style.char_info.ratio_spacing', { ratio, spacing }),
     ].join('<br>');
   }
 
   private handleDelete(): void {
     if (this.selectedId === 0) {
-      alert('바탕글 스타일은 삭제할 수 없습니다.');
+      alert(t('error.client.basic_style_undeletable'));
       return;
     }
     const style = this.styles.find(s => s.id === this.selectedId);
     if (!style) return;
-    if (!confirm(`'${style.name}' 스타일을 삭제하시겠습니까?\n이 스타일을 사용 중인 문단은 바탕글로 변경됩니다.`)) return;
+    if (!confirm(t('style.confirm.delete', { name: style.name }))) return;
     try {
       this.wasm.deleteStyle(this.selectedId);
       this.selectedId = 0;

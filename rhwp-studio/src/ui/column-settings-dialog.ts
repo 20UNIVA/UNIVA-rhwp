@@ -1,6 +1,7 @@
 import { ModalDialog } from './dialog';
 import type { WasmBridge } from '@/core/wasm-bridge';
 import type { EventBus } from '@/core/event-bus';
+import { t } from '@/i18n/t';
 
 const HWPUNIT_PER_MM = 7200 / 25.4;
 
@@ -25,7 +26,7 @@ export class ColumnSettingsDialog extends ModalDialog {
   private spacingInput!: HTMLInputElement;
 
   constructor(wasm: WasmBridge, eventBus: EventBus, sectionIdx: number) {
-    super('다단 설정', 360);
+    super(t('column.dialog_title'), 360);
     this.wasm = wasm;
     this.eventBus = eventBus;
     this.sectionIdx = sectionIdx;
@@ -51,7 +52,7 @@ export class ColumnSettingsDialog extends ModalDialog {
     };
 
     // 단 수
-    const countRow = addRow('단 수');
+    const countRow = addRow(t('column.count'));
     this.countInput = document.createElement('input');
     this.countInput.type = 'number';
     this.countInput.min = '1';
@@ -60,10 +61,10 @@ export class ColumnSettingsDialog extends ModalDialog {
     countRow.appendChild(this.countInput);
 
     // 단 종류
-    const typeRow = addRow('종류');
+    const typeRow = addRow(t('column.type'));
     this.typeSelect = document.createElement('select');
     this.typeSelect.style.cssText = 'width:120px;padding:4px;font-size:13px;';
-    for (const [val, text] of [['0', '일반'], ['1', '배분'], ['2', '평행']]) {
+    for (const [val, text] of [['0', t('column.type.normal')], ['1', t('column.type.distribute')], ['2', t('column.type.parallel')]]) {
       const opt = document.createElement('option');
       opt.value = val;
       opt.textContent = text;
@@ -72,13 +73,13 @@ export class ColumnSettingsDialog extends ModalDialog {
     typeRow.appendChild(this.typeSelect);
 
     // 너비 동일
-    const sameRow = addRow('너비 동일');
+    const sameRow = addRow(t('column.same_width'));
     this.sameWidthCheck = document.createElement('input');
     this.sameWidthCheck.type = 'checkbox';
     sameRow.appendChild(this.sameWidthCheck);
 
     // 단 간격
-    const spacingRow = addRow('간격 (mm)');
+    const spacingRow = addRow(t('column.spacing_mm'));
     this.spacingInput = document.createElement('input');
     this.spacingInput.type = 'number';
     this.spacingInput.min = '0';

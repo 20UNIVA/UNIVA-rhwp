@@ -1,5 +1,6 @@
 import { ModalDialog } from './dialog';
 import type { EventBus } from '@/core/event-bus';
+import { t } from '@/i18n/t';
 
 export class NewNumberDialog extends ModalDialog {
   private wasm: any;
@@ -8,7 +9,7 @@ export class NewNumberDialog extends ModalDialog {
   private numInput!: HTMLInputElement;
 
   constructor(wasm: any, eventBus: EventBus, pos: { sec: number; para: number; offset: number }) {
-    super('새 번호로 시작', 300);
+    super(t('numbering.new.dialog_title'), 300);
     this.wasm = wasm;
     this.eventBus = eventBus;
     this.cursorPos = pos;
@@ -24,7 +25,7 @@ export class NewNumberDialog extends ModalDialog {
     row.style.gap = '8px';
 
     const label = document.createElement('label');
-    label.textContent = '시작 번호:';
+    label.textContent = t('numbering.new.start_label');
     label.style.whiteSpace = 'nowrap';
 
     this.numInput = document.createElement('input');
