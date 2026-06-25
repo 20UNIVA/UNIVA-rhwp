@@ -114,11 +114,14 @@ function ensureStyles(): void {
   document.head.appendChild(style);
 }
 
+import { t, getLang, onLangChange } from '@/i18n/t';
+
 function buildVfinderUrl(opts: VfinderModalOptions): string {
   const base = opts.vfinderBase ?? '/vfinder/';
   const params = new URLSearchParams({
     mode: opts.mode,
     parentOrigin: window.location.origin,
+    sysLang: getLang(), // [Task #m700-11] 자식 iframe 도 같은 lang
   });
   if (opts.userId) params.set('user', opts.userId);
   if (opts.mode === 'save-as') {
@@ -148,12 +151,13 @@ export function mountVfinderModal(opts: VfinderModalOptions): VfinderModalHandle
 
   const title = document.createElement('h2');
   title.className = 'rhwp-vfinder-modal-title';
-  title.textContent = opts.mode === 'save-as' ? '다른 이름으로 저장' : '파일 열기';
+  const titleKey = opts.mode === 'save-as' ? 'menu.file.save_as' : 'menu.file.open';
+  title.textContent = t(titleKey);
 
   const closeBtn = document.createElement('button');
   closeBtn.className = 'rhwp-vfinder-modal-close';
   closeBtn.type = 'button';
-  closeBtn.setAttribute('aria-label', '닫기');
+  closeBtn.setAttribute('aria-label', t('button.close'));
   closeBtn.textContent = '×';
 
   header.appendChild(title);
@@ -180,11 +184,27 @@ export function mountVfinderModal(opts: VfinderModalOptions): VfinderModalHandle
   let cancelled = false;
   let closed = false;
 
+  // [Task #m700-11] 부모 lang 갈리면 자식 iframe 에도 발사 + modal 자체
+  // 라벨 갱신. modal 닫을 때 unsubscribe.
+  const unsubscribeLang = onLangChange(() => {
+    title.textContent = t(titleKey);
+    closeBtn.setAttribute('aria-label', t('button.close'));
+    try {
+      iframe.contentWindow?.postMessage(
+        { type: 'vfinder:set-locale', sysLang: getLang() },
+        vfinderOrigin,
+      );
+    } catch {
+      // 자식 iframe 자체 자체 아직 로드 안된 자체 자체 무시
+    }
+  });
+
   function teardown(): void {
     if (closed) return;
     closed = true;
     window.removeEventListener('message', onMessage);
     document.removeEventListener('keydown', onKeyDown);
+    unsubscribeLang();
     overlay.remove();
   }
 
