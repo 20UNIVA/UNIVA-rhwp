@@ -118,9 +118,7 @@ impl<S: Send + Sync> FromRequestParts<S> for RhwpUser {
                 return Ok(RhwpUser(s));
             }
         }
-        Err(AppError::bad_request(
-            "사용자 식별자 누락 — X-Rhwp-User 헤더 또는 RHWP_DEFAULT_USER 환경변수 필요",
-        ))
+        Err(AppError::user_id_missing())
     }
 }
 
@@ -229,6 +227,9 @@ struct SessionInfo {
 pub(crate) struct AppError {
     pub(crate) status: StatusCode,
     pub(crate) msg: String,
+    /// [Task #m700-10] stable error code (영어, 클라이언트 i18n 매핑용).
+    /// 한국어 메시지 `msg` 와 함께 `{ error, code }` 로 응답.
+    pub(crate) code: &'static str,
 }
 
 impl AppError {
@@ -236,34 +237,79 @@ impl AppError {
         AppError {
             status,
             msg: msg.into(),
+            code: "internal",
         }
     }
+    pub(crate) fn with_code(mut self, code: &'static str) -> Self {
+        self.code = code;
+        self
+    }
     pub(crate) fn bad_request(msg: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, msg)
+        Self::new(StatusCode::BAD_REQUEST, msg).with_code("bad_request")
     }
     pub(crate) fn unprocessable(msg: impl Into<String>) -> Self {
-        Self::new(StatusCode::UNPROCESSABLE_ENTITY, msg)
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, msg).with_code("unprocessable")
     }
     pub(crate) fn not_found(msg: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_FOUND, msg)
+        Self::new(StatusCode::NOT_FOUND, msg).with_code("not_found")
     }
     pub(crate) fn internal(msg: impl Into<String>) -> Self {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, msg)
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, msg).with_code("internal")
     }
     pub(crate) fn conflict(msg: impl Into<String>) -> Self {
-        Self::new(StatusCode::CONFLICT, msg)
+        Self::new(StatusCode::CONFLICT, msg).with_code("conflict")
+    }
+    pub(crate) fn forbidden(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, msg).with_code("forbidden")
+    }
+
+    // === stable code 박힌 helper (m700-10) ===
+    pub(crate) fn doc_parse_failed(e: impl std::fmt::Display) -> Self {
+        Self::unprocessable(format!("문서 파싱 실패: {e}")).with_code("doc_parse_failed")
+    }
+    pub(crate) fn session_not_found(id: impl std::fmt::Display) -> Self {
+        Self::not_found(format!("세션 없음: {id}")).with_code("session_not_found")
+    }
+    pub(crate) fn session_or_storage_missing(id: impl std::fmt::Display, e: impl std::fmt::Display) -> Self {
+        Self::not_found(format!("세션·저장소 모두 없음: {id} ({e})")).with_code("session_or_storage_missing")
+    }
+    pub(crate) fn snapshot_parse_failed(e: impl std::fmt::Display) -> Self {
+        Self::unprocessable(format!("스냅샷 파싱 실패: {e}")).with_code("snapshot_parse_failed")
+    }
+    pub(crate) fn user_id_missing() -> Self {
+        Self::bad_request("사용자 식별자 누락 — X-Rhwp-User 헤더 또는 RHWP_DEFAULT_USER 환경변수 필요")
+            .with_code("user_id_missing")
+    }
+    pub(crate) fn empty_doc_create_failed(e: impl std::fmt::Display) -> Self {
+        Self::internal(format!("빈 문서 생성 실패: {e}")).with_code("empty_doc_create_failed")
+    }
+    pub(crate) fn save_failed(e: impl std::fmt::Display) -> Self {
+        Self::internal(format!("저장(덮어쓰기) 실패: {e}")).with_code("save_failed")
+    }
+    pub(crate) fn storage_upload_failed(e: impl std::fmt::Display) -> Self {
+        Self::internal(format!("저장소 업로드 실패: {e}")).with_code("storage_upload_failed")
+    }
+    pub(crate) fn input_read_failed() -> Self {
+        Self::bad_request("입력 파일 읽기 실패").with_code("input_read_failed")
+    }
+    pub(crate) fn doc_corrupted() -> Self {
+        Self::unprocessable("손상 문서").with_code("doc_corrupted")
     }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        (self.status, Json(json!({ "error": self.msg }))).into_response()
+        (
+            self.status,
+            Json(json!({ "error": self.msg, "code": self.code })),
+        )
+            .into_response()
     }
 }
 
 impl From<rusqlite::Error> for AppError {
     fn from(e: rusqlite::Error) -> Self {
-        AppError::internal(format!("sqlite: {e}"))
+        AppError::internal(format!("sqlite: {e}")).with_code("sqlite_error")
     }
 }
 
@@ -277,8 +323,7 @@ fn build_core(bytes: &[u8]) -> Result<DocumentCore, AppError> {
     // 건너뛰어 TAC 표 paragraph 의 line_height 가 표 높이 미반영 (1000 유지) 상태로
     // server 메모리에 박혀, wasm paginate(4페이지) 와 server paginate(3페이지) 격차의
     // root cause 가 되었다.
-    DocumentCore::from_bytes(bytes)
-        .map_err(|e| AppError::unprocessable(format!("문서 파싱 실패: {e}")))
+    DocumentCore::from_bytes(bytes).map_err(AppError::doc_parse_failed)
 }
 
 /// 영속 데이터로부터 코어를 복원한다(base/snapshot + 이후 ops 재적용).
@@ -339,7 +384,7 @@ pub(crate) async fn get_or_restore(
             .storage
             .download(file_id, user_id)
             .await
-            .map_err(|e| AppError::not_found(format!("세션·저장소 모두 없음: {file_id} ({e})")))?;
+            .map_err(|e| AppError::session_or_storage_missing(&file_id, e))?;
         let core = build_core(&bytes)?;
         state.store.create_session(file_id, "hwp", &bytes)?;
         let session = Arc::new(Mutex::new(Session {
@@ -356,7 +401,7 @@ pub(crate) async fn get_or_restore(
             .insert(file_id.to_string(), session.clone());
         return Ok(session);
     }
-    Err(AppError::not_found(format!("세션 없음: {file_id}")))
+    Err(AppError::session_not_found(&file_id))
 }
 
 /// 세션 정보 요약(문단 합계 포함)을 만든다.
@@ -433,7 +478,7 @@ async fn create_document(
         .storage
         .upload(bytes.clone(), &filename, None, None, false, &user_id)
         .await
-        .map_err(|e| AppError::internal(format!("저장소 업로드 실패: {e}")))?
+        .map_err(AppError::storage_upload_failed)?
         .file_id;
 
     // 3) 발급된 file_id로 세션 생성
@@ -491,7 +536,7 @@ async fn create_blank_document(
     // 2) Rust core 자체 함수로 빈 문서 IR 생성 (studio 의 createBlankDocument 와 동등).
     let mut core = rhwp::document_core::DocumentCore::new_empty();
     core.create_blank_document_native()
-        .map_err(|e| AppError::internal(format!("빈 문서 생성 실패: {e}")))?;
+        .map_err(AppError::empty_doc_create_failed)?;
 
     // 3) format 에 따라 hwp / hwpx 직렬화.
     let doc = core.document();
@@ -509,7 +554,7 @@ async fn create_blank_document(
         .storage
         .upload(bytes.clone(), &filename, None, req.target_path.as_deref(), false, &user_id)
         .await
-        .map_err(|e| AppError::internal(format!("저장소 업로드 실패: {e}")))?
+        .map_err(AppError::storage_upload_failed)?
         .file_id;
 
     // 5) 발급된 file_id 로 세션 생성 (메모리 + sqlite 양쪽).
@@ -670,7 +715,7 @@ async fn save_document(
         .storage
         .upload(bytes, &filename, Some(&file_id), None, false, &session_user)
         .await
-        .map_err(|e| AppError::internal(format!("저장(덮어쓰기) 실패: {e}")))?;
+        .map_err(AppError::save_failed)?;
     Ok(Json(json!({
         "fileId": res.file_id,
         "minioKey": res.minio_key,
