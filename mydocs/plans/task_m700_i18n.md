@@ -33,10 +33,10 @@ vfinder 자료 차용 + rhwp 도메인 자리 조정.
 
 | Cycle | 자리 | 분량 | sub-agent |
 |---|---|---|---|
-| m700-0 | Phase 0 결정 + Phase 1A 한국어 grep 수집·카테고리 분류 + translation-table 골격 박기 | 메인 직접 | X |
-| m700-1 | Phase 1B 사전 채워넣기 (카테고리 1-7) | 메인 직접 | X |
-| m700-2 | Phase 1B 후속 (카테고리 8-14) | 메인 직접 | X |
-| m700-3 | Phase 1B 후속 (카테고리 15-끝) + Phase 1.5 맥락 적합성 검증 | 메인 직접 | X |
+| m700-0 | Phase 0 결정 + Phase 1A 한국어 grep 수집·카테고리 분류 + translation-table 골격 (33 자리 채움 + sub-agent 검증·정렬) | 메인 직접 + 검증 sub-agent 2 자리 | △ |
+| m700-1 | Phase 1B 사전 채워넣기 — 자리 분포 상위 6 카테고리 (compare/history·char_shape·table·shape·header_footer·para_shape, ~125 자리) | 메인 직접 | X |
+| m700-2 | Phase 1B 후속 (메뉴바 §4-7 + find·font·bookmark·charmap, ~100 자리) | 메인 직접 | X |
+| m700-3 | Phase 1B 후속 (나머지 + Phase 1.5 맥락 적합성 검증) | 메인 직접 | X |
 | m700-4 | Phase 2 키 명명 + 사용자 검토 | 메인 직접 | X |
 | m700-5 | Phase 3 사전 파일 (messages.ko/en/ja.ts) + t.ts 헬퍼 + lang-boundary.ts + main.ts 결선 | 메인 직접 | X |
 | m700-6 | Phase 4 코드 치환 (파일 1-20) | sub-agent | O |
