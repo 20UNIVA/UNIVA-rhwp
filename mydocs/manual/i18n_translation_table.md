@@ -893,9 +893,318 @@ m700-1.6 sub-cycle 자리. 메뉴바 *쪽 → 머리말·꼬리말* 자리 + 쪽
 
 전체 385 unique 자리 자체 — 자료 자체에서 **합계 자리 자체가 unique 자리 자체보다 많다**. 왜냐하면 *대화상자 자리 자체*에 *공통 자리 자체가 여러 자리*에서 등장하기 때문 (예: *왼쪽*, *오른쪽*, *가운데*, *위*, *아래* 자리 자체). 공통 자리 자체 *별도 카테고리* (`common.*`) 박을 자리 자체 자체.
 
+## 4. 메뉴바 — 입력 (`menu.insert.*`)
+
+m700-2 sub-cycle 자리. 메뉴바 *입력* 드롭다운 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `menu.insert.label` | 입력 | Insert | 挿入 | 최상위 라벨 |
+| `menu.insert.picture` | 그림 | Picture | 画像 | `insert:picture` |
+| `menu.insert.shape` | 도형 | Shape | 図形 | `insert:shape` |
+| `menu.insert.textbox` | 글상자 | Text box | テキストボックス | `insert:textbox` |
+| `menu.insert.equation` | 수식 | Equation | 数式 | `insert:equation` |
+| `menu.insert.charmap` | 문자표 | Symbol | 文字一覧 | `insert:symbols` |
+| `menu.insert.footnote` | 각주 | Footnote | 脚注 | `insert:footnote` |
+| `menu.insert.endnote` | 미주 | Endnote | 文末脚注 | `insert:endnote` |
+| `menu.insert.comment` | 주석 | Comment | コメント | `insert:comment` |
+| `menu.insert.bookmark` | 책갈피 | Bookmark | しおり | `insert:bookmark` |
+| `menu.insert.hyperlink` | 하이퍼링크 | Hyperlink | ハイパーリンク | `insert:hyperlink` |
+| `menu.insert.field` | 필드 입력 | Insert field | フィールド挿入 | `insert:field` |
+| `menu.insert.paragraph_band` | 문단 띠 | Paragraph band | 段落バンド | `insert:para-band` |
+| `menu.insert.caption` | 캡션 넣기 | Insert caption | キャプション挿入 | `insert:caption` |
+| `menu.insert.caption_none` | 캡션 없음 | No caption | キャプションなし | 옵션 |
+| `menu.insert.caption_top_left` | 왼쪽 위 | Top left | 左上 | 캡션 자리 |
+| `menu.insert.caption_top_center` | 왼쪽 가운데 | Top center | 上中央 | 캡션 자리 |
+| `menu.insert.caption_top_right` | 오른쪽 위 | Top right | 右上 | 캡션 자리 |
+| `menu.insert.caption_bottom_left` | 왼쪽 아래 | Bottom left | 左下 | 캡션 자리 |
+| `menu.insert.caption_bottom_center` | 오른쪽 가운데 | Bottom center | 下中央 | 캡션 자리 |
+| `menu.insert.caption_bottom_right` | 오른쪽 아래 | Bottom right | 右下 | 캡션 자리 |
+| `menu.insert.rotate_flip` | 회전/대칭 | Rotate/Flip | 回転/反転 | 서브메뉴 |
+| `menu.insert.rotate_right_90` | 오른쪽 90° 회전 | Rotate right 90° | 右90°回転 | 옵션 |
+| `menu.insert.rotate_left_90` | 왼쪽 90° 회전 | Rotate left 90° | 左90°回転 | 옵션 |
+| `menu.insert.flip_horizontal` | 좌우 대칭 | Flip horizontal | 左右反転 | 옵션 |
+
+## 5. 메뉴바 — 서식 (`menu.format.*`)
+
+m700-2 sub-cycle 자리. 메뉴바 *서식* 드롭다운.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `menu.format.label` | 서식 | Format | 書式 | 최상위 라벨 |
+| `menu.format.style` | 스타일 | Style | スタイル | `format:style` |
+| `menu.format.char_shape` | 글자 모양 | Character | 文字書式 | `format:char-shape` |
+| `menu.format.para_shape` | 문단 모양 | Paragraph | 段落書式 | `format:para-shape` |
+| `menu.format.bullet_shape` | 글머리표 모양 | Bullet style | 箇条書きスタイル | `format:bullet` |
+| `menu.format.numbering_shape` | 문단 번호 모양 | Numbering style | 番号書式 | `format:numbering` |
+| `menu.format.level_up` | 한 수준 증가 | Increase level | レベルアップ | `format:level-up` |
+| `menu.format.level_down` | 한 수준 감소 | Decrease level | レベルダウン | `format:level-down` |
+| `menu.format.font_size_larger` | 글자 크기 크게 | Increase font size | フォントサイズ拡大 | `format:font-size-up` |
+| `menu.format.font_size_smaller` | 글자 크기 작게 | Decrease font size | フォントサイズ縮小 | `format:font-size-down` |
+| `menu.format.line_spacing_up` | 줄 간격 늘림 | Increase line spacing | 行間広げる | `format:line-up` |
+| `menu.format.line_spacing_down` | 줄 간격 줄임 | Decrease line spacing | 行間狭める | `format:line-down` |
+| `menu.format.object_props` | 개체 속성 | Object properties | オブジェクトのプロパティ | `format:object-props` |
+
+## 6. 메뉴바 — 쪽 (`menu.page.*`)
+
+m700-2 sub-cycle 자리. 메뉴바 *쪽* 드롭다운.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `menu.page.label` | 쪽 | Page | ページ | 최상위 라벨 |
+| `menu.page.page_setup` | 편집 용지 | Page Setup | 用紙設定 | `page:setup` |
+| `menu.page.section` | 구역 설정 | Section setup | 区分設定 | `page:section` |
+| `menu.page.grid` | 격자 설정 | Grid settings | グリッド設定 | `page:grid` |
+| `menu.page.odd` | 홀수 쪽 | Odd page | 奇数ページ | `page:odd` |
+| `menu.page.even` | 짝수 쪽 | Even page | 偶数ページ | `page:even` |
+| `menu.page.both` | 양쪽 | Both | 両方 | `page:both` |
+| `menu.page.header` | 머리말 | Header | ヘッダー | `page:header` |
+| `menu.page.footer` | 꼬리말 | Footer | フッター | `page:footer` |
+
+## 7. 메뉴바 — 표 (`menu.table.*`)
+
+m700-2 sub-cycle 자리. 메뉴바 *표* 드롭다운.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `menu.table.label` | 표 | Table | 表 | 최상위 라벨 |
+| `menu.table.create` | 표 만들기 | Insert table | 表の挿入 | `table:create` |
+| `menu.table.cell_props` | 표/셀 속성 | Table/Cell props | 表/セルのプロパティ | `table:props` |
+| `menu.table.cell_border_fill` | 셀 테두리/배경 | Cell border/fill | セルの罫線/塗り | `table:border` |
+| `menu.table.merge_cells` | 셀 합치기 | Merge cells | セルを結合 | `table:merge` |
+| `menu.table.split_cells` | 셀 나누기 | Split cells | セルを分割 | `table:split` |
+| `menu.table.add_row_below` | 아래쪽에 줄 추가하기 | Add row below | 下に行を追加 | `table:add-row-below` |
+| `menu.table.add_row_above` | 위쪽에 줄 추가하기 | Add row above | 上に行を追加 | `table:add-row-above` |
+| `menu.table.add_col_left` | 왼쪽에 칸 추가하기 | Add column left | 左に列を追加 | `table:add-col-left` |
+| `menu.table.add_col_right` | 오른쪽에 칸 추가하기 | Add column right | 右に列を追加 | `table:add-col-right` |
+| `menu.table.delete_row` | 줄 지우기 | Delete row | 行を削除 | `table:del-row` |
+| `menu.table.delete_col` | 칸 지우기 | Delete column | 列を削除 | `table:del-col` |
+| `menu.table.equal_width` | 셀 너비를 같게 | Equalize width | 列幅を揃える | `table:equal-w` |
+| `menu.table.equal_height` | 셀 높이를 같게 | Equalize height | 行高を揃える | `table:equal-h` |
+| `menu.table.formula_sum` | 블록 합계 | Block sum | ブロック合計 | `table:sum` |
+| `menu.table.formula_avg` | 블록 평균 | Block average | ブロック平均 | `table:avg` |
+| `menu.table.formula_product` | 블록 곱 | Block product | ブロック積 | `table:product` |
+| `menu.table.formula_custom` | 블록 계산식 | Block formula | ブロック計算式 | `table:formula` |
+| `menu.table.thousand_separator` | 1,000 단위 구분 쉼표 | Thousand separator | 1,000区切り | `table:thousand` |
+| `menu.table.add_decimal` | 자릿점 넣기 | Add decimal | 桁区切り追加 | `table:dec-add` |
+| `menu.table.remove_decimal` | 자릿점 빼기 | Remove decimal | 桁区切り削除 | `table:dec-remove` |
+| `menu.table.apply_each_cell` | 각 셀마다 적용 | Apply to each cell | 各セルに適用 | 옵션 |
+| `menu.table.apply_as_one_cell` | 하나의 셀처럼 적용 | Apply as one cell | 1つのセルとして適用 | 옵션 |
+
+## 9. 서식 도구 모음 (`stylebar.*`)
+
+m700-2 sub-cycle 자리. style-bar 자리 (`#style-bar`).
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `stylebar.style` | 스타일 | Style | スタイル | 콤보 라벨 |
+| `stylebar.style_picker` | 스타일 -- | Style -- | スタイル -- | placeholder |
+| `stylebar.font` | 글꼴 | Font | フォント | 콤보 라벨 |
+| `stylebar.font_picker` | 글꼴 -- | Font -- | フォント -- | placeholder |
+| `stylebar.font_lang_category` | 글꼴 적용 언어 | Font language | 適用言語 | 콤보 라벨 |
+| `stylebar.font_lang_picker` | 글꼴 언어 카테고리 -- | Font lang -- | 言語 -- | placeholder |
+| `stylebar.font_size` | 글자 크기 (pt) | Font size (pt) | フォントサイズ (pt) | 라벨 |
+| `stylebar.font_size_picker` | 글자 크기 -- | Size -- | サイズ -- | placeholder |
+| `stylebar.bold` | 굵게 (Ctrl+B) | Bold (Ctrl+B) | 太字 (Ctrl+B) | 토글 |
+| `stylebar.italic` | 기울임 (Ctrl+I) | Italic (Ctrl+I) | 斜体 (Ctrl+I) | 토글 |
+| `stylebar.underline` | 밑줄 (Ctrl+U) | Underline (Ctrl+U) | 下線 (Ctrl+U) | 토글 |
+| `stylebar.strikethrough` | 취소선 | Strikethrough | 取り消し線 | 토글 |
+| `stylebar.emboss` | 양각 | Emboss | 浮き出し | 토글 |
+| `stylebar.engrave` | 음각 | Engrave | 浮き彫り | 토글 |
+| `stylebar.outline` | 외곽선 | Outline | 縁取り | 토글 |
+| `stylebar.superscript` | 위 첨자 | Superscript | 上付き | 토글 |
+| `stylebar.subscript` | 아래 첨자 | Subscript | 下付き | 토글 |
+| `stylebar.text_color` | 글자 색 | Text color | 文字色 | 콤보 |
+| `stylebar.text_color_picker` | 글자색 -- | Color -- | 色 -- | placeholder |
+| `stylebar.text_effects` | 글자 효과 | Text effects | 文字効果 | 콤보 |
+| `stylebar.char_style_preview` | 글자 서식: 가 -- | Style: Aa -- | 書式: あ -- | placeholder |
+| `stylebar.align.left` | 왼쪽 정렬 | Left align | 左揃え | 토글 |
+| `stylebar.align.center` | 가운데 정렬 | Center align | 中央揃え | 토글 |
+| `stylebar.align.right` | 오른쪽 정렬 | Right align | 右揃え | 토글 |
+| `stylebar.align.justify` | 양쪽 정렬 | Justify | 両端揃え | 토글 |
+| `stylebar.align.distribute` | 배분 정렬 | Distribute | 均等割り付け | 토글 |
+| `stylebar.align.divide` | 나눔 정렬 | Divide | 分割 | 토글 |
+| `stylebar.align.picker` | 문단 정렬 -- | Align -- | 配置 -- | placeholder |
+| `stylebar.editor_area` | 에디터 영역 (눈금자 포함) -- | Editor area (with ruler) -- | エディター領域 (ルーラ付き) -- | 라벨 |
+
+## 25. 글꼴·언어 (`font.*`)
+
+m700-2 sub-cycle 자리. 글꼴 콤보 자리 + 언어 카테고리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `font.lang.representative` | 대표 | Representative | 代表 | 언어 옵션 |
+| `font.lang.korean` | 한글 | Korean | 韓国語 | 언어 옵션 |
+| `font.lang.english` | 영문 | English | 英語 | 언어 옵션 |
+| `font.lang.japanese` | 일어 | Japanese | 日本語 | 언어 옵션 |
+| `font.lang.hanja` | 한자 | Hanja | 漢字 | 언어 옵션 |
+| `font.lang.foreign` | 외국어 | Other | その他外国語 | 언어 옵션 |
+| `font.lang.symbol` | 기호 | Symbol | 記号 | 언어 옵션 |
+| `font.lang.user` | 사용자 | User-defined | ユーザー | 언어 옵션 |
+| `font.preset.batang` | 바탕 | Batang | バタン | 글꼴 이름 (한국어판 기본 글꼴 이름 — 영어·일본어판도 *Romaji* 자리 유지) |
+| `font.preset.dotum` | 돋움 | Dotum | ドトゥム | 글꼴 이름 |
+| `font.preset.gungseo` | 궁서 | Gungseo | グンソ | 글꼴 이름 |
+| `font.preset.malgun_gothic` | 맑은 고딕 | Malgun Gothic | マルグンゴシック | 글꼴 이름 |
+| `font.preset.nanum_gothic` | 나눔고딕 | Nanum Gothic | ナヌムゴシック | 글꼴 이름 |
+
+## 28. 책갈피 (`bookmark.*`)
+
+m700-2 sub-cycle 자리. bookmark-dialog.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `bookmark.dialog_title` | 책갈피 | Bookmark | しおり | dialog 타이틀 |
+| `bookmark.new_name` | 새 책갈피 이름: | New bookmark name: | 新しいしおり名: | 라벨 |
+| `bookmark.list` | 책갈피 목록(L): | Bookmark list(L): | しおり一覧(L): | 라벨 |
+| `bookmark.sort_by` | 책갈피 정렬 기준 | Sort by | 並び替え基準 | 그룹 |
+| `bookmark.sort.name` | 이름 | Name | 名前 | 옵션 |
+| `bookmark.sort.kind` | 종류 | Kind | 種類 | 옵션 |
+| `bookmark.sort.position` | 위치 | Position | 位置 | 옵션 |
+| `bookmark.rename_title` | 책갈피 이름 바꾸기 | Rename bookmark | しおり名を変更 | dialog 타이틀 |
+| `bookmark.rename_label` | 책갈피 이름(N): | Bookmark name(N): | しおり名(N): | 라벨 |
+| `bookmark.insert_btn` | 넣기(D) | Insert(D) | 挿入(D) | 버튼 |
+| `bookmark.goto_btn` | 이동(M) | Go to(M) | 移動(M) | 버튼 |
+| `bookmark.delete_btn` | 삭제 | Delete | 削除 | 버튼 |
+| `bookmark.cancel_btn` | 취소 | Cancel | キャンセル | 버튼 |
+| `bookmark.empty_state` | 최근에 등록한 [책갈피]가 없습니다.\n사용자가 편집 문서에 책갈피를 삽입하면 [책갈피 목록]에 등록됩니다. | No recent bookmarks.\nBookmarks added in the editor will appear here. | 最近のしおりがありません。\n編集文書にしおりを挿入すると一覧に登録されます。 | 빈 상태 안내 |
+| `bookmark.enter_name` | 책갈피 이름을 입력하세요. | Enter a bookmark name. | しおり名を入力してください。 | 검증 |
+| `bookmark.add_failed` | 책갈피 추가 실패 | Failed to add bookmark | しおりの追加に失敗 | 에러 |
+| `bookmark.rename_failed` | 이름 변경 실패 | Rename failed | 名前の変更に失敗 | 에러 |
+| `bookmark.default_name` | 책갈피{count} | Bookmark {count} | しおり{count} | 기본 이름 |
+| `bookmark.confirm_delete` | 선택한 책갈피 {name}를 지울까요? | Delete selected bookmark {name}? | 選択したしおり {name} を削除しますか? | confirm |
+
+## 29. 찾기·바꾸기·찾아가기 (`find.*`)
+
+m700-2 sub-cycle 자리. find-dialog + goto-dialog.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `find.dialog_title` | 찾기 | Find | 検索 | dialog 타이틀 |
+| `find.find_replace_title` | 찾아 바꾸기 | Find & Replace | 検索/置換 | dialog 타이틀 |
+| `find.find_target` | 찾을 내용: | Find: | 検索する内容: | 라벨 |
+| `find.replace_target` | 바꿀 내용: | Replace with: | 置換後の内容: | 라벨 |
+| `find.next` | 다음 찾기 | Find next | 次を検索 | 버튼 |
+| `find.prev` | 이전 찾기 | Find previous | 前を検索 | 버튼 |
+| `find.replace_one` | 바꾸기 | Replace | 置換 | 버튼 |
+| `find.replace_all` | 모두 바꾸기 | Replace all | すべて置換 | 버튼 |
+| `find.no_result` | 검색 결과 없음 | No results | 検索結果なし | 토스트 |
+| `find.reached_end` | 맨 마지막입니다. 처음부터 계속합니다. | Reached the end. Continuing from the beginning. | 末尾です。先頭から続けます。 | 토스트 |
+| `find.reached_start` | 맨 처음입니다. 끝부터 계속합니다. | Reached the start. Continuing from the end. | 先頭です。末尾から続けます。 | 토스트 |
+| `find.goto_title` | 찾아가기 | Go to | ジャンプ | dialog 타이틀 |
+| `find.goto.page` | 쪽 | Page | ページ | 옵션 |
+| `find.goto.page_number` | 쪽 번호: | Page number: | ページ番号: | 라벨 |
+| `find.goto.bookmark` | 책갈피 | Bookmark | しおり | 옵션 |
+| `find.goto.no_bookmark` | 등록된 책갈피가 없습니다. | No bookmarks registered. | しおりが登録されていません。 | 빈 상태 |
+| `find.goto.page_not_found` | 해당 쪽을 찾을 수 없습니다. | Page not found. | 該当ページが見つかりません。 | 에러 |
+
+## 30. 문자표 (`charmap.*`)
+
+m700-2 sub-cycle 자리. symbols-dialog. 유니코드 영역 라벨 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `charmap.dialog_title` | 문자표 입력 | Insert symbol | 文字一覧の挿入 | dialog 타이틀 |
+| `charmap.char_picker` | 문자 선택(C): | Select character(C): | 文字選択(C): | 라벨 |
+| `charmap.char_area` | 문자 영역(I): | Character area(I): | 文字領域(I): | 라벨 |
+| `charmap.insert_btn` | 넣기(D) | Insert(D) | 挿入(D) | 버튼 |
+| `charmap.close_btn` | 닫기 | Close | 閉じる | 버튼 |
+| `charmap.area.basic_latin` | 기본 라틴 문자 | Basic Latin | 基本ラテン文字 | 영역 |
+| `charmap.area.latin_supplement` | 라틴 문자-1 보충 | Latin-1 Supplement | ラテン文字-1補助 | 영역 |
+| `charmap.area.latin_extended_a` | 라틴 확장-A | Latin Extended-A | ラテン文字拡張A | 영역 |
+| `charmap.area.latin_extended_b` | 라틴 확장-B | Latin Extended-B | ラテン文字拡張B | 영역 |
+| `charmap.area.greek_coptic` | 그리스·콥트 문자 | Greek and Coptic | ギリシア·コプト文字 | 영역 |
+| `charmap.area.math_operator` | 수학 연산자 | Mathematical Operators | 数学記号 | 영역 |
+| `charmap.area.dingbats` | 딩뱃 기호 | Dingbats | デフバット記号 | 영역 |
+| `charmap.area.misc_tech` | 기타 기술 기호 | Misc. Technical | その他の技術記号 | 영역 |
+| `charmap.area.block_elements` | 블록 요소 | Block Elements | ブロック要素 | 영역 |
+| `charmap.area.shapes` | 도형 | Geometric Shapes | 図形 | 영역 |
+| `charmap.area.letterlike` | 문자형 기호 | Letterlike Symbols | 文字型記号 | 영역 |
+| `charmap.area.optical_char` | 광학 문자 인식 | OCR | 光学文字認識 | 영역 |
+| `charmap.area.halfwidth_fullwidth` | 반각·전각 형태 | Halfwidth/Fullwidth | 半角·全角形 | 영역 |
+| `charmap.area.katakana` | 가타카나 | Katakana | カタカナ | 영역 |
+| `charmap.area.space_chars` | 공백 변환 문자 | Space chars | スペース変換文字 | 영역 |
+
+## 14. 편집 용지·구역·격자 (`page.*`)
+
+m700-2 sub-cycle 자리. page-setup-dialog + section-settings-dialog + grid-settings-dialog.
+
+### 편집 용지
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `page.setup.title` | 편집 용지 | Page setup | 用紙設定 | dialog 타이틀 |
+| `page.setup.paper_kind` | 용지 종류 | Paper type | 用紙の種類 | 그룹 |
+| `page.setup.paper_orientation` | 용지 방향 | Orientation | 用紙の向き | 그룹 |
+| `page.setup.orientation_portrait` | 세로 | Portrait | 縦 | 옵션 |
+| `page.setup.orientation_landscape` | 가로 | Landscape | 横 | 옵션 |
+| `page.setup.binding` | 제본 | Binding | 製本 | 그룹 |
+| `page.setup.one_side` | 한쪽 | Single-sided | 片面 | 옵션 |
+| `page.setup.mirror_sides` | 맞쪽 | Mirror | 見開き | 옵션 |
+| `page.setup.up` | 위로 | Up | 上へ | 옵션 |
+| `page.setup.paper_margin` | 용지 여백 | Margins | 用紙の余白 | 그룹 |
+| `page.setup.width` | 폭 | Width | 幅 | 라벨 |
+| `page.setup.height` | 길이 | Height | 長さ | 라벨 |
+| `page.setup.scope` | 적용 범위 | Apply to | 適用範囲 | 그룹 |
+| `page.setup.scope_whole_doc` | 문서 전체 | Entire document | 文書全体 | 옵션 |
+| `page.setup.scope_new_section` | 새 구역으로 | New section | 新しい区分 | 옵션 |
+| `page.setup.scope_custom` | 사용자 정의 | Custom | カスタム | 옵션 |
+
+### 구역 설정
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `page.section.title` | 구역 설정 | Section setup | 区分設定 | dialog 타이틀 |
+| `page.section.scope` | 적용 범위(Y): | Apply scope(Y): | 適用範囲(Y): | 라벨 |
+| `page.section.scope_current` | 현재 구역 | Current section | 現在の区分 | 옵션 |
+| `page.section.scope_whole_doc` | 문서 전체 | Entire document | 文書全体 | 옵션 |
+| `page.section.scope_selected` | 선택된 문자열 | Selected | 選択範囲 | 옵션 |
+| `page.section.col_spacing` | 단 사이 간격(G): | Column spacing(G): | 段の間隔(G): | 라벨 |
+| `page.section.default_tab` | 기본 탭 간격(I): | Default tab(I): | 既定タブ間隔(I): | 라벨 |
+| `page.section.start_page_num` | 시작 쪽 번호 | Starting page | 開始ページ番号 | 그룹 |
+| `page.section.start_continue` | 이어서 | Continue | 続けて | 옵션 |
+| `page.section.start_odd` | 홀수 | Odd | 奇数 | 옵션 |
+| `page.section.start_even` | 짝수 | Even | 偶数 | 옵션 |
+| `page.section.obj_start_num` | 개체 시작 번호 | Object start number | オブジェクト開始番号 | 그룹 |
+| `page.section.obj.picture` | 그림(P): | Picture(P): | 画像(P): | 라벨 |
+| `page.section.obj.equation` | 수식(E): | Equation(E): | 数式(E): | 라벨 |
+| `page.section.obj.table` | 표(A): | Table(A): | 表(A): | 라벨 |
+| `page.section.obj.other` | 기타 | Other | その他 | 옵션 |
+| `page.section.first_page_hide_hf` | 첫 쪽에만 머리말/꼬리말 감추기(H) | Hide header/footer on first page(H) | 1ページ目のヘッダー/フッターを非表示(H) | 토글 |
+| `page.section.first_page_hide_master` | 첫 쪽에만 바탕쪽 감추기(M) | Hide master on first page(M) | 1ページ目のマスターページを非表示(M) | 토글 |
+| `page.section.first_page_hide_border` | 첫 쪽에만 테두리/배경 감추기(E) | Hide border/fill on first page(E) | 1ページ目の罫線/塗りを非表示(E) | 토글 |
+| `page.section.hide_blank_line` | 빈 줄 감추기(L) | Hide blank lines(L) | 空白行を非表示(L) | 토글 |
+| `page.section.kind` | 종류(N): | Type(N): | 種類(N): | 라벨 |
+
+### 격자
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `page.grid.title` | 격자 설정 | Grid settings | グリッド設定 | dialog 타이틀 |
+| `page.grid.move_spacing` | 이동 간격: | Move spacing: | 移動間隔: | 라벨 |
+
+## 33. 환경 설정 (`prefs.*`)
+
+m700-2 sub-cycle 자리. options-dialog 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `prefs.dialog_title` | 환경 설정 | Preferences | 環境設定 | dialog 타이틀 |
+| `prefs.local_fonts_group` | 로컬 글꼴 | Local fonts | ローカルフォント | 그룹 |
+| `prefs.detect_local_fonts` | 로컬 글꼴 감지하기 | Detect local fonts | ローカルフォント検出 | 버튼 |
+| `prefs.detecting` | 감지 중... | Detecting... | 検出中... | 토스트 |
+| `prefs.detect_failed` | 글꼴 감지에 실패했습니다. | Font detection failed. | フォント検出に失敗しました。 | 에러 |
+| `prefs.browser_unsupported` | 이 브라우저는 로컬 글꼴 감지를 지원하지 않습니다. | This browser doesn't support local font detection. | このブラウザはローカルフォント検出に対応していません。 | 안내 |
+| `prefs.font_preview` | 글꼴 보기 | Font preview | フォントプレビュー | 라벨 |
+| `prefs.font` | 글꼴 | Font | フォント | 라벨 |
+| `prefs.count_unit` | 개 | items | 個 | 단위 |
+| `prefs.show_recent_fonts` | 최근에 사용한 글꼴 보이기 | Show recent fonts | 最近使用したフォントを表示 | 토글 |
+| `prefs.representative_font_group` | 대표 글꼴 등록 | Register representative fonts | 代表フォント登録 | 그룹 |
+| `prefs.register_representative` | 대표 글꼴 등록하기 | Register representative | 代表フォントを登録 | 버튼 |
+| `prefs.representative_font_desc` | 대표 글꼴은 각 언어별 글꼴을 짝지어 한 번에 적용하는 글꼴 세트입니다. | A representative font set applies language-specific fonts together. | 代表フォントは各言語のフォントをひと組にして一括適用するセットです。 | 안내 |
+
 ## 11~33. 나머지 후속 카테고리
 
-*m700-2 cycle 자리에서 박는다.*
+*m700-3 cycle 자리에서 박는다.*
 
 m700-1 cycle 진입 시 박을 자리 (자리 분포 상위 + 자리 큰 덩어리 우선):
 
