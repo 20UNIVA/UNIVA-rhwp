@@ -5,6 +5,7 @@
  */
 import type { CommandServices } from '@/command/types';
 import { InsertTextCommand } from '@/engine/command';
+import { t } from '@/i18n/t';
 
 // ── 유니코드 블록 정의 ──
 
@@ -127,7 +128,7 @@ export class SymbolsDialog {
     // 타이틀
     const titleBar = document.createElement('div');
     titleBar.className = 'dialog-title';
-    titleBar.textContent = '문자표 입력';
+    titleBar.textContent = t('charmap.dialog_title');
     const closeBtn = document.createElement('button');
     closeBtn.className = 'dialog-close';
     closeBtn.textContent = '\u00D7';
@@ -148,7 +149,7 @@ export class SymbolsDialog {
     blockCol.className = 'sym-block-col';
     const blockLabel = document.createElement('div');
     blockLabel.className = 'sym-label';
-    blockLabel.textContent = '문자 영역(I):';
+    blockLabel.textContent = t('charmap.char_area');
     blockCol.appendChild(blockLabel);
     this.blockList = document.createElement('div');
     this.blockList.className = 'sym-block-list';
@@ -171,7 +172,7 @@ export class SymbolsDialog {
     codeRow.className = 'sym-code-row';
     const selLabel = document.createElement('span');
     selLabel.className = 'sym-label';
-    selLabel.textContent = '문자 선택(C):';
+    selLabel.textContent = t('charmap.char_picker');
     codeRow.appendChild(selLabel);
     const codeSpacer = document.createElement('span');
     codeSpacer.style.flex = '1';
@@ -216,11 +217,11 @@ export class SymbolsDialog {
     footer.className = 'dialog-footer';
     const insertBtn = document.createElement('button');
     insertBtn.className = 'dialog-btn dialog-btn-primary';
-    insertBtn.textContent = '넣기(D)';
+    insertBtn.textContent = t('charmap.insert_btn');
     insertBtn.addEventListener('click', () => this.doInsert());
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'dialog-btn';
-    cancelBtn.textContent = '닫기';
+    cancelBtn.textContent = t('charmap.close_btn');
     cancelBtn.addEventListener('click', () => this.hide());
     footer.appendChild(insertBtn);
     footer.appendChild(cancelBtn);

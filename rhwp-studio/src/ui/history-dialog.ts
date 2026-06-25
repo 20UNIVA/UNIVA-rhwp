@@ -31,6 +31,7 @@ import type { CompareSessionStore } from '@/compare/session';
 import type { CompareOptions, DiffItem, DiffKind } from '@/compare/types';
 import { clearHistory, deleteHistorySnapshot, getHistoryPayload, listHistoryMeta, saveHistoryIrSnapshot } from '@/history/idb-store';
 import type { DocHistoryEntryMeta } from '@/history/types';
+import { t } from '@/i18n/t';
 
 const DEFAULT_KINDS: DiffKind[] = ['text', 'table', 'shape', 'image', 'chart', 'paragraphMeta'];
 
@@ -108,24 +109,24 @@ export class HistoryDialog {
     saveRow.className = 'compare-row';
     const lab = document.createElement('label');
     lab.className = 'compare-label';
-    lab.textContent = '스냅샷';
+    lab.textContent = t('history.snapshot');
     lab.htmlFor = 'history-snap-label';
     this.labelInput = document.createElement('input');
     this.labelInput.id = 'history-snap-label';
     this.labelInput.type = 'text';
     this.labelInput.className = 'history-label-input';
-    this.labelInput.placeholder = '메모 (비우면 시각 기본값)';
+    this.labelInput.placeholder = t('history.note_placeholder');
     this.labelInput.value = '';
     const saveBtn = document.createElement('button');
     saveBtn.className = 'dialog-btn';
-    saveBtn.textContent = '현재 문서 저장';
+    saveBtn.textContent = t('history.save_current');
     saveBtn.addEventListener('click', () => void this.onSaveSnapshot());
     saveRow.append(lab, this.labelInput, saveBtn);
     body.appendChild(saveRow);
 
     const listTitle = document.createElement('div');
     listTitle.className = 'compare-kinds-title';
-    listTitle.textContent = '저장된 이력 (클릭하여 선택)';
+    listTitle.textContent = t('history.saved_list');
     body.appendChild(listTitle);
     this.listEl = document.createElement('ul');
     this.listEl.className = 'history-list';
@@ -135,26 +136,26 @@ export class HistoryDialog {
     actions.className = 'compare-actions';
     const delBtn = document.createElement('button');
     delBtn.className = 'dialog-btn';
-    delBtn.textContent = '선택 삭제';
+    delBtn.textContent = t('history.delete_selected');
     delBtn.addEventListener('click', () => void this.onDeleteSelected());
     const clrBtn = document.createElement('button');
     clrBtn.className = 'dialog-btn';
-    clrBtn.textContent = '전체 비우기';
+    clrBtn.textContent = t('history.clear_all');
     clrBtn.addEventListener('click', () => void this.onClearAll());
     const cmpBtn = document.createElement('button');
     cmpBtn.className = 'dialog-btn';
-    cmpBtn.textContent = '선택과 현재 문서 비교';
+    cmpBtn.textContent = t('compare.run_with_current');
     cmpBtn.addEventListener('click', () => void this.onCompareWithCurrent());
     actions.append(delBtn, clrBtn, cmpBtn);
     body.appendChild(actions);
 
     const resTitle = document.createElement('div');
     resTitle.className = 'compare-kinds-title';
-    resTitle.textContent = '비교 결과';
+    resTitle.textContent = t('compare.result');
     body.appendChild(resTitle);
     this.resultMetaEl = document.createElement('span');
     this.resultMetaEl.className = 'compare-result-meta';
-    this.resultMetaEl.textContent = '비교 실행 전';
+    this.resultMetaEl.textContent = t('compare.no_run_yet');
     this.resultListEl = document.createElement('ul');
     this.resultListEl.className = 'compare-result-list';
     body.appendChild(this.resultMetaEl);
@@ -192,49 +193,49 @@ export class HistoryDialog {
       await saveHistoryIrSnapshot(label, wasm.fileName, snap);
       this.labelInput.value = '';
       await this.refreshList();
-      this.resultMetaEl.textContent = '스냅샷을 저장했습니다.';
+      this.resultMetaEl.textContent = t('history.saved');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.resultMetaEl.textContent = `저장 실패: ${msg}`;
+      this.resultMetaEl.textContent = t('history.save_failed', { message: msg });
     }
   }
 
   private async onDeleteSelected(): Promise<void> {
     if (!this.selectedId) {
-      this.resultMetaEl.textContent = '삭제할 항목을 목록에서 먼저 선택하세요.';
+      this.resultMetaEl.textContent = t('history.select_to_delete');
       return;
     }
     await deleteHistorySnapshot(this.selectedId);
     this.selectedId = null;
     await this.refreshList();
-    this.resultMetaEl.textContent = '삭제했습니다.';
+    this.resultMetaEl.textContent = t('history.deleted');
     this.resultListEl.replaceChildren();
   }
 
   private async onClearAll(): Promise<void> {
-    if (!window.confirm('저장된 문서 이력을 모두 지울까요?')) return;
+    if (!window.confirm(t('history.confirm_clear'))) return;
     await clearHistory();
     this.selectedId = null;
     await this.refreshList();
-    this.resultMetaEl.textContent = '이력을 비웠습니다.';
+    this.resultMetaEl.textContent = t('history.cleared');
     this.resultListEl.replaceChildren();
   }
 
   private async onCompareWithCurrent(): Promise<void> {
     const { wasm } = this.services;
     if (!this.selectedId) {
-      this.resultMetaEl.textContent = '비교할 스냅샷을 목록에서 선택하세요.';
+      this.resultMetaEl.textContent = t('compare.select_snapshot');
       return;
     }
     const payload = await getHistoryPayload(this.selectedId);
     if (!payload) {
-      this.resultMetaEl.textContent = '스냅샷 데이터를 읽을 수 없습니다.';
+      this.resultMetaEl.textContent = t('history.read_failed');
       return;
     }
     const meta = this.entries.find((x) => x.id === this.selectedId);
     const leftName = meta?.label ?? '이력 스냅샷';
     const rightName = wasm.fileName || '현재 문서.hwp';
-    this.resultMetaEl.textContent = '비교 중...';
+    this.resultMetaEl.textContent = t('compare.in_progress');
     this.resultListEl.replaceChildren();
     try {
       let session;
@@ -246,7 +247,7 @@ export class HistoryDialog {
         try {
           cur = wasm.exportHwp();
         } catch {
-          this.resultMetaEl.textContent = '현재 문서가 없습니다. 문서를 연 뒤 다시 시도하세요.';
+          this.resultMetaEl.textContent = t('compare.no_current_doc');
           return;
         }
         session = await compareDocuments(payload.bytes, leftName, cur, rightName, HISTORY_COMPARE_OPTS);
@@ -263,7 +264,7 @@ export class HistoryDialog {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      this.resultMetaEl.textContent = `비교 실패: ${msg}`;
+      this.resultMetaEl.textContent = t('compare.failed', { message: msg });
     }
   }
 

@@ -4,6 +4,7 @@
  */
 
 import { createFieldset, row, label, numberInput, unit } from './para-shape-helpers';
+import { t } from '@/i18n/t';
 
 // ════════════════════════════════════════════════════════
 //  공유 타입
@@ -76,7 +77,7 @@ function appendTableCell(tr: HTMLTableRowElement, text: string): void {
 }
 
 export function buildTabSettingsTab(state: TabState): TabSettingsResult {
-  const TAB_TYPE_NAMES = ['왼쪽', '오른쪽', '가운데', '소수점'];
+  const TAB_TYPE_NAMES = [t('table.pos.left'), t('table.pos.right'), t('table.pos.center'), t('para_shape.tab.kind_decimal').replace(/\(M\)$/, '')];
 
   const panel = document.createElement('div');
   panel.className = 'dialog-tab-panel';
@@ -86,17 +87,17 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   typeSection.className = 'dialog-section';
   const typeTitle = document.createElement('legend');
   typeTitle.className = 'dialog-section-title';
-  typeTitle.textContent = '탭 종류';
+  typeTitle.textContent = t('para_shape.tab.kind');
   typeSection.appendChild(typeTitle);
 
   // 라디오 행: 왼쪽/오른쪽/가운데/소수점
   const typeRow = document.createElement('div');
   typeRow.className = 'dialog-row';
   const TAB_TYPES = [
-    { value: '0', label: '왼쪽(L)' },
-    { value: '1', label: '오른쪽(R)' },
-    { value: '2', label: '가운데(C)' },
-    { value: '3', label: '소수점(M)' },
+    { value: '0', label: t('para_shape.tab.kind_left') },
+    { value: '1', label: t('para_shape.tab.kind_right') },
+    { value: '2', label: t('para_shape.tab.kind_center') },
+    { value: '3', label: t('para_shape.tab.kind_decimal') },
   ];
   const tabTypeRadios = TAB_TYPES.map(({ value, label: lbl }) => {
     const labelEl = document.createElement('label');
@@ -118,18 +119,18 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   fillRow.className = 'dialog-row';
   const fillLabel = document.createElement('label');
   fillLabel.className = 'dialog-label';
-  fillLabel.textContent = '채움 모양(F):';
+  fillLabel.textContent = t('para_shape.tab.fill');
   const tabFillSelect = document.createElement('select');
   tabFillSelect.className = 'dialog-select';
   [
-    { value: '0', label: '선 없음' },
-    { value: '1', label: '실선 ─────' },
+    { value: '0', label: t('para_shape.tab.fill_none') },
+    { value: '1', label: t('para_shape.tab.fill_solid') },
     { value: '2', label: '긴 점선 - - - -' },
-    { value: '3', label: '점선 ·········' },
+    { value: '3', label: t('para_shape.tab.fill_dot') },
     { value: '4', label: '-·-·-·-·-·' },
     { value: '5', label: '-··-··-··-··' },
-    { value: '6', label: '긴 파선 ── ── ──' },
-    { value: '7', label: '큰 동그라미 ○○○' },
+    { value: '6', label: t('para_shape.tab.fill_dash') },
+    { value: '7', label: t('para_shape.tab.fill_circle') },
   ].forEach(({ value, label: lbl }) => {
     const opt = document.createElement('option');
     opt.value = value;
@@ -145,7 +146,7 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   posRow.className = 'dialog-row';
   const posLabel = document.createElement('label');
   posLabel.className = 'dialog-label';
-  posLabel.textContent = '탭 위치(P):';
+  posLabel.textContent = t('para_shape.tab.position');
   const tabPositionInput = document.createElement('input');
   tabPositionInput.className = 'dialog-input';
   tabPositionInput.type = 'number';
@@ -157,7 +158,7 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   posUnit.textContent = 'pt';
   const addBtn = document.createElement('button');
   addBtn.className = 'dialog-btn';
-  addBtn.textContent = '추가(S)';
+  addBtn.textContent = t('para_shape.tab.add');
   addBtn.addEventListener('click', () => addTabStop());
   posRow.appendChild(posLabel);
   posRow.appendChild(tabPositionInput);
@@ -175,7 +176,7 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   tabListCol.className = 'ps-tab-list-col';
   const tabListLabel = document.createElement('div');
   tabListLabel.className = 'dialog-section-title';
-  tabListLabel.textContent = '탭 목록';
+  tabListLabel.textContent = t('para_shape.tab.list_title');
   tabListCol.appendChild(tabListLabel);
   const tabTable = document.createElement('table');
   tabTable.className = 'ps-tab-table';
@@ -195,12 +196,12 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   const delBtn = document.createElement('button');
   delBtn.className = 'dialog-btn ps-tab-del-btn';
   delBtn.textContent = '\u2715';
-  delBtn.title = '선택 삭제';
+  delBtn.title = t('history.delete_selected');
   delBtn.addEventListener('click', () => deleteTabStop());
   const delAllBtn = document.createElement('button');
   delAllBtn.className = 'dialog-btn ps-tab-del-btn';
   delAllBtn.textContent = '\u2715\u2715';
-  delAllBtn.title = '전체 삭제';
+  delAllBtn.title = t('para_shape.tab.delete_all');
   delAllBtn.addEventListener('click', () => deleteAllTabStops());
   btnCol.appendChild(delBtn);
   btnCol.appendChild(delAllBtn);
@@ -210,7 +211,7 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   delListCol.className = 'ps-tab-list-col';
   const delListLabel = document.createElement('div');
   delListLabel.className = 'dialog-section-title';
-  delListLabel.textContent = '지운 탭 목록';
+  delListLabel.textContent = t('para_shape.tab.removed_list');
   delListCol.appendChild(delListLabel);
   const delTable = document.createElement('table');
   delTable.className = 'ps-tab-table';
@@ -234,7 +235,7 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   autoSection.className = 'dialog-section';
   const autoTitle = document.createElement('legend');
   autoTitle.className = 'dialog-section-title';
-  autoTitle.textContent = '자동 탭';
+  autoTitle.textContent = t('para_shape.tab.auto_tab');
   autoSection.appendChild(autoTitle);
 
   const autoRow = document.createElement('div');
@@ -249,8 +250,8 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
     autoRow.appendChild(labelEl);
     return cb;
   };
-  const tabAutoLeftCb = mkCb('내어 쓰기용 자동 탭(E)');
-  const tabAutoRightCb = mkCb('문단 오른쪽 끝 자동 탭(I)');
+  const tabAutoLeftCb = mkCb(t('para_shape.tab.auto_hanging'));
+  const tabAutoRightCb = mkCb(t('para_shape.tab.auto_right_edge'));
   autoSection.appendChild(autoRow);
   panel.appendChild(autoSection);
 
@@ -259,18 +260,18 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   defaultSection.className = 'dialog-section';
   const defaultTitle = document.createElement('legend');
   defaultTitle.className = 'dialog-section-title';
-  defaultTitle.textContent = '기본 탭';
+  defaultTitle.textContent = t('para_shape.tab.default_tab');
   defaultSection.appendChild(defaultTitle);
 
   const defaultRow = document.createElement('div');
   defaultRow.className = 'dialog-row';
   const defaultLabel = document.createElement('span');
-  defaultLabel.textContent = '구역 기본 탭 간격: ';
+  defaultLabel.textContent = `${t('para_shape.tab.section_default')} `;
   const defaultTabLabel = document.createElement('span');
   defaultTabLabel.textContent = '40.0 pt';
   const changeBtn = document.createElement('button');
   changeBtn.className = 'dialog-btn';
-  changeBtn.textContent = '변경(H)...';
+  changeBtn.textContent = t('para_shape.tab.change');
   changeBtn.disabled = true;
   defaultRow.appendChild(defaultLabel);
   defaultRow.appendChild(defaultTabLabel);
@@ -337,12 +338,12 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
 
   function renderDeletedTabList(): void {
     deletedTabListBody.replaceChildren();
-    state.deletedTabStops.forEach((t, i) => {
+    state.deletedTabStops.forEach((ts, i) => {
       const tr = document.createElement('tr');
-      appendTableCell(tr, `${(t.position / 100).toFixed(1)} pt`);
-      appendTableCell(tr, TAB_TYPE_NAMES[t.type] ?? '?');
+      appendTableCell(tr, `${(ts.position / 100).toFixed(1)} pt`);
+      appendTableCell(tr, TAB_TYPE_NAMES[ts.type] ?? '?');
       tr.addEventListener('dblclick', () => restoreTabStop(i));
-      tr.title = '더블클릭하여 복원';
+      tr.title = t('para_shape.tab.double_click_restore');
       deletedTabListBody.appendChild(tr);
     });
   }
@@ -392,7 +393,7 @@ export function buildBorderTab(
   panel.className = 'dialog-tab-panel';
 
   // ── 테두리 섹션
-  const borderFs = createFieldset('테두리');
+  const borderFs = createFieldset(t('char_shape.border.group'));
   const borderContent = document.createElement('div');
   borderContent.className = 'ps-border-layout';
 
@@ -402,7 +403,7 @@ export function buildBorderTab(
 
   // 종류(Y)
   const typeRow = row();
-  typeRow.appendChild(label('종류(Y):'));
+  typeRow.appendChild(label(t('char_shape.border.kind')));
   const bdTypeSelect = document.createElement('select');
   bdTypeSelect.className = 'dialog-select';
   bdTypeSelect.style.width = '100px';
@@ -424,7 +425,7 @@ export function buildBorderTab(
 
   // 굵기(I)
   const widthRow = row();
-  widthRow.appendChild(label('굵기(I):'));
+  widthRow.appendChild(label(t('char_shape.border.thickness')));
   const bdWidthSelect = document.createElement('select');
   bdWidthSelect.className = 'dialog-select';
   bdWidthSelect.style.width = '100px';
@@ -442,7 +443,7 @@ export function buildBorderTab(
 
   // 색(C)
   const colorRow = row();
-  colorRow.appendChild(label('색(C):'));
+  colorRow.appendChild(label(t('char_shape.underline.color')));
   const bdColorInput = document.createElement('input');
   bdColorInput.type = 'color';
   bdColorInput.value = '#000000';
@@ -494,11 +495,11 @@ export function buildBorderTab(
   const presetRow = document.createElement('div');
   presetRow.className = 'ps-border-presets';
   const presets: [string, string, () => void][] = [
-    ['┄', '테두리 없음', () => applyBorderPreset('none')],
-    ['□', '상자형', () => applyBorderPreset('box')],
-    ['╬', '격자형', () => applyBorderPreset('box')],
-    ['▣', '사용자 정의', () => {}],
-    ['全', '모두 적용/해제', () => applyBorderPreset('toggleAll')],
+    ['┄', t('char_shape.border.none'), () => applyBorderPreset('none')],
+    ['□', t('char_shape.preview.box'), () => applyBorderPreset('box')],
+    ['╬', t('char_shape.preview.grid'), () => applyBorderPreset('box')],
+    ['▣', t('char_shape.preview.custom'), () => {}],
+    ['全', t('para_shape.tab.toggle_all'), () => applyBorderPreset('toggleAll')],
   ];
   for (const [icon, title, handler] of presets) {
     const btn = document.createElement('button');
@@ -513,15 +514,15 @@ export function buildBorderTab(
   panel.appendChild(borderFs);
 
   // ── 배경 섹션
-  const bgFs = createFieldset('배경');
+  const bgFs = createFieldset(t('char_shape.bg.group'));
 
   // 면 색(Q)
   const faceRow = row();
-  faceRow.appendChild(label('면 색(Q):'));
+  faceRow.appendChild(label(t('char_shape.bg.face_color')));
   const bgFillSelect = document.createElement('select');
   bgFillSelect.className = 'dialog-select';
   bgFillSelect.style.width = '100px';
-  for (const [val, lbl] of [['none', '색 없음'], ['solid', '색 지정']] as const) {
+  for (const [val, lbl] of [['none', t('char_shape.bg.color_none')], ['solid', t('char_shape.bg.color_set')]] as const) {
     const o = document.createElement('option');
     o.value = val; o.textContent = lbl;
     bgFillSelect.appendChild(o);
@@ -537,14 +538,14 @@ export function buildBorderTab(
 
   // 무늬 색(P) + 무늬 모양(L)
   const patRow = row();
-  patRow.appendChild(label('무늬 색(P):'));
+  patRow.appendChild(label(t('char_shape.bg.pattern_color')));
   const bgPatColorInput = document.createElement('input');
   bgPatColorInput.type = 'color';
   bgPatColorInput.value = '#000000';
   bgPatColorInput.className = 'cs-color-btn';
   patRow.appendChild(bgPatColorInput);
 
-  const patLabel = label('무늬 모양(L):');
+  const patLabel = label(t('char_shape.bg.pattern_shape'));
   patLabel.style.marginLeft = '10px';
   patRow.appendChild(patLabel);
   const bgPatShapeSelect = document.createElement('select');
@@ -563,7 +564,7 @@ export function buildBorderTab(
   panel.appendChild(bgFs);
 
   // ── 간격 섹션
-  const spacingFs = createFieldset('간격');
+  const spacingFs = createFieldset(t('para_shape.spacing.group'));
   const bdSpacingInputs: HTMLInputElement[] = [];
 
   const spacingGrid = document.createElement('div');
@@ -580,21 +581,21 @@ export function buildBorderTab(
   };
 
   // 1행: 왼쪽(E), 위쪽(U)
-  const [c0, si0] = makeCell('왼쪽(E):');
-  const [c1, si2] = makeCell('위쪽(U):');
+  const [c0, si0] = makeCell(t('para_shape.border.left'));
+  const [c1, si2] = makeCell(t('para_shape.border.top'));
   bdSpacingInputs.push(si0, si2); // [0]=left, [1]=top
   spacingGrid.appendChild(c0);
   spacingGrid.appendChild(c1);
 
   // 2행: 오른쪽(B), 아래쪽(V)
-  const [c2, si1] = makeCell('오른쪽(B):');
-  const [c3, si3] = makeCell('아래쪽(V):');
+  const [c2, si1] = makeCell(t('para_shape.border.right'));
+  const [c3, si3] = makeCell(t('para_shape.border.bottom'));
   bdSpacingInputs.push(si1, si3); // [2]=right, [3]=bottom
   spacingGrid.appendChild(c2);
   spacingGrid.appendChild(c3);
 
   // 3행: 모두(A), 문단 여백 무시(B)
-  const [c4, siAll] = makeCell('모두(A):');
+  const [c4, siAll] = makeCell(t('para_shape.border.all_apply'));
   const bdAllSpacingInput = siAll;
   bdAllSpacingInput.addEventListener('change', () => {
     const v = bdAllSpacingInput.value;

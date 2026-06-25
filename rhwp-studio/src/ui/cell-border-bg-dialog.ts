@@ -2,6 +2,7 @@ import { ModalDialog } from './dialog';
 import type { WasmBridge } from '@/core/wasm-bridge';
 import type { CellProperties } from '@/core/types';
 import type { EventBus } from '@/core/event-bus';
+import { t } from '@/i18n/t';
 
 const HWPUNIT_PER_MM = 7200 / 25.4;
 
@@ -77,7 +78,7 @@ export class CellBorderBgDialog extends ModalDialog {
     cellIdx: number,
     applyMode: 'each' | 'asOne' = 'each',
   ) {
-    super('셀 테두리/배경', 460);
+    super(t('table.props.cell_border_fill'), 460);
     this.wasm = wasm;
     this.eventBus = eventBus;
     this.tableCtx = tableCtx;
@@ -96,9 +97,9 @@ export class CellBorderBgDialog extends ModalDialog {
     const body = document.createElement('div');
 
     const tabDefs: TabDef[] = [
-      { id: 'border', label: '테두리', builder: () => this.buildBorderTab() },
-      { id: 'background', label: '배경', builder: () => this.buildBackgroundTab() },
-      { id: 'diagonal', label: '대각선', builder: () => this.buildDiagonalTab() },
+      { id: 'border', label: t('char_shape.border.group'), builder: () => this.buildBorderTab() },
+      { id: 'background', label: t('char_shape.bg.group'), builder: () => this.buildBackgroundTab() },
+      { id: 'diagonal', label: t('shape.shadow.diagonal_1').replace(/1$/, ''), builder: () => this.buildDiagonalTab() },
     ];
 
     // 탭 헤더
@@ -144,7 +145,7 @@ export class CellBorderBgDialog extends ModalDialog {
     frag.className = 'tcp-tab-content';
 
     // 선 종류 시각적 격자
-    const lineSection = this.createSection('선 종류(Y)');
+    const lineSection = this.createSection(t('table.border.line_kind'));
     this.borderLineTypeGrid = document.createElement('div');
     this.borderLineTypeGrid.className = 'tcp-line-type-grid';
     const lineTypeDefs = [
@@ -200,9 +201,9 @@ export class CellBorderBgDialog extends ModalDialog {
     frag.appendChild(lineSection);
 
     // 굵기 + 색
-    const attrSection = this.createSection('선 속성');
+    const attrSection = this.createSection(t('table.border.line_attr'));
     const widthRow = this.row();
-    widthRow.appendChild(this.label('굵기'));
+    widthRow.appendChild(this.label(t('table.border.thickness').replace(/\(H\)$/, '')));
     this.borderWidthSelect = document.createElement('select');
     this.borderWidthSelect.className = 'dialog-select';
     ['0.1mm', '0.12mm', '0.15mm', '0.2mm', '0.25mm', '0.3mm', '0.4mm'].forEach((text, i) => {
@@ -214,7 +215,7 @@ export class CellBorderBgDialog extends ModalDialog {
     attrSection.appendChild(widthRow);
 
     const colorRow = this.row();
-    colorRow.appendChild(this.label('색'));
+    colorRow.appendChild(this.label(t('table.border.color').replace(/\(S\)$/, '')));
     this.borderColorInput = document.createElement('input');
     this.borderColorInput.type = 'color';
     this.borderColorInput.value = '#000000';
@@ -225,16 +226,16 @@ export class CellBorderBgDialog extends ModalDialog {
     frag.appendChild(attrSection);
 
     // 프리셋 버튼 + 미리보기
-    const previewSection = this.createSection('미리 보기');
+    const previewSection = this.createSection(t('equation.preview'));
 
     // 프리셋: 모두/바깥쪽/안쪽
     const presetRow = this.row();
     const presetGroup = document.createElement('div');
     presetGroup.className = 'dialog-btn-group';
     const presets = [
-      { label: '모두', dirs: [0, 1, 2, 3] },
-      { label: '바깥쪽', dirs: [0, 1, 2, 3] },
-      { label: '안쪽', dirs: [] as number[] },
+      { label: t('para_shape.border.all_apply').replace(/:$/, ''), dirs: [0, 1, 2, 3] },
+      { label: t('table.pos.outer'), dirs: [0, 1, 2, 3] },
+      { label: t('table.pos.inner'), dirs: [] as number[] },
     ];
     presets.forEach(p => {
       const btn = document.createElement('button');
@@ -276,7 +277,7 @@ export class CellBorderBgDialog extends ModalDialog {
 
     // 선 모양 바로 적용
     const immediateRow = this.row();
-    this.borderApplyImmediateCheck = this.checkbox('선 모양 바로 적용(I)');
+    this.borderApplyImmediateCheck = this.checkbox(t('table.border.apply_immediately'));
     immediateRow.appendChild(this.borderApplyImmediateCheck.parentElement!);
     previewSection.appendChild(immediateRow);
 
@@ -363,7 +364,7 @@ export class CellBorderBgDialog extends ModalDialog {
     const frag = document.createElement('div');
     frag.className = 'tcp-tab-content';
 
-    const fillSection = this.createSection('채우기');
+    const fillSection = this.createSection(t('table.fill.title'));
 
     const noneRow = this.row();
     this.bgNoneRadio = document.createElement('input');
@@ -389,7 +390,7 @@ export class CellBorderBgDialog extends ModalDialog {
     colorFields.style.marginLeft = '20px';
 
     const faceRow = this.row();
-    faceRow.appendChild(this.label('면색(C)'));
+    faceRow.appendChild(this.label(t('table.fill.face_color')));
     this.bgColorPicker = document.createElement('input');
     this.bgColorPicker.type = 'color';
     this.bgColorPicker.value = '#ffffff';
@@ -403,7 +404,7 @@ export class CellBorderBgDialog extends ModalDialog {
     colorFields.appendChild(faceRow);
 
     const patColorRow = this.row();
-    patColorRow.appendChild(this.label('무늬색(K)'));
+    patColorRow.appendChild(this.label(t('table.fill.pattern_color')));
     this.bgPatternColorPicker = document.createElement('input');
     this.bgPatternColorPicker.type = 'color';
     this.bgPatternColorPicker.value = '#000000';
@@ -417,10 +418,10 @@ export class CellBorderBgDialog extends ModalDialog {
     colorFields.appendChild(patColorRow);
 
     const patTypeRow = this.row();
-    patTypeRow.appendChild(this.label('무늬모양(L)'));
+    patTypeRow.appendChild(this.label(t('table.fill.pattern_shape')));
     this.bgPatternTypeSelect = this.selectOptions([
-      ['0', '없음'], ['1', '가로줄'], ['2', '세로줄'], ['3', '역슬래시'],
-      ['4', '슬래시'], ['5', '십자'], ['6', 'X자'],
+      ['0', t('char_shape.misc.none')], ['1', t('table.border.horizontal_line')], ['2', t('table.border.vertical_line')], ['3', t('table.border.backslash')],
+      ['4', t('table.border.slash')], ['5', t('table.border.cross')], ['6', 'X자'],
     ]);
     this.bgPatternTypeSelect.addEventListener('change', () => {
       this.bgColorRadio.checked = true;
@@ -476,7 +477,7 @@ export class CellBorderBgDialog extends ModalDialog {
     // 선 속성
     const lineSection = this.createSection('선 속성');
     const typeRow = this.row();
-    typeRow.appendChild(this.label('종류'));
+    typeRow.appendChild(this.label(t('table.border.kind').replace(/\(N\)$/, '')));
     this.diagLineTypeSelect = this.selectOptions([
       ['0', '없음'], ['1', '실선'], ['2', '파선'], ['3', '점선'],
       ['4', '일점쇄선'], ['5', '이점쇄선'], ['6', '긴 파선'], ['7', '이중 실선'],
@@ -485,7 +486,7 @@ export class CellBorderBgDialog extends ModalDialog {
     lineSection.appendChild(typeRow);
 
     const widthRow = this.row();
-    widthRow.appendChild(this.label('굵기'));
+    widthRow.appendChild(this.label(t('table.border.thickness').replace(/\(H\)$/, '')));
     this.diagWidthSelect = this.selectOptions([
       ['0', '0.1mm'], ['1', '0.12mm'], ['2', '0.15mm'], ['3', '0.2mm'],
       ['4', '0.25mm'], ['5', '0.3mm'], ['6', '0.4mm'],
@@ -494,7 +495,7 @@ export class CellBorderBgDialog extends ModalDialog {
     lineSection.appendChild(widthRow);
 
     const colorRow = this.row();
-    colorRow.appendChild(this.label('색'));
+    colorRow.appendChild(this.label(t('table.border.color').replace(/\(S\)$/, '')));
     this.diagColorInput = document.createElement('input');
     this.diagColorInput.type = 'color';
     this.diagColorInput.value = '#000000';
@@ -557,7 +558,7 @@ export class CellBorderBgDialog extends ModalDialog {
   // ─── 공통: 적용 범위 섹션 ────────────────────
 
   private buildScopeSection(prefix: string): HTMLDivElement {
-    const section = this.createSection('적용 범위');
+    const section = this.createSection(t('page.setup.scope'));
     const radioGroup = document.createElement('div');
     radioGroup.className = 'dialog-radio-group';
     const radios: HTMLInputElement[] = [];

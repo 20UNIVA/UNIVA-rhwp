@@ -3,6 +3,7 @@ import { appendSvgMarkup } from './dom-utils';
 import type { WasmBridge } from '@/core/wasm-bridge';
 import type { CellProperties, TableProperties } from '@/core/types';
 import type { EventBus } from '@/core/event-bus';
+import { t } from '@/i18n/t';
 
 const HWPUNIT_PER_MM = 7200 / 25.4;
 
@@ -130,7 +131,7 @@ export class TableCellPropsDialog extends ModalDialog {
     cellIdx: number,
     mode: 'table' | 'cell' = 'cell',
   ) {
-    super('표/셀 속성', 480);
+    super(t('table.props.title'), 480);
     this.wasm = wasm;
     this.eventBus = eventBus;
     this.tableCtx = tableCtx;
@@ -152,14 +153,14 @@ export class TableCellPropsDialog extends ModalDialog {
 
     // 탭 정의: mode에 따라 테두리/배경 탭 포함 여부 결정
     const tabDefs: TabDef[] = [
-      { id: 'basic', label: '기본', builder: () => this.buildBasicTab() },
-      { id: 'margin', label: '여백/캡션', builder: () => this.buildMarginTab() },
+      { id: 'basic', label: t('table.tab.basic'), builder: () => this.buildBasicTab() },
+      { id: 'margin', label: t('table.tab.margin_caption'), builder: () => this.buildMarginTab() },
       // 표 선택 시에만 테두리·배경 탭 표시 (셀 선택 시 별도 "셀 테두리/배경" 대화상자 사용)
       ...(this.mode === 'table' ? [
-        { id: 'border', label: '테두리', builder: () => this.buildBorderTab() },
-        { id: 'background', label: '배경', builder: () => this.buildBackgroundTab() },
+        { id: 'border', label: t('char_shape.border.group'), builder: () => this.buildBorderTab() },
+        { id: 'background', label: t('char_shape.bg.group'), builder: () => this.buildBackgroundTab() },
       ] as TabDef[] : []),
-      { id: 'table', label: '표', builder: () => this.buildTableTab() },
+      { id: 'table', label: t('menu.table.label'), builder: () => this.buildTableTab() },
       { id: 'cell', label: '셀', builder: () => this.buildCellTab() },
     ];
 
@@ -212,19 +213,19 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.className = 'tcp-tab-content';
 
     // 셀 크기
-    const sizeSection = this.createSection('셀 크기');
+    const sizeSection = this.createSection(t('table.size.group'));
     const sizeCheck = this.row();
-    this.cellApplySizeCheck = this.checkbox('셀 크기 적용');
+    this.cellApplySizeCheck = this.checkbox(t('table.size.apply'));
     this.cellApplySizeCheck.checked = true;
     sizeCheck.appendChild(this.cellApplySizeCheck.parentElement!);
     sizeSection.appendChild(sizeCheck);
 
     const sizeRow = this.row();
-    sizeRow.appendChild(this.label('너비'));
+    sizeRow.appendChild(this.label(t('table.create.width')));
     this.cellWidthInput = this.numberInput();
     sizeRow.appendChild(this.cellWidthInput);
     sizeRow.appendChild(this.unit('mm'));
-    sizeRow.appendChild(this.label('높이'));
+    sizeRow.appendChild(this.label(t('table.create.height')));
     this.cellHeightInput = this.numberInput();
     sizeRow.appendChild(this.cellHeightInput);
     sizeRow.appendChild(this.unit('mm'));
@@ -232,9 +233,9 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(sizeSection);
 
     // 안 여백
-    const padSection = this.createSection('안 여백');
+    const padSection = this.createSection(t('table.margin.inner'));
     const padCheck = this.row();
-    this.cellPaddingCheck = this.checkbox('안 여백 지정');
+    this.cellPaddingCheck = this.checkbox(t('table.margin.inner_specify'));
     this.cellPaddingCheck.checked = true;
     padCheck.appendChild(this.cellPaddingCheck.parentElement!);
     padSection.appendChild(padCheck);
@@ -244,7 +245,7 @@ export class TableCellPropsDialog extends ModalDialog {
     const padGrid = document.createElement('div');
     padGrid.className = 'dialog-margin-grid';
     this.cellPaddingInputs = {};
-    for (const [key, text] of [['left', '왼쪽'], ['right', '오른쪽'], ['top', '위쪽'], ['bottom', '아래쪽']] as const) {
+    for (const [key, text] of [['left', t('table.pos.left')], ['right', t('table.pos.right')], ['top', t('table.pos.top')], ['bottom', t('table.pos.bottom')]] as const) {
       padGrid.appendChild(this.label(text));
       this.cellPaddingInputs[key] = this.numberInput();
       padGrid.appendChild(this.cellPaddingInputs[key]);
@@ -256,14 +257,14 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(padSection);
 
     // 속성
-    const attrSection = this.createSection('속성');
+    const attrSection = this.createSection(t('table.cell.attribute'));
 
     // 세로 정렬
     const valignRow = this.row();
-    valignRow.appendChild(this.label('세로 정렬'));
+    valignRow.appendChild(this.label(t('table.text_dir.vertical_align')));
     const valignGroup = document.createElement('div');
     valignGroup.className = 'dialog-btn-group';
-    this.cellVAlignBtns = ['위쪽', '가운데', '아래쪽'].map((text, i) => {
+    this.cellVAlignBtns = [t('table.pos.top'), t('table.pos.center'), t('table.pos.bottom')].map((text, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = text;
@@ -276,10 +277,10 @@ export class TableCellPropsDialog extends ModalDialog {
 
     // 세로쓰기
     const tdirRow = this.row();
-    tdirRow.appendChild(this.label('세로쓰기'));
+    tdirRow.appendChild(this.label(t('table.text_dir.vertical')));
     const tdirGroup = document.createElement('div');
     tdirGroup.className = 'dialog-btn-group';
-    this.cellTextDirBtns = ['가로쓰기', '세로쓰기'].map((text, i) => {
+    this.cellTextDirBtns = [t('table.text_dir.horizontal'), t('table.text_dir.vertical')].map((text, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = text;
@@ -299,7 +300,7 @@ export class TableCellPropsDialog extends ModalDialog {
     vertSubRow.appendChild(this.label(''));
     const vertSubGroup = document.createElement('div');
     vertSubGroup.className = 'dialog-btn-group';
-    const vertSubLabels = ['문 눕힘(Q)', '문 세움(U)'];
+    const vertSubLabels = [t('table.text_dir.rotate_text'), t('table.text_dir.upright_text')];
     vertSubLabels.forEach((text, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -317,24 +318,24 @@ export class TableCellPropsDialog extends ModalDialog {
 
     // 체크박스 옵션들
     const optRow1 = this.row();
-    this.cellSingleLineCheck = this.checkbox('한 줄로 입력(S)');
+    this.cellSingleLineCheck = this.checkbox(t('table.cell.single_line'));
     optRow1.appendChild(this.cellSingleLineCheck.parentElement!);
-    this.cellProtectCheck = this.checkbox('셀 보호');
+    this.cellProtectCheck = this.checkbox(t('table.cell.protect'));
     optRow1.appendChild(this.cellProtectCheck.parentElement!);
     attrSection.appendChild(optRow1);
 
     const optRow2 = this.row();
-    this.cellHeaderCheck = this.checkbox('제목 셀');
+    this.cellHeaderCheck = this.checkbox(t('table.cell.header_cell'));
     optRow2.appendChild(this.cellHeaderCheck.parentElement!);
     attrSection.appendChild(optRow2);
 
     frag.appendChild(attrSection);
 
     // 필드
-    const fieldSection = this.createSection('필드');
+    const fieldSection = this.createSection(t('table.cell.field'));
     fieldSection.classList.add('disabled');
     const fieldRow = this.row();
-    fieldRow.appendChild(this.label('필드 이름'));
+    fieldRow.appendChild(this.label(t('table.cell.field_name')));
     this.cellFieldNameInput = document.createElement('input');
     this.cellFieldNameInput.type = 'text';
     this.cellFieldNameInput.className = 'dialog-text-input';
@@ -343,7 +344,7 @@ export class TableCellPropsDialog extends ModalDialog {
     fieldSection.appendChild(fieldRow);
 
     const fieldRow2 = this.row();
-    this.cellEditableCheck = this.checkbox('양식 모드에서 편집 가능');
+    this.cellEditableCheck = this.checkbox(t('table.cell.form_editable'));
     this.cellEditableCheck.disabled = true;
     fieldRow2.appendChild(this.cellEditableCheck.parentElement!);
     fieldSection.appendChild(fieldRow2);
@@ -360,24 +361,24 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.className = 'tcp-tab-content';
 
     // 여러 쪽 지원
-    const pageSection = this.createSection('여러 쪽 지원');
+    const pageSection = this.createSection(t('table.split.multi_page'));
 
     const pbRow = this.row();
-    pbRow.appendChild(this.label('쪽 경계에서(Q)'));
+    pbRow.appendChild(this.label(t('table.split.at_page_boundary')));
     this.tablePageBreakSelect = this.selectOptions([
-      ['2', '나눔'], ['1', '셀 단위로 나눔'], ['0', '나누지 않음'],
+      ['2', t('table.split.split')], ['1', t('table.split.by_cell')], ['0', t('table.split.do_not_split')],
     ]);
     pbRow.appendChild(this.tablePageBreakSelect);
     pageSection.appendChild(pbRow);
 
     const rhRow = this.row();
-    this.tableRepeatHeaderCheck = this.checkbox('제목 줄 자동 반복');
+    this.tableRepeatHeaderCheck = this.checkbox(t('table.cell.title_repeat'));
     rhRow.appendChild(this.tableRepeatHeaderCheck.parentElement!);
     pageSection.appendChild(rhRow);
 
     // 자동으로 나뉜 표의 경계선 설정
     const abRow = this.row();
-    this.tableAutoBorderCheck = this.checkbox('자동으로 나뉜 표의 경계선 설정(J)');
+    this.tableAutoBorderCheck = this.checkbox(t('table.split.auto_border_split'));
     abRow.appendChild(this.tableAutoBorderCheck.parentElement!);
     pageSection.appendChild(abRow);
 
@@ -424,13 +425,13 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(pageSection);
 
     // 모든 셀 안 여백
-    const padSection = this.createSection('모든 셀의 안 여백');
+    const padSection = this.createSection(t('table.margin.all_cells'));
     const padRow = document.createElement('div');
     padRow.className = 'tcp-margin-row';
     const padGrid = document.createElement('div');
     padGrid.className = 'dialog-margin-grid';
     this.tablePaddingInputs = {};
-    for (const [key, text] of [['left', '왼쪽'], ['right', '오른쪽'], ['top', '위쪽'], ['bottom', '아래쪽']] as const) {
+    for (const [key, text] of [['left', t('table.pos.left')], ['right', t('table.pos.right')], ['top', t('table.pos.top')], ['bottom', t('table.pos.bottom')]] as const) {
       padGrid.appendChild(this.label(text));
       this.tablePaddingInputs[key] = this.numberInput();
       padGrid.appendChild(this.tablePaddingInputs[key]);
@@ -451,13 +452,13 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.className = 'tcp-tab-content';
 
     // ── 크기 ──
-    const sizeSection = this.createSection('크기');
+    const sizeSection = this.createSection(t('shape.size.title'));
     const sizeRow = this.row();
-    sizeRow.appendChild(this.label('너비'));
+    sizeRow.appendChild(this.label(t('table.create.width')));
     this.basicWidthInput = this.numberInput();
     sizeRow.appendChild(this.basicWidthInput);
     sizeRow.appendChild(this.unit('mm'));
-    sizeRow.appendChild(this.label('높이'));
+    sizeRow.appendChild(this.label(t('table.create.height')));
     this.basicHeightInput = this.numberInput();
     sizeRow.appendChild(this.basicHeightInput);
     sizeRow.appendChild(this.unit('mm'));
@@ -469,11 +470,11 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(sizeSection);
 
     // ── 위치 ──
-    const posSection = this.createSection('위치');
+    const posSection = this.createSection(t('table.pos.title'));
 
     // 글자처럼 취급 체크박스
     const tacRow = this.row();
-    this.treatAsCharCheck = this.checkbox('글자처럼 취급');
+    this.treatAsCharCheck = this.checkbox(t('table.placement.like_char').replace(/\(C\)$/, ''));
     tacRow.appendChild(this.treatAsCharCheck.parentElement!);
     posSection.appendChild(tacRow);
     this.treatAsCharCheck.addEventListener('change', () => this.updatePositionVisibility());
@@ -484,11 +485,11 @@ export class TableCellPropsDialog extends ModalDialog {
 
     // 본문과의 배치 (버튼 4개)
     const wrapRow = this.row();
-    wrapRow.appendChild(this.label('본문과의 배치'));
+    wrapRow.appendChild(this.label(t('table.placement.title')));
     const wrapGroup = document.createElement('div');
     wrapGroup.className = 'dialog-btn-group';
     this.wrapBtns = [];
-    const wrapLabels = ['어울림', '자리 차지', '글 뒤로', '글 앞으로'];
+    const wrapLabels = [t('table.placement.wrap'), t('table.placement.take_space'), t('table.placement.behind_text'), t('table.placement.in_front')];
     wrapLabels.forEach((text, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -503,18 +504,18 @@ export class TableCellPropsDialog extends ModalDialog {
 
     // 가로 위치
     const hRow = this.row();
-    hRow.appendChild(this.label('가로'));
+    hRow.appendChild(this.label(t('table.pos.horizontal')));
     this.horzRelSelect = this.selectOptions([
-      ['Paper', '종이'], ['Page', '쪽'], ['Column', '단'], ['Para', '문단'],
+      ['Paper', t('table.pos.paper')], ['Page', t('table.pos.page')], ['Column', t('table.pos.column')], ['Para', t('table.pos.paragraph')],
     ]);
     hRow.appendChild(this.horzRelSelect);
-    hRow.appendChild(this.unit('의'));
+    hRow.appendChild(this.unit(t('table.pos.of')));
     this.horzAlignSelect = this.selectOptions([
-      ['Left', '왼쪽'], ['Center', '가운데'], ['Right', '오른쪽'],
-      ['Inside', '안쪽'], ['Outside', '바깥쪽'],
+      ['Left', t('table.pos.left')], ['Center', t('table.pos.center')], ['Right', t('table.pos.right')],
+      ['Inside', t('table.pos.inner')], ['Outside', t('table.pos.outer')],
     ]);
     hRow.appendChild(this.horzAlignSelect);
-    hRow.appendChild(this.unit('기준'));
+    hRow.appendChild(this.unit(t('table.pos.basis')));
     this.horzOffsetInput = this.numberInput();
     hRow.appendChild(this.horzOffsetInput);
     hRow.appendChild(this.unit('mm'));
@@ -522,18 +523,18 @@ export class TableCellPropsDialog extends ModalDialog {
 
     // 세로 위치
     const vRow = this.row();
-    vRow.appendChild(this.label('세로'));
+    vRow.appendChild(this.label(t('table.pos.vertical')));
     this.vertRelSelect = this.selectOptions([
-      ['Paper', '종이'], ['Page', '쪽'], ['Para', '문단'],
+      ['Paper', t('table.pos.paper')], ['Page', t('table.pos.page')], ['Para', t('table.pos.paragraph')],
     ]);
     vRow.appendChild(this.vertRelSelect);
-    vRow.appendChild(this.unit('의'));
+    vRow.appendChild(this.unit(t('table.pos.of')));
     this.vertAlignSelect = this.selectOptions([
-      ['Top', '위'], ['Center', '가운데'], ['Bottom', '아래'],
-      ['Inside', '안쪽'], ['Outside', '바깥쪽'],
+      ['Top', t('table.pos.up')], ['Center', t('table.pos.center')], ['Bottom', t('table.pos.down')],
+      ['Inside', t('table.pos.inner')], ['Outside', t('table.pos.outer')],
     ]);
     vRow.appendChild(this.vertAlignSelect);
-    vRow.appendChild(this.unit('기준'));
+    vRow.appendChild(this.unit(t('table.pos.basis')));
     this.vertOffsetInput = this.numberInput();
     vRow.appendChild(this.vertOffsetInput);
     vRow.appendChild(this.unit('mm'));
@@ -541,14 +542,14 @@ export class TableCellPropsDialog extends ModalDialog {
 
     // 체크박스 옵션들
     const optRow = this.row();
-    this.restrictInPageCheck = this.checkbox('쪽 영역 안으로 제한');
+    this.restrictInPageCheck = this.checkbox(t('table.placement.restrict_to_page').replace(/\(B\)$/, ''));
     optRow.appendChild(this.restrictInPageCheck.parentElement!);
-    this.allowOverlapCheck = this.checkbox('서로 겹침 허용');
+    this.allowOverlapCheck = this.checkbox(t('table.placement.allow_overlap').replace(/\(L\)$/, ''));
     optRow.appendChild(this.allowOverlapCheck.parentElement!);
     this.posGroup.appendChild(optRow);
 
     const anchorRow = this.row();
-    this.keepWithAnchorCheck = this.checkbox('개체와 조판부호를 항상 같은 쪽에 놓기');
+    this.keepWithAnchorCheck = this.checkbox(t('table.placement.keep_with_anchor'));
     anchorRow.appendChild(this.keepWithAnchorCheck.parentElement!);
     this.posGroup.appendChild(anchorRow);
 
@@ -556,9 +557,9 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(posSection);
 
     // ── 개체 회전 ──
-    const rotSection = this.createSection('개체 회전');
+    const rotSection = this.createSection(t('shape.tab.rotate_flip').replace(/\/.*$/, ''));
     const rotRow = this.row();
-    rotRow.appendChild(this.label('회전각'));
+    rotRow.appendChild(this.label(t('shape.rotate.angle').replace(/\(E\):?$/, '')));
     const rotInput = this.numberInput();
     rotInput.disabled = true;
     rotInput.value = '0';
@@ -568,15 +569,15 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(rotSection);
 
     // ── 기울이기 ──
-    const skewSection = this.createSection('기울이기');
+    const skewSection = this.createSection(t('table.text_dir.skew'));
     const skewRow = this.row();
-    skewRow.appendChild(this.label('가로'));
+    skewRow.appendChild(this.label(t('table.pos.horizontal')));
     const skewH = this.numberInput();
     skewH.disabled = true;
     skewH.value = '0';
     skewRow.appendChild(skewH);
     skewRow.appendChild(this.unit('°'));
-    skewRow.appendChild(this.label('세로'));
+    skewRow.appendChild(this.label(t('table.pos.vertical')));
     const skewV = this.numberInput();
     skewV.disabled = true;
     skewV.value = '0';
@@ -586,10 +587,10 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(skewSection);
 
     // ── 기타 ──
-    const etcSection = this.createSection('기타');
+    const etcSection = this.createSection(t('char_shape.misc.misc'));
     const etcRow = this.row();
-    etcRow.appendChild(this.label('번호 종류'));
-    const numSelect = this.selectOptions([['Table', '표']]);
+    etcRow.appendChild(this.label(t('table.caption.number_kind')));
+    const numSelect = this.selectOptions([['Table', t('menu.table.label')]]);
     numSelect.disabled = true;
     etcRow.appendChild(numSelect);
     etcSection.appendChild(etcRow);
@@ -631,13 +632,13 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.className = 'tcp-tab-content';
 
     // 바깥 여백 (활성)
-    const outerSection = this.createSection('바깥 여백');
+    const outerSection = this.createSection(t('table.margin.outer'));
     const outerRow = document.createElement('div');
     outerRow.className = 'tcp-margin-row';
     const outerGrid = document.createElement('div');
     outerGrid.className = 'dialog-margin-grid';
     this.marginOuterInputs = {};
-    for (const [key, text] of [['left', '왼쪽'], ['right', '오른쪽'], ['top', '위쪽'], ['bottom', '아래쪽']] as const) {
+    for (const [key, text] of [['left', t('table.pos.left')], ['right', t('table.pos.right')], ['top', t('table.pos.top')], ['bottom', t('table.pos.bottom')]] as const) {
       outerGrid.appendChild(this.label(text));
       this.marginOuterInputs[key] = this.numberInput();
       outerGrid.appendChild(this.marginOuterInputs[key]);
@@ -649,7 +650,7 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(outerSection);
 
     // 캡션 넣기
-    this.captionSection = this.createSection('캡션');
+    this.captionSection = this.createSection(t('table.caption.title'));
 
     // 캡션 하위 필드 래퍼 (가운데 선택 시 비활성)
     this.captionFieldsWrap = document.createElement('div');
@@ -698,7 +699,7 @@ export class TableCellPropsDialog extends ModalDialog {
     this.captionDirSelect.className = 'dialog-select';
     this.captionDirSelect.style.display = 'none';
     const capDirs = [
-      [0, '왼쪽'], [1, '오른쪽'], [2, '위쪽'], [3, '아래쪽'],
+      [0, t('table.pos.left')], [1, t('table.pos.right')], [2, t('table.pos.top')], [3, t('table.pos.bottom')],
     ] as const;
     for (const [val, text] of capDirs) {
       const opt = document.createElement('option');
@@ -709,21 +710,21 @@ export class TableCellPropsDialog extends ModalDialog {
     this.captionFieldsWrap.appendChild(this.captionDirSelect);
 
     const capGapRow = this.row();
-    capGapRow.appendChild(this.label('간격'));
+    capGapRow.appendChild(this.label(t('para_shape.spacing.group')));
     this.captionSpacingInput = this.numberInput();
     capGapRow.appendChild(this.captionSpacingInput);
     capGapRow.appendChild(this.unit('mm'));
     this.captionFieldsWrap.appendChild(capGapRow);
 
     const capSizeRow = this.row();
-    capSizeRow.appendChild(this.label('캡션 크기(S)'));
+    capSizeRow.appendChild(this.label(t('table.caption.size')));
     this.captionWidthInput = this.numberInput();
     capSizeRow.appendChild(this.captionWidthInput);
     capSizeRow.appendChild(this.unit('mm'));
     this.captionFieldsWrap.appendChild(capSizeRow);
 
     const capExpandRow = this.row();
-    this.captionExpandCheck = this.checkbox('여백 부분까지 너비 확대(W)');
+    this.captionExpandCheck = this.checkbox(t('table.placement.expand_to_margin'));
     capExpandRow.appendChild(this.captionExpandCheck.parentElement!);
     this.captionFieldsWrap.appendChild(capExpandRow);
 
@@ -778,7 +779,7 @@ export class TableCellPropsDialog extends ModalDialog {
     this.borderTarget = 'table';
 
     // ── 선 종류 시각적 격자 ──
-    const lineSection = this.createSection('선 종류(Y)');
+    const lineSection = this.createSection(t('table.border.line_kind'));
     this.borderLineTypeGrid = document.createElement('div');
     this.borderLineTypeGrid.className = 'tcp-line-type-grid';
     const lineTypeDefs = [
@@ -837,7 +838,7 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(lineSection);
 
     // ── 굵기 + 색 ──
-    const attrSection = this.createSection('선 속성');
+    const attrSection = this.createSection(t('table.border.line_attr'));
     const widthRow = this.row();
     widthRow.appendChild(this.label('굵기'));
     this.borderWidthSelect = document.createElement('select');
@@ -852,8 +853,8 @@ export class TableCellPropsDialog extends ModalDialog {
     attrSection.appendChild(widthRow);
 
     const colorRow = this.row();
-    colorRow.appendChild(this.label('색'));
-    this.borderColorInput = document.createElement('input');
+    colorRow.appendChild(this.label(t('table.border.color').replace(/\(S\)$/, '')));
+    this.borderColorInput =document.createElement('input');
     this.borderColorInput.type = 'color';
     this.borderColorInput.value = '#000000';
     this.borderColorInput.style.width = '40px';
@@ -863,7 +864,7 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(attrSection);
 
     // ── 미리보기 + 방향 버튼 (그리드 배치) ──
-    const previewSection = this.createSection('미리 보기');
+    const previewSection = this.createSection(t('equation.preview'));
     const previewWrap = document.createElement('div');
     previewWrap.className = 'tcp-border-preview-wrap';
 
@@ -892,16 +893,16 @@ export class TableCellPropsDialog extends ModalDialog {
 
     // 선 모양 바로 적용
     const immediateRow = this.row();
-    this.borderApplyImmediateCheck = this.checkbox('선 모양 바로 적용(I)');
+    this.borderApplyImmediateCheck = this.checkbox(t('table.border.apply_immediately'));
     immediateRow.appendChild(this.borderApplyImmediateCheck.parentElement!);
     previewSection.appendChild(immediateRow);
 
     frag.appendChild(previewSection);
 
     // ── 셀 간격 ──
-    const spacingSection = this.createSection('셀 간격');
+    const spacingSection = this.createSection(t('table.cell_spacing'));
     const spacingRow = this.row();
-    spacingRow.appendChild(this.label('셀 간격'));
+    spacingRow.appendChild(this.label(t('table.cell_spacing')));
     this.borderCellSpacingInput = this.numberInput();
     spacingRow.appendChild(this.borderCellSpacingInput);
     spacingRow.appendChild(this.unit('mm'));
@@ -914,9 +915,9 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(spacingSection);
 
     // ── 자동 나뉜 표 경계선 설정 ──
-    const abSection = this.createSection('자동 경계선');
+    const abSection = this.createSection(t('table.split.auto_border'));
     const abRow = this.row();
-    this.borderAutoBorderCheck = this.checkbox('자동으로 나뉜 표의 경계선 설정(J)');
+    this.borderAutoBorderCheck = this.checkbox(t('table.split.auto_border_split'));
     abRow.appendChild(this.borderAutoBorderCheck.parentElement!);
     abSection.appendChild(abRow);
 
@@ -1070,7 +1071,7 @@ export class TableCellPropsDialog extends ModalDialog {
     this.bgTarget = 'table';
 
     // 색 채우기
-    const fillSection = this.createSection('채우기');
+    const fillSection = this.createSection(t('table.fill.title'));
 
     const noneRow = this.row();
     this.bgNoneRadio = document.createElement('input');
@@ -1096,7 +1097,7 @@ export class TableCellPropsDialog extends ModalDialog {
     colorFields.style.marginLeft = '20px';
 
     const faceRow = this.row();
-    faceRow.appendChild(this.label('면색(C)'));
+    faceRow.appendChild(this.label(t('table.fill.face_color')));
     this.bgColorPicker = document.createElement('input');
     this.bgColorPicker.type = 'color';
     this.bgColorPicker.value = '#ffffff';
@@ -1110,7 +1111,7 @@ export class TableCellPropsDialog extends ModalDialog {
     colorFields.appendChild(faceRow);
 
     const patColorRow = this.row();
-    patColorRow.appendChild(this.label('무늬색(K)'));
+    patColorRow.appendChild(this.label(t('table.fill.pattern_color')));
     this.bgPatternColorPicker = document.createElement('input');
     this.bgPatternColorPicker.type = 'color';
     this.bgPatternColorPicker.value = '#000000';
@@ -1124,10 +1125,10 @@ export class TableCellPropsDialog extends ModalDialog {
     colorFields.appendChild(patColorRow);
 
     const patTypeRow = this.row();
-    patTypeRow.appendChild(this.label('무늬모양(L)'));
+    patTypeRow.appendChild(this.label(t('table.fill.pattern_shape')));
     this.bgPatternTypeSelect = this.selectOptions([
-      ['0', '없음'], ['1', '가로줄'], ['2', '세로줄'], ['3', '역슬래시'],
-      ['4', '슬래시'], ['5', '십자'], ['6', 'X자'],
+      ['0', t('char_shape.misc.none')], ['1', t('table.border.horizontal_line')], ['2', t('table.border.vertical_line')], ['3', t('table.border.backslash')],
+      ['4', t('table.border.slash')], ['5', t('table.border.cross')], ['6', 'X자'],
     ]);
     this.bgPatternTypeSelect.addEventListener('change', () => {
       this.bgColorRadio.checked = true;
@@ -1146,14 +1147,14 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(fillSection);
 
     // 그러데이션 (읽기 전용)
-    const gradSection = this.createSection('그러데이션');
+    const gradSection = this.createSection(t('table.fill.gradient'));
     gradSection.classList.add('disabled');
     const gradRow = this.row();
-    gradRow.appendChild(this.label('유형'));
+    gradRow.appendChild(this.label(t('shape.fill.type').replace(/\(S\):?$/, '')));
     const gradSelect = document.createElement('select');
     gradSelect.className = 'dialog-select';
     gradSelect.disabled = true;
-    for (const text of ['선형', '방사형', '원뿔형', '사각형']) {
+    for (const text of [t('table.gradient.linear'), t('table.gradient.radial'), t('table.gradient.conic'), t('table.gradient.rectangular')]) {
       const opt = document.createElement('option');
       opt.textContent = text;
       gradSelect.appendChild(opt);
@@ -1163,14 +1164,14 @@ export class TableCellPropsDialog extends ModalDialog {
     frag.appendChild(gradSection);
 
     // 그림 (읽기 전용)
-    const imgSection = this.createSection('그림');
+    const imgSection = this.createSection(t('shape.tab.picture'));
     imgSection.classList.add('disabled');
     const imgRow = this.row();
-    imgRow.appendChild(this.label('그림 파일'));
+    imgRow.appendChild(this.label(t('table.fill.image_file')));
     const imgBtn = document.createElement('button');
     imgBtn.type = 'button';
     imgBtn.className = 'dialog-btn';
-    imgBtn.textContent = '열기...';
+    imgBtn.textContent = t('table.fill.open_file');
     imgBtn.disabled = true;
     imgRow.appendChild(imgBtn);
     imgSection.appendChild(imgRow);
@@ -1420,7 +1421,7 @@ export class TableCellPropsDialog extends ModalDialog {
   private buildAllSpinner(inputs: Record<string, HTMLInputElement>): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'tcp-all-spinner';
-    const lbl = this.label('모두(A)');
+    const lbl = this.label(t('para_shape.border.all_apply').replace(/:$/, ''));
     wrap.appendChild(lbl);
 
     const setAll = (delta: number) => {

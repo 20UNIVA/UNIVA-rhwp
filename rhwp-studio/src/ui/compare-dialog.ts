@@ -4,6 +4,7 @@ import { compareDocuments } from '@/compare/diff-engine';
 import type { CompareSessionStore } from '@/compare/session';
 import type { CompareOptions, DiffItem, DiffKind } from '@/compare/types';
 import { CompareResultWindow } from './compare-result-window';
+import { t } from '@/i18n/t';
 
 const DEFAULT_KINDS: DiffKind[] = ['text', 'table', 'shape', 'image', 'chart'];
 const DEFAULT_COMPARE_OPTS: CompareOptions = {
@@ -98,7 +99,7 @@ export class CompareDialog {
     leftRow.className = 'compare-row';
     const leftLabel = document.createElement('span');
     leftLabel.className = 'compare-label';
-    leftLabel.textContent = '왼쪽 문서';
+    leftLabel.textContent = t('compare.left_doc');
     const leftBtn = document.createElement('button');
     leftBtn.className = 'dialog-btn';
     leftBtn.textContent = '파일 선택';
@@ -113,7 +114,7 @@ export class CompareDialog {
     rightRow.className = 'compare-row';
     const rightLabel = document.createElement('span');
     rightLabel.className = 'compare-label';
-    rightLabel.textContent = '오른쪽 문서';
+    rightLabel.textContent = t('compare.right_doc');
     const rightBtn = document.createElement('button');
     rightBtn.className = 'dialog-btn';
     rightBtn.textContent = '파일 선택';
@@ -135,7 +136,7 @@ export class CompareDialog {
     this.caseSensitiveCheck.id = 'doc-compare-case-sensitive';
     this.caseSensitiveCheck.checked = DEFAULT_COMPARE_OPTS.caseSensitive;
     const caseSpan = document.createElement('span');
-    caseSpan.textContent = '영문 대소문자 구분';
+    caseSpan.textContent = t('compare.case_sensitive');
     caseLabel.append(this.caseSensitiveCheck, caseSpan);
     optRow.appendChild(caseLabel);
     optWrap.appendChild(optRow);
@@ -145,7 +146,7 @@ export class CompareDialog {
     actions.className = 'compare-actions';
     this.runBtn = document.createElement('button');
     this.runBtn.className = 'dialog-btn';
-    this.runBtn.textContent = '문서 비교 실행';
+    this.runBtn.textContent = t('compare.run');
     this.runBtn.addEventListener('click', () => void this.onRunCompare());
     this.openTwoPaneBtn = document.createElement('button');
     this.openTwoPaneBtn.className = 'dialog-btn';
@@ -160,11 +161,11 @@ export class CompareDialog {
 
     const resultTitle = document.createElement('div');
     resultTitle.className = 'compare-kinds-title';
-    resultTitle.textContent = '비교 결과';
+    resultTitle.textContent = t('compare.result');
 
     this.resultMetaEl = document.createElement('span');
     this.resultMetaEl.className = 'compare-result-meta';
-    this.resultMetaEl.textContent = '비교 실행 전';
+    this.resultMetaEl.textContent = t('compare.no_run_yet');
     this.resultListEl = document.createElement('ul');
     this.resultListEl.className = 'compare-result-list';
 
@@ -222,7 +223,7 @@ export class CompareDialog {
   private async onRunCompare(): Promise<void> {
     if (this.running) return;
     if (!this.leftFile || !this.rightFile) {
-      this.resultMetaEl.textContent = '왼쪽/오른쪽 문서를 모두 선택하세요.';
+      this.resultMetaEl.textContent = t('compare.select_both');
       return;
     }
 
@@ -240,8 +241,8 @@ export class CompareDialog {
     this.running = true;
     this.runBtn.disabled = true;
     this.openTwoPaneBtn.disabled = true;
-    this.runBtn.textContent = '비교 중...';
-    this.resultMetaEl.textContent = '비교 계산 중...';
+    this.runBtn.textContent = t('compare.in_progress');
+    this.resultMetaEl.textContent = t('compare.calculating');
     this.resultListEl.replaceChildren();
 
     try {
@@ -268,18 +269,18 @@ export class CompareDialog {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      this.resultMetaEl.textContent = `비교 실패: ${msg}`;
+      this.resultMetaEl.textContent = t('compare.failed', { message: msg });
     } finally {
       this.running = false;
       this.runBtn.disabled = false;
-      this.runBtn.textContent = '문서 비교 실행';
+      this.runBtn.textContent = t('compare.run');
     }
   }
 
   private openResultWindow(): void {
     const sess = this.compareSessionStore.get();
     if (!sess || sess.diffItems.length === 0) {
-      this.resultMetaEl.textContent = '먼저 문서 비교를 실행해 결과를 생성하세요.';
+      this.resultMetaEl.textContent = t('compare.run_first');
       return;
     }
     const idx = Math.max(0, sess.currentDiffIndex);
