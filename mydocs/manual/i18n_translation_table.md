@@ -140,9 +140,60 @@
 | `statusbar.insert_mode` | 삽입 | Insert | 挿入 | 입력 모드 |
 | `statusbar.overwrite_mode` | 수정 | Overwrite | 上書き | 입력 모드 — 한컴 한국어판 *수정* |
 
-## 11~33. 후속 카테고리
+## 32. 문서 비교·이력 — `compare.*` / `history.*`
 
-*m700-1, m700-2, m700-3 cycle 자리에서 박는다.*
+m700-1.1 sub-cycle 자리에서 박은 자리. compare-dialog·compare-result-window·history-dialog UI 가시 자리 자체.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `compare.dialog_title` | 문서 비교 | Compare Documents | 文書比較 | dialog 타이틀 |
+| `compare.detail_title` | 문서 비교 상세 | Compare Details | 文書比較の詳細 | 상세 창 라벨 |
+| `compare.detail_title_pair` | 문서 비교 상세 · {left} ↔ {right} | Compare Details · {left} ↔ {right} | 文書比較の詳細 · {left} ↔ {right} | 상세 창 타이틀 (placeholder) |
+| `compare.run` | 문서 비교 실행 | Run Compare | 比較を実行 | 실행 버튼 |
+| `compare.run_with_current` | 선택과 현재 문서 비교 | Compare with Current | 選択と現在の文書を比較 | 현재 문서 비교 버튼 |
+| `compare.in_progress` | 비교 중... | Comparing... | 比較中... | 진행 토스트 |
+| `compare.calculating` | 비교 계산 중... | Calculating... | 計算中... | 진행 |
+| `compare.no_run_yet` | 비교 실행 전 | Not yet run | 比較未実行 | 빈 상태 |
+| `compare.result` | 비교 결과 | Compare Result | 比較結果 | 결과 영역 |
+| `compare.failed` | 비교 실패: {message} | Compare failed: {message} | 比較失敗: {message} | 에러 |
+| `compare.run_first` | 먼저 문서 비교를 실행해 결과를 생성하세요. | Run a compare first to generate results. | まず文書比較を実行して結果を生成してください。 | 빈 상태 안내 |
+| `compare.select_both` | 왼쪽/오른쪽 문서를 모두 선택하세요. | Select both documents. | 左右の文書を選択してください。 | 검증 |
+| `compare.select_snapshot` | 비교할 스냅샷을 목록에서 선택하세요. | Select a snapshot from the list. | リストから比較するスナップショットを選択してください。 | 검증 |
+| `compare.next_diff` | 다음 차이 | Next Diff | 次の差分 | 네비 버튼 |
+| `compare.prev_diff` | 이전 차이 | Previous Diff | 前の差分 | 네비 버튼 |
+| `compare.case_sensitive` | 영문 대소문자 구분 | Case-sensitive | 大文字小文字を区別 | 옵션 체크박스 |
+| `compare.left_doc` | 왼쪽 문서 | Left document | 左の文書 | 라벨 |
+| `compare.right_doc` | 오른쪽 문서 | Right document | 右の文書 | 라벨 |
+| `compare.left_name` | 왼쪽 문서: {name} | Left: {name} | 左: {name} | 라벨 (placeholder) |
+| `compare.right_name` | 오른쪽 문서: {name} | Right: {name} | 右: {name} | 라벨 (placeholder) |
+| `compare.left_loading` | 왼쪽 문서 로딩 중... | Loading left document... | 左の文書を読み込み中... | 진행 |
+| `compare.right_loading` | 오른쪽 문서 로딩 중... | Loading right document... | 右の文書を読み込み中... | 진행 |
+| `compare.left_ready` | 왼쪽 문서 페이지 준비 완료 | Left document ready | 左の文書ページ準備完了 | 완료 |
+| `compare.right_ready` | 오른쪽 문서 페이지 준비 완료 | Right document ready | 右の文書ページ準備完了 | 완료 |
+| `compare.no_doc_loaded` | 문서가 아직 로드되지 않았습니다. | No document is loaded yet. | 文書がまだ読み込まれていません。 | 에러 |
+| `compare.no_current_doc` | 현재 문서가 없습니다. 문서를 연 뒤 다시 시도하세요. | No current document. Open a document and try again. | 現在の文書がありません。文書を開いてからもう一度お試しください。 | 에러 |
+| `compare.page_render_failed` | 페이지 렌더 실패: {message} | Failed to render page: {message} | ページの描画に失敗しました: {message} | 에러 |
+| `compare.page_load_failed` | 페이지 로드 실패: {message} | Failed to load page: {message} | ページの読み込みに失敗しました: {message} | 에러 |
+| `compare.page_preparing` | 페이지 준비 중... | Preparing page... | ページを準備中... | 진행 |
+| `compare.text_change` | 텍스트 변경 | Text change | テキスト変更 | diff 라벨 |
+| `compare.property_change` | 속성 변경 | Property change | プロパティ変更 | diff 라벨 |
+| `history.snapshot` | 스냅샷 | Snapshot | スナップショット | 라벨 |
+| `history.saved` | 스냅샷을 저장했습니다. | Snapshot saved. | スナップショットを保存しました。 | 토스트 |
+| `history.save_failed` | 저장 실패: {message} | Save failed: {message} | 保存失敗: {message} | 에러 |
+| `history.note_placeholder` | 메모 (비우면 시각 기본값) | Note (default if empty) | メモ (空欄なら既定) | input placeholder |
+| `history.saved_list` | 저장된 이력 (클릭하여 선택) | Saved history (click to select) | 保存履歴 (クリックで選択) | 라벨 |
+| `history.save_current` | 현재 문서 저장 | Save current | 現在の文書を保存 | 버튼 |
+| `history.delete_selected` | 선택 삭제 | Delete selected | 選択を削除 | 버튼 |
+| `history.clear_all` | 전체 비우기 | Clear all | すべて削除 | 버튼 |
+| `history.confirm_clear` | 저장된 문서 이력을 모두 지울까요? | Clear all saved history? | 保存された文書履歴をすべて削除しますか? | confirm |
+| `history.cleared` | 이력을 비웠습니다. | History cleared. | 履歴を削除しました。 | 토스트 |
+| `history.deleted` | 삭제했습니다. | Deleted. | 削除しました。 | 토스트 |
+| `history.select_to_delete` | 삭제할 항목을 목록에서 먼저 선택하세요. | Select an item to delete first. | まず削除する項目を選択してください。 | 검증 |
+| `history.read_failed` | 스냅샷 데이터를 읽을 수 없습니다. | Cannot read snapshot data. | スナップショットデータを読み込めません。 | 에러 |
+
+## 11~33. 나머지 후속 카테고리
+
+*m700-1.2 ~ m700-1.6 sub-cycle 자리에서 박는다.*
 
 m700-1 cycle 진입 시 박을 자리 (자리 분포 상위 + 자리 큰 덩어리 우선):
 
