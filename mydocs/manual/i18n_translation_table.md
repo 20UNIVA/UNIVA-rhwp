@@ -608,9 +608,236 @@ m700-1.4 sub-cycle 자리. table-create-dialog + table-cell-props-dialog 자리.
 | `table.gradient.conic` | 원뿔형 | Conic | 円錐 | 옵션 |
 | `table.gradient.rectangular` | 사각형 | Rectangular | 矩形 | 옵션 |
 
+## 15. 그림·도형 — `shape.*`
+
+m700-1.5 sub-cycle 자리. picture-props-dialog + shape-picker 의 *개체 속성*·*도형 선택* 자리. *공통 자리* (위치·기준·테두리·채우기) 는 §13 `table.*` 자리 재사용 권장. *shape 특수 자리*만 박는다.
+
+### 개체 속성 dialog 자리
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.dialog_title` | 개체 속성 | Object properties | オブジェクトのプロパティ | dialog 타이틀 |
+| `shape.tab.basic` | 기본 | Basic | 基本 | 탭 |
+| `shape.tab.picture` | 그림 | Image | 画像 | 탭 |
+| `shape.tab.effects` | 그림 효과 | Effects | 効果 | 탭 |
+| `shape.tab.fill` | 채우기 | Fill | 塗りつぶし | 탭 |
+| `shape.tab.line` | 선 | Line | 線 | 탭 |
+| `shape.tab.shadow` | 그림자 | Shadow | 影 | 탭 |
+| `shape.tab.rotate_flip` | 개체 회전/대칭 | Rotate/Flip | 回転/反転 | 그룹 |
+
+### 도형 선택 (shape-picker)
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.picker.title` | 도형 | Shapes | 図形 | 라벨 |
+| `shape.picker.drawing` | 그리기 개체 | Drawing object | 描画オブジェクト | 그룹 |
+| `shape.picker.line` | 직선 | Line | 直線 | 도형 |
+| `shape.picker.curve` | 곡선 | Curve | 曲線 | 도형 |
+| `shape.picker.polyline` | 꺾인 | Polyline | 折れ線 | 도형 |
+| `shape.picker.polygon` | 다각형 | Polygon | 多角形 | 도형 |
+| `shape.picker.rectangle` | 사각형 | Rectangle | 四角形 | 도형 |
+| `shape.picker.ellipse` | 타원 | Ellipse | 楕円 | 도형 |
+| `shape.picker.arc` | 호 | Arc | 円弧 | 도형 |
+| `shape.picker.connector` | 연결선 | Connector | コネクタ | 도형 |
+| `shape.picker.line_arrow` | 직선 화살표 | Straight arrow | 直線矢印 | 도형 |
+| `shape.picker.curve_arrow` | 곡선 화살표 | Curved arrow | 曲線矢印 | 도형 |
+| `shape.picker.polyline_arrow` | 꺾인 화살표 | Polyline arrow | 折れ線矢印 | 도형 |
+
+### 크기·위치 (shape 자리 한정)
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.size.title` | 크기 | Size | サイズ | 그룹 |
+| `shape.size.width` | 너비(W) | Width(W) | 幅(W) | 라벨 |
+| `shape.size.height` | 높이(H) | Height(H) | 高さ(H) | 라벨 |
+| `shape.size.locked` | 크기 고정(S) | Lock size(S) | サイズ固定(S) | 토글 |
+| `shape.size.aspect_locked` | 가로 세로 같은 비율 유지 | Keep aspect ratio | 縦横比を維持 | 토글 |
+| `shape.pos.horizontal_offset` | 가로 방향 이동(H): | Horizontal offset(H): | 水平移動(H): | 라벨 |
+| `shape.pos.vertical_offset` | 세로 방향 이동(V): | Vertical offset(V): | 垂直移動(V): | 라벨 |
+| `shape.pos.both` | 양쪽 | Both | 両方 | 옵션 |
+
+### 회전·대칭
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.rotate.angle` | 회전각(E): | Rotation angle(E): | 回転角度(E): | 라벨 |
+| `shape.rotate.flip_horizontal` | 좌우 대칭 | Flip horizontal | 左右反転 | 버튼 |
+| `shape.rotate.flip_vertical` | 상하 대칭 | Flip vertical | 上下反転 | 버튼 |
+| `shape.rotate.center_horizontal` | 가로 중심(W): | H-center(W): | 水平中心(W): | 라벨 |
+| `shape.rotate.center_vertical` | 세로 중심(X): | V-center(X): | 垂直中心(X): | 라벨 |
+| `shape.rotate.center_of` | 가운데에서 | From center | 中心から | 옵션 |
+
+### 그림 특수 자리
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.picture.title` | 그림 | Image | 画像 | 그룹 |
+| `shape.picture.file` | 그림 파일(I): | Image file(I): | 画像ファイル(I): | 라벨 |
+| `shape.picture.filename` | 파일 이름 | File name | ファイル名 | 라벨 |
+| `shape.picture.embed` | 문서에 포함 | Embed in document | 文書に埋め込む | 토글 |
+| `shape.picture.embed_paren` | 문서에 포함(J) | Embed(J) | 文書に埋め込む(J) | 토글 |
+| `shape.picture.crop` | 그림 자르기 | Crop | トリミング | 그룹 |
+| `shape.picture.crop_margin` | 그림 여백 | Image margin | 画像の余白 | 그룹 |
+| `shape.picture.reverse` | 그림 반전 | Reverse | 反転 | 토글 |
+| `shape.picture.brightness` | 밝기 | Brightness | 明るさ | 라벨 |
+| `shape.picture.brightness_label` | 밝기(H): | Brightness(H): | 明るさ(H): | 라벨 |
+| `shape.picture.contrast` | 대비 | Contrast | コントラスト | 라벨 |
+| `shape.picture.contrast_label` | 대비(I): | Contrast(I): | コントラスト(I): | 라벨 |
+| `shape.picture.transparency` | 투명도 | Transparency | 透明度 | 라벨 |
+| `shape.picture.transparency_label` | 투명도(I): | Transparency(I): | 透明度(I): | 라벨 |
+| `shape.picture.transparency_set` | 투명도 설정 | Set transparency | 透明度を設定 | 토글 |
+| `shape.picture.zoom_ratio` | 확대/축소 비율 | Zoom ratio | 拡大/縮小率 | 라벨 |
+| `shape.picture.fit_size` | 크기에 맞추어 | Fit to size | サイズに合わせる | 옵션 |
+| `shape.picture.tile_all` | 바둑판식으로-모두 | Tile - all | タイル状 - すべて | 옵션 |
+| `shape.picture.from_original` | 원래 그림에서 | From original | 元の画像から | 옵션 |
+| `shape.picture.to_original` | 원래 그림으로 | To original | 元の画像へ | 옵션 |
+| `shape.picture.original_size` | 원래 크기로 | Original size | 元のサイズ | 옵션 |
+| `shape.picture.grayscale` | 회색조 | Grayscale | グレースケール | 옵션 |
+| `shape.picture.black_white` | 흑백 | Black & white | モノクロ | 옵션 |
+| `shape.picture.watermark` | 워터마크 효과 | Watermark effect | 透かし効果 | 옵션 |
+| `shape.picture.watermark_paren` | 워터마크 효과(M) | Watermark(M) | 透かし(M) | 옵션 |
+
+### 그림 효과 (네온·반사·열은 테두리)
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.effects.title` | 그림 효과(E): | Effects(E): | 効果(E): | 라벨 |
+| `shape.effects.glow` | 네온 | Glow | 光彩 | 효과 |
+| `shape.effects.glow_none` | 네온 없음 | No glow | 光彩なし | 효과 |
+| `shape.effects.glow_effect` | 네온 효과 | Glow effect | 光彩効果 | 효과 |
+| `shape.effects.reflection` | 반사 | Reflection | 反射 | 효과 |
+| `shape.effects.reflection_none` | 반사 없음 | No reflection | 反射なし | 효과 |
+| `shape.effects.reflection_effect` | 반사 효과 | Reflection effect | 反射効果 | 효과 |
+| `shape.effects.soft_edge` | 열은 테두리 | Soft edge | ぼかし | 효과 |
+| `shape.effects.soft_edge_none` | 열은 테두리 없음 | No soft edge | ぼかしなし | 효과 |
+| `shape.effects.soft_edge_effect` | 열은 테두리 효과 | Soft edge effect | ぼかし効果 | 효과 |
+| `shape.effects.no_effect` | 효과 없음 | No effect | 効果なし | 효과 |
+| `shape.effects.shadow_color` | 그림자 색(C): | Shadow color(C): | 影の色(C): | 라벨 |
+| `shape.effects.blur_distance` | 번짐 정도(Z): | Blur(Z): | ぼかし(Z): | 라벨 |
+| `shape.effects.distance` | 거리 | Distance | 距離 | 라벨 |
+
+### 선 끝 모양·시작 모양 (화살표 등)
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.line.thickness` | 굵기(T): | Thickness(T): | 太さ(T): | 라벨 |
+| `shape.line.kind` | 종류(L): | Type(L): | 種類(L): | 라벨 |
+| `shape.line.start_shape` | 시작 모양(S): | Start shape(S): | 始点形状(S): | 라벨 |
+| `shape.line.start_color` | 시작 색(G): | Start color(G): | 始点の色(G): | 라벨 |
+| `shape.line.start_size` | 시작 크기(Z): | Start size(Z): | 始点サイズ(Z): | 라벨 |
+| `shape.line.end_shape` | 끝 모양(Y): | End shape(Y): | 終点形状(Y): | 라벨 |
+| `shape.line.end_shape_e` | 끝 모양(E): | End shape(E): | 終点形状(E): | 라벨 |
+| `shape.line.end_color` | 끝 색(E): | End color(E): | 終点の色(E): | 라벨 |
+| `shape.line.end_size` | 끝 크기(N): | End size(N): | 終点サイズ(N): | 라벨 |
+| `shape.line.arrow.tail` | 꼬리 화살표 | Tail arrow | 尾矢印 | 옵션 |
+| `shape.line.arrow.open` | 열린 화살표 | Open arrow | 開放矢印 | 옵션 |
+| `shape.line.arrow.arrow` | 화살표 | Arrow | 矢印 | 옵션 |
+| `shape.line.thickness_inside` | 선 굵기 내부 적용(K) | Apply thickness inside(K) | 線の太さを内側に適用(K) | 토글 |
+| `shape.line.cap.round` | 둥근 | Round | 丸 | 옵션 |
+| `shape.line.cap.flat` | 평면 | Flat | 平面 | 옵션 |
+| `shape.line.long_dash` | 긴 파선 | Long dash | 長破線 | 선 종류 |
+| `shape.line.solid_simple` | 실선 | Solid | 実線 | 선 종류 |
+
+### 사각형 모서리·도형 모양
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.rect.corner_radius` | 사각형 모서리 곡률 | Rectangle corner radius | 角丸の半径 | 라벨 |
+| `shape.rect.corner_round` | 둥근 모양(O) | Rounded(O) | 角丸(O) | 옵션 |
+| `shape.rect.corner_right_angle` | 직각(G) | Right angle(G) | 直角(G) | 옵션 |
+| `shape.arc.shape` | 호(A) | Arc(A) | 円弧(A) | 옵션 |
+| `shape.arc.fan` | 부채꼴(B) | Pie(B) | 扇形(B) | 옵션 |
+| `shape.arc.half_circle` | 반원(M) | Half circle(M) | 半円(M) | 옵션 |
+| `shape.arc.bow` | 활 모양(I) | Bow(I) | 弓型(I) | 옵션 |
+| `shape.arc.border` | 호 테두리 | Arc border | 弧の罫線 | 옵션 |
+
+### 그림자
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.shadow.title` | 그림자 | Shadow | 影 | 그룹 |
+| `shape.shadow.none` | 효과 없음 | No effect | 効果なし | 옵션 |
+| `shape.shadow.narcis` | 나르시스 | Narcissus | ナルキッソス | 옵션 |
+| `shape.shadow.snail` | 소라 | Conch | サザエ | 옵션 |
+| `shape.shadow.classic` | 클래식 | Classic | クラシック | 옵션 |
+| `shape.shadow.rhombus` | 마름모 | Rhombus | ひし形 | 옵션 |
+| `shape.shadow.diagonal_left_top` | 왼쪽 위 | Left-top | 左上 | 옵션 |
+| `shape.shadow.diagonal_right_top` | 오른쪽 위 | Right-top | 右上 | 옵션 |
+| `shape.shadow.diagonal_left_bottom` | 왼쪽 아래 | Left-bottom | 左下 | 옵션 |
+| `shape.shadow.diagonal_right_bottom` | 오른쪽 아래 | Right-bottom | 右下 | 옵션 |
+| `shape.shadow.diagonal_left` | 왼쪽 대각선 | Left diagonal | 左斜め | 옵션 |
+| `shape.shadow.diagonal_right` | 오른쪽 대각선 | Right diagonal | 右斜め | 옵션 |
+| `shape.shadow.diagonal_1` | 대각선1 | Diagonal 1 | 斜め1 | 옵션 |
+| `shape.shadow.diagonal_2` | 대각선2 | Diagonal 2 | 斜め2 | 옵션 |
+| `shape.shadow.horizontal_line` | 수평선 | Horizontal line | 水平線 | 옵션 |
+| `shape.shadow.vertical_line` | 수직선 | Vertical line | 垂直線 | 옵션 |
+| `shape.shadow.horizontal` | 수평 | Horizontal | 水平 | 옵션 |
+
+### 글상자·문 자리
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.textbox.title` | 글상자 | Text box | テキストボックス | 그룹 |
+| `shape.textbox.margin` | 글상자 여백 | Text box margin | テキストボックスの余白 | 그룹 |
+| `shape.textbox.body_position` | 본문 위치(P): | Body position(P): | 本文位置(P): | 라벨 |
+| `shape.textbox.fit_text_with_box` | 글에 어울리는 줄 자리 | (legacy) | (legacy) | 임시 자리 |
+| `shape.textbox.vertical_writing` | 세로쓰기(E): | Vertical writing(E): | 縦書き(E): | 라벨 |
+| `shape.textbox.text_horizontal` | 영문 눕힘(O) | Lay English(O) | 英文寝かせ(O) | 옵션 |
+| `shape.textbox.text_vertical` | 영문 세움(U) | Upright English(U) | 英文立て(U) | 옵션 |
+| `shape.textbox.body_align_top` | 위 | Top | 上 | 옵션 |
+| `shape.textbox.body_align_bottom` | 아래 | Bottom | 下 | 옵션 |
+
+### 도형 채우기 종류
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.fill.type` | 채우기 유형(S): | Fill type(S): | 塗りつぶしの種類(S): | 라벨 |
+| `shape.fill.spread` | 빈 공간 채움 | Fill empty space | 空欄を埋める | 토글 |
+| `shape.fill.reverse_center` | 반전 중심(N): | Reverse center(N): | 反転中心(N): | 라벨 |
+| `shape.fill.transparency_increase_all` | 모두 증가 | Increase all | すべて増加 | 버튼 |
+| `shape.fill.transparency_decrease_all` | 모두 감소 | Decrease all | すべて減少 | 버튼 |
+| `shape.fill.small_side` | 작은 쪽 | Small side | 小さい側 | 옵션 |
+| `shape.fill.big_side` | 큰 쪽 | Big side | 大きい側 | 옵션 |
+| `shape.fill.small_x_small` | 작은×작은 | Small×Small | 小×小 | 옵션 |
+| `shape.fill.small_x_medium` | 작은×중간 | Small×Medium | 小×中 | 옵션 |
+| `shape.fill.small_x_big` | 작은×큰 | Small×Big | 小×大 | 옵션 |
+| `shape.fill.medium_x_small` | 중간×작은 | Medium×Small | 中×小 | 옵션 |
+| `shape.fill.medium_x_medium` | 중간×중간 | Medium×Medium | 中×中 | 옵션 |
+| `shape.fill.medium_x_big` | 중간×큰 | Medium×Big | 中×大 | 옵션 |
+| `shape.fill.big_x_small` | 큰×작은 | Big×Small | 大×小 | 옵션 |
+| `shape.fill.big_x_medium` | 큰×중간 | Big×Medium | 大×中 | 옵션 |
+| `shape.fill.big_x_big` | 큰×큰 | Big×Big | 大×大 | 옵션 |
+
+### 개체 설명문·일반
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.alt_text.title` | 개체 설명문 | Alt text | 代替テキスト | 그룹 |
+| `shape.alt_text.btn` | 개체 설명문(X)... | Alt text(X)... | 代替テキスト(X)... | 버튼 |
+| `shape.protect` | 개체 보호하기(K) | Protect object(K) | オブジェクトを保護(K) | 토글 |
+| `shape.gap_between_objects` | 개체와의 간격(G): | Object spacing(G): | オブジェクトとの間隔(G): | 라벨 |
+| `shape.preview.right_column` | 그림(B) | Image(B) | 画像(B) | 라벨 |
+
+### 회전 자리·이동·정렬 미리보기
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.preview.preview_basic` | 가\nA B | (preview) | (preview) | 미리보기 글자 |
+| `shape.preview.preview_stack` | 가\nA\nB | (preview) | (preview) | 미리보기 글자 |
+| `shape.preview.preview_underline_h1` | 가1─ | (preview) | (preview) | 미리보기 글자 |
+| `shape.preview.preview_underline_v1` | 가1│ | (preview) | (preview) | 미리보기 글자 |
+| `shape.preview.preview_corner_topright` | 가1┐ | (preview) | (preview) | 미리보기 글자 |
+| `shape.preview.preview_corner_bottomright` | 가1┘ | (preview) | (preview) | 미리보기 글자 |
+
+### shape 자리 confirm 버튼
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `shape.confirm` | 확인(D) | OK(D) | OK(D) | 버튼 |
+
 ## 11~33. 나머지 후속 카테고리
 
-*m700-1.5 ~ m700-1.6 sub-cycle 자리에서 박는다.*
+*m700-1.6 sub-cycle 자리에서 박는다.*
 
 m700-1 cycle 진입 시 박을 자리 (자리 분포 상위 + 자리 큰 덩어리 우선):
 
