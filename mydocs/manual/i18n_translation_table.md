@@ -1202,9 +1202,163 @@ m700-2 sub-cycle 자리. options-dialog 자리.
 | `prefs.register_representative` | 대표 글꼴 등록하기 | Register representative | 代表フォントを登録 | 버튼 |
 | `prefs.representative_font_desc` | 대표 글꼴은 각 언어별 글꼴을 짝지어 한 번에 적용하는 글꼴 세트입니다. | A representative font set applies language-specific fonts together. | 代表フォントは各言語のフォントをひと組にして一括適用するセットです。 | 안내 |
 
-## 11~33. 나머지 후속 카테고리
+## 17. 우클릭 컨텍스트 메뉴 (`context_menu.*`)
 
-*m700-3 cycle 자리에서 박는다.*
+m700-3 sub-cycle 자리. 우클릭 시 박는 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `context_menu.copy` | 복사 | Copy | コピー | 우클릭 |
+| `context_menu.cut` | 오려 두기 | Cut | 切り取り | 우클릭 |
+| `context_menu.paste` | 붙이기 | Paste | 貼り付け | 우클릭 |
+| `context_menu.delete` | 지우기 | Delete | 削除 | 우클릭 |
+| `context_menu.select_all` | 모두 선택 | Select all | すべて選択 | 우클릭 |
+| `context_menu.char_shape` | 글자 모양 | Character | 文字書式 | 우클릭 |
+| `context_menu.para_shape` | 문단 모양 | Paragraph | 段落書式 | 우클릭 |
+| `context_menu.object_props` | 개체 속성 | Object properties | オブジェクトのプロパティ | 우클릭 (개체 자리) |
+| `context_menu.table_cell_props` | 표/셀 속성 | Table/Cell properties | 表/セルのプロパティ | 우클릭 (셀 자리) |
+
+## 18. 토스트·진행 표시 (`toast.*`)
+
+m700-3 sub-cycle 자리. 일반 토스트·확인 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `toast.action_settings` | 설정 열기 | Open settings | 設定を開く | 토스트 액션 |
+| `toast.action_issue` | 이슈 보기 | View issue | イシューを見る | 토스트 액션 |
+| `toast.action_ok` | 확인 | OK | OK | 토스트 액션 |
+| `toast.hwpx_to_hwp_notice` | HWPX 문서는 저장 시 HWP 형식으로 변환 저장됩니다.\n원본 HWPX를 덮어쓰지 않도록 .hwp 파일명으로 저장합니다. | HWPX is converted to HWP on save. Saved as .hwp to avoid overwriting the original. | HWPX 文書は保存時に HWP 形式へ変換します。元の HWPX を上書きしないよう .hwp 名で保存します。 | 안내 토스트 |
+
+## 19. 공통 버튼 (`button.*`)
+
+m700-3 sub-cycle 자리. 다이얼로그·모달 공통 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `button.ok` | 확인 | OK | OK | 공통 |
+| `button.cancel` | 취소 | Cancel | キャンセル | 공통 |
+| `button.close` | 닫기 | Close | 閉じる | 공통 |
+| `button.apply` | 적용 | Apply | 適用 | 공통 |
+| `button.default` | 기본값 | Default | 既定 | 공통 |
+| `button.reset` | 초기화 | Reset | リセット | 공통 |
+| `button.set` | 설정(D) | Set(D) | 設定(D) | 공통 |
+| `button.confirm_d` | 확인(D) | OK(D) | OK(D) | 공통 (단축키 자리) |
+| `button.add` | 추가 | Add | 追加 | 공통 |
+| `button.delete` | 삭제 | Delete | 削除 | 공통 |
+| `button.modify` | 수정 | Modify | 修正 | 공통 |
+| `button.browse` | 열기... | Open... | 開く... | 파일 선택 |
+
+## 20. 빈 상태·안내 (`empty.*`)
+
+m700-3 sub-cycle 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `empty.no_results` | 검색 결과 없음 | No results | 結果なし | 검색·찾기 |
+| `empty.no_selection` | 선택된 항목이 없습니다. | No items selected. | 選択された項目がありません。 | 자리 |
+| `empty.no_recent_fonts` | 최근에 사용한 글꼴이 없습니다. | No recent fonts. | 最近使用したフォントがありません。 | 글꼴 자리 |
+
+## 21. 시간 표기 (`time.*`)
+
+m700-3 sub-cycle 자리. *현 자료에 시간 표기 자리 자체 박혀 있지 않음* — 향후 도입 시 박을 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `time.just_now` | 방금 전 | Just now | たった今 | 상대 시간 |
+| `time.minutes_ago` | {n}분 전 | {n} minutes ago | {n}分前 | 상대 시간 |
+| `time.hours_ago` | {n}시간 전 | {n} hours ago | {n}時間前 | 상대 시간 |
+| `time.days_ago` | {n}일 전 | {n} days ago | {n}日前 | 상대 시간 |
+
+## 22. 클라이언트 에러 (`error.client.*`)
+
+m700-3 sub-cycle 자리. 클라이언트 측 에러 토스트.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `error.client.init_failed` | 초기화 오류: {error} | Initialization error: {error} | 初期化エラー: {error} | 시작 자리 |
+| `error.client.open_file_failed` | 파일 열기에 실패했습니다:\n{message} | Failed to open file:\n{message} | ファイルを開けませんでした:\n{message} | 파일 자리 |
+| `error.client.save_file_failed` | 파일 저장에 실패했습니다:\n{message} | Failed to save file:\n{message} | ファイル保存に失敗しました:\n{message} | 파일 자리 |
+| `error.client.save_failed_generic` | 저장에 실패했습니다:\n{message} | Save failed:\n{message} | 保存に失敗しました:\n{message} | 일반 |
+| `error.client.popup_blocked` | 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요. | Popup was blocked. Allow popups and try again. | ポップアップがブロックされました。ポップアップを許可してから再試行してください。 | 팝업 자리 |
+| `error.client.style_name_required` | 스타일 이름을 입력하세요. | Enter a style name. | スタイル名を入力してください。 | 검증 |
+| `error.client.basic_style_undeletable` | 바탕글 스타일은 삭제할 수 없습니다. | The base style cannot be deleted. | 標準スタイルは削除できません。 | 검증 |
+| `error.client.representative_name_required` | 대표 글꼴 이름을 입력하세요. | Enter a representative font name. | 代表フォント名を入力してください。 | 검증 |
+| `error.client.representative_duplicate` | 같은 이름의 대표 글꼴이 이미 등록되어 있습니다. | A representative font with the same name already exists. | 同名の代表フォントが既に登録されています。 | 검증 |
+
+## 23. 서버 에러 (`error.server.*`)
+
+m700-3 sub-cycle 자리. rhwp-server (Rust) 에서 박는 stable code 매핑. *Phase 5 자리*에 박을 자리 자체.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `error.server.network` | 네트워크 오류 | Network error | ネットワークエラー | 일반 |
+| `error.server.timeout` | 응답이 비어 있어요 | Empty response | 応答が空です | 일반 |
+| `error.server.internal` | 서버 오류가 발생했습니다. | A server error occurred. | サーバーエラーが発生しました。 | 일반 |
+| `error.server.not_found` | 자료를 찾을 수 없습니다. | Resource not found. | リソースが見つかりません。 | 일반 |
+| `error.server.forbidden` | 권한이 없습니다. | Forbidden. | 権限がありません。 | 일반 |
+| `error.server.payload_too_large` | 파일이 너무 큽니다 (최대 {max} MB) | File too large (max {max} MB) | ファイルが大きすぎます (最大 {max} MB) | 자리 — 사용자 결정: ko 자리에는 서버 한국어 그대로, en·ja 자리에는 영어 fallback |
+| `error.server.bad_request` | 잘못된 요청 | Bad request | 不正なリクエスト | 일반 |
+
+## 24. 확인 다이얼로그 (`confirm.*`)
+
+m700-3 sub-cycle 자리. `confirm()` 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `confirm.delete_generic` | {name}을(를) 지울까요? | Delete {name}? | {name} を削除しますか? | 일반 삭제 |
+| `confirm.delete_history` | 저장된 문서 이력을 모두 지울까요? | Clear all saved history? | 保存された文書履歴をすべて削除しますか? | history |
+| `confirm.delete_bookmark` | 선택한 책갈피 {name}를 지울까요? | Delete selected bookmark {name}? | 選択したしおり {name} を削除しますか? | bookmark |
+| `confirm.delete_representative_font` | 선택한 대표 글꼴 {name}을(를) 지울까요? | Delete selected representative font {name}? | 選択した代表フォント {name} を削除しますか? | font |
+
+## 27. 각주·미주 (`footnote.*`)
+
+m700-3 sub-cycle 자리.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `footnote.insert` | 각주 | Footnote | 脚注 | 메뉴 자리 (§4 흡수) |
+| `footnote.endnote_insert` | 미주 | Endnote | 文末脚注 | 메뉴 자리 |
+| `footnote.dialog_title` | 각주·미주 속성 | Footnote/Endnote | 脚注/文末脚注 | dialog 타이틀 (향후 자리) |
+| `footnote.number_format` | 번호 종류 | Number format | 番号書式 | 라벨 |
+| `footnote.position` | 위치 | Position | 位置 | 라벨 |
+| `footnote.bottom_of_page` | 쪽 아래 | Bottom of page | ページ下部 | 옵션 |
+| `footnote.end_of_doc` | 문서 끝 | End of document | 文書末 | 옵션 |
+| `footnote.end_of_section` | 구역 끝 | End of section | 区分末 | 옵션 |
+
+## 31. 수식·계산 (`equation.*`)
+
+m700-3 sub-cycle 자리. equation-editor-dialog + formula-dialog.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `equation.dialog_title` | 수식 편집 | Equation editor | 数式エディター | dialog 타이틀 |
+| `equation.script` | 수식 입력 | Script | 数式入力 | 라벨 |
+| `equation.preview` | 미리 보기 | Preview | プレビュー | 라벨 |
+| `equation.font_size` | 글자 크기 | Font size | フォントサイズ | 라벨 |
+| `equation.font_color` | 글자 색 | Font color | 文字色 | 라벨 |
+| `formula.block_sum` | 블록 합계 | Block sum | ブロック合計 | 표 계산 |
+| `formula.block_avg` | 블록 평균 | Block average | ブロック平均 | 표 계산 |
+| `formula.block_product` | 블록 곱 | Block product | ブロック積 | 표 계산 |
+| `formula.block_custom` | 블록 계산식 | Block formula | ブロック計算式 | 표 계산 |
+| `formula.add_decimal` | 자릿점 넣기 | Add decimal separator | 桁区切り追加 | 표 계산 |
+| `formula.remove_decimal` | 자릿점 빼기 | Remove decimal separator | 桁区切り削除 | 표 계산 |
+| `formula.thousand_separator` | 1,000 단위 구분 쉼표 | Thousand separator | 1,000区切り | 표 계산 |
+| `formula.apply_each_cell` | 각 셀마다 적용 | Apply to each cell | 各セルに適用 | 옵션 |
+| `formula.apply_as_one_cell` | 하나의 셀처럼 적용 | Apply as one cell | 1つのセルとして適用 | 옵션 |
+
+---
+
+## 카테고리 자리 종결
+
+전체 33 카테고리 자료 자체에 한·영·일 박은 자리. *m700-1·m700-2·m700-3* 자리 누적.
+
+| cycle | 카테고리 자리 | 자리 수 |
+|---|---|---|
+| m700-0 | §1·2·3·8·10 | 33 |
+| m700-1 | §32·11·12·13·15·26 | 468 |
+| m700-2 | §4·5·6·7·9·25·28·29·30·14·33 | 168 |
+| m700-3 | §17·18·19·20·21·22·23·24·27·31 | 75 |
+| **합계** | | **744** |
 
 m700-1 cycle 진입 시 박을 자리 (자리 분포 상위 + 자리 큰 덩어리 우선):
 
