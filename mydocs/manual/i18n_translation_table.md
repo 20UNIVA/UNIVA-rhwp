@@ -191,9 +191,121 @@ m700-1.1 sub-cycle 자리에서 박은 자리. compare-dialog·compare-result-wi
 | `history.select_to_delete` | 삭제할 항목을 목록에서 먼저 선택하세요. | Select an item to delete first. | まず削除する項目を選択してください。 | 검증 |
 | `history.read_failed` | 스냅샷 데이터를 읽을 수 없습니다. | Cannot read snapshot data. | スナップショットデータを読み込めません。 | 에러 |
 
+## 11. 글자 모양 대화상자 — `char_shape.*`
+
+m700-1.2 sub-cycle 자리. char-shape-dialog.ts 의 *기본·확장·테두리/배경* 탭 자리 자체.
+
+### 기본 탭
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `char_shape.dialog_title` | 글자 모양 | Character | 文字書式 | dialog 타이틀 |
+| `char_shape.tab_basic` | 기본 | Basic | 基本 | 탭 |
+| `char_shape.tab_extension` | 확장 | Extension | 拡張 | 탭 |
+| `char_shape.tab_border` | 테두리/배경 | Border/Fill | 罫線/塗り | 탭 |
+| `char_shape.language` | 언어(L): | Language(L): | 言語(L): | 라벨 |
+| `char_shape.language_settings` | 언어별 설정 | Language-specific | 言語別設定 | 그룹 |
+| `char_shape.font` | 글꼴(T): | Font(T): | フォント(T): | 라벨 |
+| `char_shape.base_size` | 기준 크기(Z): | Base size(Z): | 基準サイズ(Z): | 라벨 |
+| `char_shape.relative_size` | 상대 크기(B): | Relative size(B): | 相対サイズ(B): | 라벨 |
+| `char_shape.width` | 장평(W): | Width(W): | 文字幅(W): | 라벨 |
+| `char_shape.spacing` | 자간(P): | Spacing(P): | 字間(P): | 라벨 |
+| `char_shape.position` | 글자 위치(E): | Position(E): | 文字位置(E): | 라벨 |
+| `char_shape.preview_sample` | 한글Eng123漢字あいう※○ | Korean한글English123漢字あいう※○ | 한글Eng123漢字あいう※○ | 미리 보기 샘플 |
+| `char_shape.text_color` | 글자 색(C): | Text color(C): | 文字色(C): | 라벨 |
+| `char_shape.shade_color` | 음영 색(G): | Shade(G): | 文字の網かけ(G): | 라벨 |
+
+### 언어 옵션
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `char_shape.lang.representative` | 대표 | Representative | 代表 | 라벨 |
+| `char_shape.lang.korean` | 한글 | Korean | 韓国語 | 옵션 |
+| `char_shape.lang.english` | 영문 | English | 英語 | 옵션 |
+| `char_shape.lang.hanja` | 한자 | Hanja | 漢字 | 옵션 |
+| `char_shape.lang.japanese` | 일어 | Japanese | 日本語 | 옵션 |
+| `char_shape.lang.foreign` | 외국어 | Other | その他外国語 | 옵션 |
+| `char_shape.lang.symbol` | 기호 | Symbol | 記号 | 옵션 |
+| `char_shape.lang.user` | 사용자 | User-defined | ユーザー | 옵션 |
+| `char_shape.font_source.local` | 로컬 글꼴 | Local fonts | ローカルフォント | 그룹 |
+| `char_shape.font_source.web` | 웹 글꼴 | Web fonts | Web フォント | 그룹 |
+
+### 속성
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `char_shape.attr.bold` | 굵게 | Bold | 太字 | 토글 |
+| `char_shape.attr.italic` | 기울임 | Italic | 斜体 | 토글 |
+| `char_shape.attr.underline` | 밑줄 | Underline | 下線 | 토글 |
+| `char_shape.attr.strikethrough` | 취소선 | Strikethrough | 取り消し線 | 토글 |
+| `char_shape.attr.outline` | 외곽선 | Outline | 縁取り | 토글 |
+| `char_shape.attr.shadow` | 그림자 | Shadow | 影 | 토글 |
+| `char_shape.attr.emboss` | 양각 | Emboss | 浮き出し | 토글 |
+| `char_shape.attr.engrave` | 음각 | Engrave | 浮き彫り | 토글 |
+| `char_shape.attr.superscript` | 위 첨자 | Superscript | 上付き | 토글 |
+| `char_shape.attr.subscript` | 아래 첨자 | Subscript | 下付き | 토글 |
+| `char_shape.attr.kerning` | 커닝(K) | Kerning(K) | カーニング(K) | 토글 |
+| `char_shape.attr.fit_space` | 글꼴에 어울리는 빈칸(F) | Font-aware spaces(F) | フォントに合わせた空白(F) | 토글 |
+| `char_shape.attr.emphasis_dot` | 강조점(E): | Emphasis mark(E): | 強調点(E): | 라벨 |
+
+### 외곽선·그림자·밑줄 옵션
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `char_shape.outline.kind` | 종류(Y): | Type(Y): | 種類(Y): | 라벨 |
+| `char_shape.underline.location` | 위치(L): | Location(L): | 位置(L): | 라벨 |
+| `char_shape.underline.location_above` | 위 | Above | 上 | 옵션 |
+| `char_shape.underline.location_below` | 아래 | Below | 下 | 옵션 |
+| `char_shape.underline.shape` | 모양(S): | Shape(S): | 形状(S): | 라벨 |
+| `char_shape.underline.color` | 색(C): | Color(C): | 色(C): | 라벨 |
+
+### 테두리/배경 탭
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `char_shape.border.group` | 테두리 | Border | 罫線 | 그룹 |
+| `char_shape.border.none` | 테두리 없음 | None | 罫線なし | 옵션 |
+| `char_shape.border.kind` | 종류(Y): | Type(Y): | 種類(Y): | 라벨 |
+| `char_shape.border.thickness` | 굵기(I): | Thickness(I): | 太さ(I): | 라벨 |
+| `char_shape.border.color` | 색(B): | Color(B): | 色(B): | 라벨 |
+| `char_shape.bg.group` | 배경 | Background | 背景 | 그룹 |
+| `char_shape.bg.shape` | 모양(M): | Pattern shape(M): | 形状(M): | 라벨 |
+| `char_shape.bg.face_color` | 면 색(Q): | Fill color(Q): | 塗りつぶしの色(Q): | 라벨 |
+| `char_shape.bg.pattern_shape` | 무늬 모양(L): | Pattern(L): | 模様(L): | 라벨 |
+| `char_shape.bg.pattern_color` | 무늬 색(P): | Pattern color(P): | 模様の色(P): | 라벨 |
+| `char_shape.bg.color_none` | 색 없음 | No color | 色なし | 라디오 |
+| `char_shape.bg.color_set` | 색 지정 | Set color | 色指定 | 라디오 |
+
+### 선 종류 옵션 (공통)
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `char_shape.line.solid` | 실선 | Solid | 実線 | 선 종류 |
+| `char_shape.line.dash` | 파선 | Dash | 破線 | 선 종류 |
+| `char_shape.line.dot` | 점선 | Dot | 点線 | 선 종류 |
+| `char_shape.line.dash_dot` | 일점쇄선 | Dash-dot | 一点鎖線 | 선 종류 |
+| `char_shape.line.dash_dot_dot` | 이점쇄선 | Dash-dot-dot | 二点鎖線 | 선 종류 |
+| `char_shape.line.double` | 이중선 | Double | 二重線 | 선 종류 |
+| `char_shape.line.thick` | 굵은 선 | Thick | 太い線 | 선 종류 |
+| `char_shape.line.continuous` | 연속(T) | Continuous(T) | 連続(T) | 옵션 |
+| `char_shape.line.discontinuous` | 비연속(U) | Discontinuous(U) | 不連続(U) | 옵션 |
+
+### 미리보기·기타
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `char_shape.preview.box` | 상자형 | Box | ボックス型 | 미리보기 자리 종류 |
+| `char_shape.preview.grid` | 격자형 | Grid | グリッド型 | 미리보기 자리 종류 |
+| `char_shape.preview.custom` | 사용자 정의 | Custom | カスタム | 미리보기 자리 종류 |
+| `char_shape.misc.none` | 없음 | None | なし | 일반 옵션 |
+| `char_shape.misc.misc` | 기타 | Other | その他 | 일반 옵션 |
+| `char_shape.misc.basic` | 기본 | Default | 既定 | 일반 옵션 |
+| `char_shape.misc.preview_letter` | 가 | Aa | あ | 미리보기 글자 (한국어 *가*, 영어 *Aa*, 일본어 *あ*) |
+| `char_shape.misc.attribute` | 속성 | Attributes | 属性 | 그룹 |
+
 ## 11~33. 나머지 후속 카테고리
 
-*m700-1.2 ~ m700-1.6 sub-cycle 자리에서 박는다.*
+*m700-1.3 ~ m700-1.6 sub-cycle 자리에서 박는다.*
 
 m700-1 cycle 진입 시 박을 자리 (자리 분포 상위 + 자리 큰 덩어리 우선):
 
