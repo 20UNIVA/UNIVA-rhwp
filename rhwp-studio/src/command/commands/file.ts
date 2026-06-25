@@ -3,6 +3,7 @@ import { PageSetupDialog } from '@/ui/page-setup-dialog';
 import { AboutDialog } from '@/ui/about-dialog';
 import { showSaveAs } from '@/ui/save-as-dialog';
 import { showUnsavedChangesDialog } from '@/ui/unsaved-changes-dialog';
+import { t } from '@/i18n/t';
 import {
   pickOpenFileHandle,
   readFileFromHandle,
@@ -98,7 +99,7 @@ async function uploadCurrentDocumentToVfinder(
 ): Promise<SaveCurrentDocumentResult> {
   const sourceFormat = services.wasm.getSourceFormat();
   if (sourceFormat === 'hwpx') {
-    alert('HWPX 형식은 현재 베타 단계라 직접 저장이 비활성화되어 있습니다.');
+    alert(t('file.save.hwpx_disabled'));
     return 'unsupported';
   }
 
@@ -145,7 +146,7 @@ async function uploadCurrentDocumentToVfinder(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[file:save] vfinder 저장 실패:', msg);
-    alert(`저장에 실패했습니다:\n${msg}`);
+    alert(t('error.client.save_failed_generic', { message: msg }));
     return 'failed';
   }
 }
@@ -218,7 +219,7 @@ export async function saveCurrentDocument(services: CommandServices): Promise<Sa
     const sourceFormat = services.wasm.getSourceFormat();
     const isHwpx = sourceFormat === 'hwpx';
     if (isHwpx) {
-      alert('HWPX 형식은 현재 베타 단계라 직접 저장이 비활성화되어 있습니다.');
+      alert(t('file.save.hwpx_disabled'));
       return 'unsupported';
     }
 
@@ -268,7 +269,7 @@ export async function saveCurrentDocument(services: CommandServices): Promise<Sa
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[file:save] 저장 실패:', msg);
-    alert(`파일 저장에 실패했습니다:\n${msg}`);
+    alert(t('error.client.save_file_failed', { message: msg }));
     return 'failed';
   }
 }
@@ -329,7 +330,7 @@ function appendSvgPage(doc: Document, container: HTMLElement, svg: string): void
   const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
   const parseError = parsed.querySelector('parsererror');
   if (parseError) {
-    throw new Error(`인쇄용 SVG 파싱 실패: ${parseError.textContent || 'parsererror'}`);
+    throw new Error(t('file.print.svg_parse_failed', { detail: parseError.textContent || 'parsererror' }));
   }
 
   page.appendChild(doc.importNode(parsed.documentElement, true));
@@ -346,7 +347,7 @@ function setupPrintDocument(
 ): void {
   const doc = printWin.document;
   doc.documentElement.lang = 'ko';
-  doc.title = `${fileName} — 인쇄`;
+  doc.title = t('file.print.title', { fileName });
 
   doc.head.replaceChildren();
   const meta = doc.createElement('meta');
@@ -356,10 +357,10 @@ function setupPrintDocument(
 
   const printBar = doc.createElement('div');
   printBar.className = 'print-bar';
-  const printButton = createPrintButton(doc, 'print-btn', '인쇄');
-  const closeButton = createPrintButton(doc, 'close-btn', '닫기', '#475569');
+  const printButton = createPrintButton(doc, 'print-btn', t('file.print.btn_print'));
+  const closeButton = createPrintButton(doc, 'close-btn', t('file.print.btn_close'), '#475569');
   const title = doc.createElement('span');
-  title.textContent = `${fileName} — ${pageCount}페이지`;
+  title.textContent = t('file.print.page_summary', { fileName, pageCount });
   printBar.append(printButton, closeButton, title);
 
   doc.body.replaceChildren(printBar);
@@ -378,7 +379,7 @@ function setupPrintDocument(
 export const fileCommands: CommandDef[] = [
   {
     id: 'file:new-doc',
-    label: '새로 만들기',
+    label: t('cmd.file.new_doc'),
     icon: 'icon-new-doc',
     shortcutLabel: 'Alt+N',
     canExecute: () => true,
@@ -388,7 +389,7 @@ export const fileCommands: CommandDef[] = [
   },
   {
     id: 'file:open',
-    label: '열기',
+    label: t('cmd.file.open'),
     async execute(services) {
       // SSR + iframe 환경: vfinder picker 흐름이 우선. cross-origin sub frame 자리에서
       // 브라우저가 showOpenFilePicker 자체를 차단하므로 로컬 폴백이 무의미.
@@ -428,13 +429,13 @@ export const fileCommands: CommandDef[] = [
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[file:open] 열기 실패:', msg);
-        alert(`파일 열기에 실패했습니다:\n${msg}`);
+        alert(t('error.client.open_file_failed', { message: msg }));
       }
     },
   },
   {
     id: 'file:save',
-    label: '저장',
+    label: t('cmd.file.save'),
     icon: 'icon-save',
     shortcutLabel: 'Ctrl+S',
     canExecute: (ctx) => ctx.hasDocument,
@@ -445,7 +446,7 @@ export const fileCommands: CommandDef[] = [
   {
     // [Task #833] 다른 이름으로 저장 — currentFileHandle 무시 + 항상 picker.
     id: 'file:save-as',
-    label: '다른 이름으로 저장',
+    label: t('cmd.file.save_as'),
     shortcutLabel: 'Ctrl+Shift+S',
     canExecute: (ctx) => ctx.hasDocument,
     async execute(services) {
@@ -533,13 +534,13 @@ export const fileCommands: CommandDef[] = [
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[file:save-as] 저장 실패:', msg);
-        alert(`파일 저장에 실패했습니다:\n${msg}`);
+        alert(t('error.client.save_file_failed', { message: msg }));
       }
     },
   },
   {
     id: 'file:page-setup',
-    label: '편집 용지',
+    label: t('cmd.file.page_setup'),
     icon: 'icon-page-setup',
     shortcutLabel: 'F7',
     canExecute: (ctx) => ctx.hasDocument,
@@ -550,7 +551,7 @@ export const fileCommands: CommandDef[] = [
   },
   {
     id: 'file:print',
-    label: '인쇄',
+    label: t('cmd.file.print'),
     icon: 'icon-print',
     shortcutLabel: 'Ctrl+P',
     canExecute: (ctx) => ctx.hasDocument,
@@ -567,7 +568,7 @@ export const fileCommands: CommandDef[] = [
         // SVG 페이지 생성
         const svgPages: string[] = [];
         for (let i = 0; i < pageCount; i++) {
-          if (statusEl) statusEl.textContent = `인쇄 준비 중... (${i + 1}/${pageCount})`;
+          if (statusEl) statusEl.textContent = t('file.print.preparing', { current: i + 1, total: pageCount });
           const svg = wasm.renderPageSvg(i);
           svgPages.push(svg);
           // UI 갱신을 위한 양보
@@ -582,7 +583,7 @@ export const fileCommands: CommandDef[] = [
         // 인쇄 전용 창 생성
         const printWin = window.open('', '_blank');
         if (!printWin) {
-          alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.');
+          alert(t('error.client.popup_blocked'));
           return;
         }
 
@@ -592,13 +593,13 @@ export const fileCommands: CommandDef[] = [
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[file:print]', msg);
-        if (statusEl) statusEl.textContent = `인쇄 실패: ${msg}`;
+        if (statusEl) statusEl.textContent = t('file.print.failed', { message: msg });
       }
     },
   },
   {
     id: 'file:about',
-    label: '제품 정보',
+    label: t('cmd.file.about'),
     icon: 'icon-help',
     execute() {
       new AboutDialog().show();

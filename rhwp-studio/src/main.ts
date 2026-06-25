@@ -1,4 +1,5 @@
-import { t } from '@/i18n/t';
+import { t, onLangChange, type MessageKey } from '@/i18n/t';
+import { applyInitialLangFromUrl, attachLangPostMessageListener } from '@/i18n/lang-boundary';
 import { WasmBridge } from '@/core/wasm-bridge';
 import type { DocumentInfo } from '@/core/types';
 import { EventBus } from '@/core/event-bus';
@@ -52,6 +53,36 @@ import {
     /* postMessage 실패해도 앱 진행에 영향 없음 — silent */
   }
 })();
+
+/**
+ * index.html 박힌 *정적 한국어*를 현재 lang 자료로 교체한다.
+ * data-i18n="키" → textContent, data-i18n-aria="키" → aria-label.
+ * 진입 시점과 onLangChange 시점에 호출.
+ */
+function applyStaticTexts(): void {
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
+    const key = el.dataset.i18n as MessageKey | undefined;
+    if (key) el.textContent = t(key);
+  });
+  document.querySelectorAll<HTMLElement>('[data-i18n-aria]').forEach((el) => {
+    const key = el.dataset.i18nAria as MessageKey | undefined;
+    if (key) el.setAttribute('aria-label', t(key));
+  });
+}
+
+// 경계 결선: URL ?sysLang= 자료 + 부모 postMessage 자료 두 자리 모두 수신.
+{
+  const parentOrigin = new URLSearchParams(location.search).get('parentOrigin') || '*';
+  applyInitialLangFromUrl();
+  attachLangPostMessageListener(parentOrigin);
+  // DOM 준비된 시점에 한 번 + lang 바뀌면 또 한 번.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyStaticTexts);
+  } else {
+    applyStaticTexts();
+  }
+  onLangChange(applyStaticTexts);
+}
 
 const wasm = new WasmBridge();
 const eventBus = new EventBus();

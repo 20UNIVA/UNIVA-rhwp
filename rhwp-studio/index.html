@@ -15,7 +15,7 @@
     <div id="menu-bar">
       <!-- ── 파일 ── -->
       <div class="menu-item" data-menu="file">
-        <span class="menu-title">파일</span>
+        <span class="menu-title" data-i18n="menu.file.label">파일</span>
         <div class="menu-dropdown">
           <div class="md-item disabled" data-cmd="file:new-doc"><span class="md-icon icon-new-doc"></span><span class="md-label">새로 만들기</span></div>
           <div class="md-item" data-cmd="file:open"><span class="md-icon"></span><span class="md-label">열기</span></div>
@@ -30,7 +30,7 @@
       </div>
       <!-- ── 편집 ── -->
       <div class="menu-item" data-menu="edit">
-        <span class="menu-title">편집</span>
+        <span class="menu-title" data-i18n="menu.edit.label">편집</span>
         <div class="menu-dropdown">
           <div class="md-item" data-cmd="edit:undo"><span class="md-icon icon-undo"></span><span class="md-label">되돌리기</span><span class="md-shortcut">Ctrl+Z</span></div>
           <div class="md-item" data-cmd="edit:redo"><span class="md-icon icon-redo"></span><span class="md-label">다시 실행</span><span class="md-shortcut">Ctrl+Shift+Z</span></div>
@@ -53,7 +53,7 @@
       </div>
       <!-- ── 보기 ── -->
       <div class="menu-item" data-menu="view">
-        <span class="menu-title">보기</span>
+        <span class="menu-title" data-i18n="menu.view.label">보기</span>
         <div class="menu-dropdown">
           <div class="md-item" data-cmd="view:zoom-in"><span class="md-icon icon-zoom-menu-in"></span><span class="md-label">확대</span><span class="md-shortcut">Shift+Num +</span></div>
           <div class="md-item" data-cmd="view:zoom-out"><span class="md-icon icon-zoom-menu-out"></span><span class="md-label">축소</span><span class="md-shortcut">Shift+Num -</span></div>
@@ -91,7 +91,7 @@
       </div>
       <!-- ── 입력 ── -->
       <div class="menu-item" data-menu="insert">
-        <span class="menu-title">입력</span>
+        <span class="menu-title" data-i18n="menu.insert.label">입력</span>
         <div class="menu-dropdown">
           <div class="md-item" data-cmd="insert:shape"><span class="md-icon icon-shape"></span><span class="md-label">도형</span></div>
           <div class="md-sep"></div>
@@ -143,7 +143,7 @@
       </div>
       <!-- ── 서식 ── -->
       <div class="menu-item" data-menu="format">
-        <span class="menu-title">서식</span>
+        <span class="menu-title" data-i18n="menu.format.label">서식</span>
         <div class="menu-dropdown">
           <div class="md-item" data-cmd="format:bold"><span class="md-icon"></span><span class="md-label">진하게</span><span class="md-shortcut">Ctrl+B</span></div>
           <div class="md-item" data-cmd="format:italic"><span class="md-icon"></span><span class="md-label">기울임</span><span class="md-shortcut">Ctrl+I</span></div>
@@ -177,7 +177,7 @@
       </div>
       <!-- ── 쪽 ── -->
       <div class="menu-item" data-menu="page">
-        <span class="menu-title">쪽</span>
+        <span class="menu-title" data-i18n="menu.page.label">쪽</span>
         <div class="menu-dropdown">
           <div class="md-item disabled" data-cmd="page:setup"><span class="md-icon icon-page-setup"></span><span class="md-label">편집 용지</span><span class="md-shortcut">F7</span></div>
           <div class="md-sep"></div>
@@ -335,7 +335,7 @@
       </div>
       <!-- ── 표 ── -->
       <div class="menu-item" data-menu="table">
-        <span class="menu-title">표</span>
+        <span class="menu-title" data-i18n="menu.table.label">표</span>
         <div class="menu-dropdown">
           <div class="md-item disabled" data-cmd="table:create"><span class="md-icon icon-table"></span><span class="md-label">표 만들기</span></div>
           <div class="md-item disabled" data-cmd="table:cell-props"><span class="md-icon"></span><span class="md-label">표/셀 속성</span></div>
@@ -373,7 +373,7 @@
       </div>
       <!-- ── 도구 ── -->
       <div class="menu-item" data-menu="tool">
-        <span class="menu-title">도구</span>
+        <span class="menu-title" data-i18n="menu.tool.label">도구</span>
         <div class="menu-dropdown">
           <div class="md-item" data-cmd="tool:options"><span class="md-icon"></span><span class="md-label">환경 설정</span></div>
         </div>
@@ -573,11 +573,11 @@
 
     <!-- 하단 상태 바 -->
     <div id="status-bar">
-      <span id="sb-page" class="stb-item">1 / 1 쪽</span>
+      <span id="sb-page" class="stb-item" data-i18n="statusbar.page_default">1 / 1 쪽</span>
       <span class="stb-divider"></span>
-      <span id="sb-section" class="stb-item">구역: 1 / 1</span>
+      <span id="sb-section" class="stb-item" data-i18n="statusbar.section_default">구역: 1 / 1</span>
       <span class="stb-divider"></span>
-      <span id="sb-mode" class="stb-item">삽입</span>
+      <span id="sb-mode" class="stb-item" data-i18n="statusbar.insert_mode">삽입</span>
       <span id="sb-field" class="stb-item" style="display:none"></span>
       <span id="sb-message" class="stb-message"></span>
       <span class="stb-right">

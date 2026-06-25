@@ -3,6 +3,7 @@ import { PageSetupDialog } from '@/ui/page-setup-dialog';
 import { SectionSettingsDialog } from '@/ui/section-settings-dialog';
 import { ColumnSettingsDialog } from '@/ui/column-settings-dialog';
 import { NewNumberDialog } from '@/ui/new-number-dialog';
+import { t } from '@/i18n/t';
 
 function stub(id: string, label: string, icon?: string, shortcut?: string): CommandDef {
   return {
@@ -168,7 +169,7 @@ function applyHfTemplate(
 export const pageCommands: CommandDef[] = [
   {
     id: 'page:setup',
-    label: '편집 용지',
+    label: t('cmd.page.setup'),
     icon: 'icon-page-setup',
     shortcutLabel: 'F7',
     canExecute: (ctx) => ctx.hasDocument,
@@ -183,7 +184,7 @@ export const pageCommands: CommandDef[] = [
   // ─── 머리말 ──────────────────────────────────
   {
     id: 'page:header-create',
-    label: '머리말',
+    label: t('cmd.page.header_create'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       enterHeaderFooterEditing(services, true, 0); // Both
@@ -192,7 +193,7 @@ export const pageCommands: CommandDef[] = [
   // ─── 꼬리말 ──────────────────────────────────
   {
     id: 'page:footer-create',
-    label: '꼬리말',
+    label: t('cmd.page.footer_create'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       enterHeaderFooterEditing(services, false, 0); // Both
@@ -201,7 +202,7 @@ export const pageCommands: CommandDef[] = [
   // ─── 머리말/꼬리말 닫기 ────────────────────────
   {
     id: 'page:headerfooter-close',
-    label: '머리말/꼬리말 닫기',
+    label: t('cmd.page.hf_close'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -229,7 +230,7 @@ export const pageCommands: CommandDef[] = [
   // ─── 머리말/꼬리말 지우기 ──────────────────────
   {
     id: 'page:headerfooter-delete',
-    label: '머리말/꼬리말 지우기',
+    label: t('cmd.page.hf_delete'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -255,7 +256,7 @@ export const pageCommands: CommandDef[] = [
   // ─── 머리말/꼬리말 이전/다음 이동 ─────────────────
   {
     id: 'page:headerfooter-prev',
-    label: '이전 머리말/꼬리말',
+    label: t('cmd.page.hf_prev'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       navigateHeaderFooter(services, -1);
@@ -263,7 +264,7 @@ export const pageCommands: CommandDef[] = [
   },
   {
     id: 'page:headerfooter-next',
-    label: '다음 머리말/꼬리말',
+    label: t('cmd.page.hf_next'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       navigateHeaderFooter(services, 1);
@@ -271,7 +272,7 @@ export const pageCommands: CommandDef[] = [
   },
   {
     id: 'page:new-page-num',
-    label: '새 번호로 시작',
+    label: t('cmd.page.new_page_num'),
     canExecute: (ctx) => ctx.hasDocument && !ctx.inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -291,7 +292,7 @@ export const pageCommands: CommandDef[] = [
   // ─── 머리말/꼬리말 현재 쪽 감추기 ──────────────
   {
     id: 'page:hide-headerfooter',
-    label: '머리말/꼬리말 현재 쪽 감추기',
+    label: t('cmd.page.hide_headerfooter'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -312,7 +313,7 @@ export const pageCommands: CommandDef[] = [
   },
   {
     id: 'page:hide-current',
-    label: '현재 쪽만 감추기',
+    label: t('cmd.page.hide_current'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -335,26 +336,26 @@ export const pageCommands: CommandDef[] = [
   // ─── 머리말/꼬리말 필드 삽입 ────────────────────
   {
     id: 'page:insert-field-pagenum',
-    label: '쪽 번호 삽입',
+    label: t('cmd.page.insert_field_pagenum'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) { insertHfField(services, 1); },
   },
   {
     id: 'page:insert-field-totalpage',
-    label: '총 쪽수 삽입',
+    label: t('cmd.page.insert_field_totalpage'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) { insertHfField(services, 2); },
   },
   {
     id: 'page:insert-field-filename',
-    label: '파일 이름 삽입',
+    label: t('cmd.page.insert_field_filename'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) { insertHfField(services, 3); },
   },
   // ─── 머리말/꼬리말 마당 (템플릿) ─────────────────────
   {
     id: 'page:apply-hf-template',
-    label: '머리말/꼬리말 마당',
+    label: t('cmd.page.apply_hf_template'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services, params) {
       const isHeader = params?.isHeader === 'true';
@@ -365,7 +366,7 @@ export const pageCommands: CommandDef[] = [
   },
   {
     id: 'page:break',
-    label: '쪽 나누기',
+    label: t('cmd.page.break'),
     shortcutLabel: 'Ctrl+Enter',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -384,7 +385,7 @@ export const pageCommands: CommandDef[] = [
   },
   {
     id: 'page:hide',
-    label: '감추기',
+    label: t('cmd.page.hide'),
     shortcutLabel: 'Ctrl+M,S',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -415,7 +416,7 @@ export const pageCommands: CommandDef[] = [
   },
   {
     id: 'page:column-break',
-    label: '단 나누기',
+    label: t('cmd.page.column_break'),
     shortcutLabel: 'Ctrl+Shift+Enter',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -434,9 +435,9 @@ export const pageCommands: CommandDef[] = [
   },
   // 다단 프리셋 — ColumnDef 컨트롤 수정 (SectionDef와 독립)
   ...[
-    { id: 'page:col-1', label: '단 - 하나', cols: 1 },
-    { id: 'page:col-2', label: '단 - 둘', cols: 2 },
-    { id: 'page:col-3', label: '단 - 셋', cols: 3 },
+    { id: 'page:col-1', label: t('cmd.page.col_1'), cols: 1 },
+    { id: 'page:col-2', label: t('cmd.page.col_2'), cols: 2 },
+    { id: 'page:col-3', label: t('cmd.page.col_3'), cols: 3 },
   ].map((def): CommandDef => ({
     id: def.id,
     label: def.label,
@@ -456,7 +457,7 @@ export const pageCommands: CommandDef[] = [
   })),
   {
     id: 'page:col-left',
-    label: '단 - 왼쪽',
+    label: t('cmd.page.col_left'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -469,7 +470,7 @@ export const pageCommands: CommandDef[] = [
   },
   {
     id: 'page:col-right',
-    label: '단 - 오른쪽',
+    label: t('cmd.page.col_right'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -482,7 +483,7 @@ export const pageCommands: CommandDef[] = [
   },
   {
     id: 'page:col-settings',
-    label: '다단 설정',
+    label: t('cmd.page.col_settings'),
     shortcutLabel: 'Ctrl+Alt+Enter',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -496,7 +497,7 @@ export const pageCommands: CommandDef[] = [
   // ─── 구역 설정 ──────────────────────────────────
   {
     id: 'page:section-settings',
-    label: '구역 설정',
+    label: t('cmd.page.section_settings'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
