@@ -5,6 +5,7 @@ import type { CommandDispatcher } from '@/command/dispatcher';
 import { userSettings } from '@/core/user-settings';
 import type { FontSet } from '@/core/user-settings';
 import { getLocalFonts } from '@/core/local-fonts';
+import { t } from '@/i18n/t';
 
 /** 서식 도구 모음 (style-bar) 컨트롤러 */
 export class Toolbar {
@@ -328,7 +329,7 @@ export class Toolbar {
     const actRow = document.createElement('div');
     actRow.className = 'sb-hl-palette-actions';
     const btnNone = document.createElement('button');
-    btnNone.textContent = '색 없음';
+    btnNone.textContent = t('char_shape.bg.color_none');
     btnNone.addEventListener('mousedown', (e) => {
       e.preventDefault();
       this.highlightColor = '#ffffff';

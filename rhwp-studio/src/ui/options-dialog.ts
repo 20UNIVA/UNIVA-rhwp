@@ -7,13 +7,14 @@ import { ModalDialog } from './dialog';
 import { userSettings } from '@/core/user-settings';
 import { FontSetDialog } from './font-set-dialog';
 import { isLocalFontSupported, detectLocalFonts, getLocalFonts } from '@/core/local-fonts';
+import { t } from '@/i18n/t';
 
 export class OptionsDialog extends ModalDialog {
   private showRecentCheck!: HTMLInputElement;
   private recentCountInput!: HTMLInputElement;
 
   constructor() {
-    super('환경 설정', 480);
+    super(t('prefs.dialog_title'), 480);
   }
 
   protected createBody(): HTMLElement {
@@ -26,7 +27,7 @@ export class OptionsDialog extends ModalDialog {
 
     const fontTab = document.createElement('button');
     fontTab.className = 'dialog-tab active';
-    fontTab.textContent = '글꼴';
+    fontTab.textContent = t('prefs.font');
     fontTab.dataset.tab = 'font';
     tabs.appendChild(fontTab);
 
@@ -63,7 +64,7 @@ export class OptionsDialog extends ModalDialog {
 
     const viewTitle = document.createElement('div');
     viewTitle.className = 'dialog-section-title';
-    viewTitle.textContent = '글꼴 보기';
+    viewTitle.textContent = t('prefs.font_preview');
     viewSection.appendChild(viewTitle);
 
     // 최근 사용 글꼴 보이기
@@ -77,7 +78,7 @@ export class OptionsDialog extends ModalDialog {
 
     const recentLabel = document.createElement('label');
     recentLabel.htmlFor = 'opt-show-recent';
-    recentLabel.textContent = '최근에 사용한 글꼴 보이기';
+    recentLabel.textContent = t('prefs.show_recent_fonts');
 
     this.recentCountInput = document.createElement('input');
     this.recentCountInput.type = 'number';
@@ -88,7 +89,7 @@ export class OptionsDialog extends ModalDialog {
 
     const countLabel = document.createElement('span');
     countLabel.className = 'opt-count-label';
-    countLabel.textContent = '개';
+    countLabel.textContent = t('prefs.count_unit');
 
     recentRow.appendChild(this.showRecentCheck);
     recentRow.appendChild(recentLabel);
@@ -104,17 +105,17 @@ export class OptionsDialog extends ModalDialog {
 
     const fontSetTitle = document.createElement('div');
     fontSetTitle.className = 'dialog-section-title';
-    fontSetTitle.textContent = '대표 글꼴 등록';
+    fontSetTitle.textContent = t('prefs.representative_font_group');
     fontSetSection.appendChild(fontSetTitle);
 
     const fontSetDesc = document.createElement('p');
     fontSetDesc.className = 'opt-desc';
-    fontSetDesc.textContent = '대표 글꼴은 각 언어별 글꼴을 짝지어 한 번에 적용하는 글꼴 세트입니다.';
+    fontSetDesc.textContent = t('prefs.representative_font_desc');
     fontSetSection.appendChild(fontSetDesc);
 
     const fontSetBtn = document.createElement('button');
     fontSetBtn.className = 'dialog-btn opt-fontset-btn';
-    fontSetBtn.textContent = '대표 글꼴 등록하기';
+    fontSetBtn.textContent = t('prefs.register_representative');
     fontSetBtn.addEventListener('click', () => {
       const dlg = new FontSetDialog();
       dlg.show();
@@ -129,7 +130,7 @@ export class OptionsDialog extends ModalDialog {
 
     const localTitle = document.createElement('div');
     localTitle.className = 'dialog-section-title';
-    localTitle.textContent = '로컬 글꼴';
+    localTitle.textContent = t('prefs.local_fonts_group');
     localSection.appendChild(localTitle);
 
     const localDesc = document.createElement('p');
@@ -142,7 +143,7 @@ export class OptionsDialog extends ModalDialog {
 
     const localBtn = document.createElement('button');
     localBtn.className = 'dialog-btn opt-fontset-btn';
-    localBtn.textContent = '로컬 글꼴 감지하기';
+    localBtn.textContent = t('prefs.detect_local_fonts');
 
     const localStatus = document.createElement('span');
     localStatus.className = 'opt-local-status';
@@ -155,16 +156,16 @@ export class OptionsDialog extends ModalDialog {
 
     localBtn.addEventListener('click', async () => {
       if (!isLocalFontSupported()) {
-        localStatus.textContent = '이 브라우저는 로컬 글꼴 감지를 지원하지 않습니다.';
+        localStatus.textContent = t('prefs.browser_unsupported');
         return;
       }
       localBtn.disabled = true;
-      localStatus.textContent = '감지 중...';
+      localStatus.textContent = t('prefs.detecting');
       try {
         const fonts = await detectLocalFonts();
         localStatus.textContent = `${fonts.length}개 로컬 글꼴 감지됨`;
       } catch {
-        localStatus.textContent = '글꼴 감지에 실패했습니다.';
+        localStatus.textContent = t('prefs.detect_failed');
       }
       localBtn.disabled = false;
     });

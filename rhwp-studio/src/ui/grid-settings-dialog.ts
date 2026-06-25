@@ -1,4 +1,5 @@
 import { ModalDialog } from './dialog';
+import { t } from '@/i18n/t';
 
 /**
  * 격자 설정 대화상자 — 표/개체 이동 간격(mm)을 설정한다.
@@ -9,7 +10,7 @@ export class GridSettingsDialog extends ModalDialog {
   private currentMm: number;
 
   constructor(currentMm: number, onConfirm: (mm: number) => void) {
-    super('격자 설정', 300);
+    super(t('page.grid.title'), 300);
     this.currentMm = currentMm;
     this.callback = onConfirm;
   }
@@ -22,7 +23,7 @@ export class GridSettingsDialog extends ModalDialog {
     row.style.cssText = 'display:flex;align-items:center;gap:8px';
 
     const label = document.createElement('label');
-    label.textContent = '이동 간격:';
+    label.textContent = t('page.grid.move_spacing');
 
     this.gridInput = document.createElement('input');
     this.gridInput.type = 'number';

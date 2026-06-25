@@ -1,5 +1,6 @@
 import type { CommandServices } from '@/command/types';
 import type { SearchResult } from '@/core/types';
+import { t } from '@/i18n/t';
 
 export type FindMode = 'find' | 'replace';
 
@@ -95,7 +96,7 @@ export class FindDialog {
     const findRow = document.createElement('div');
     findRow.className = 'find-dialog-row';
     const findLabel = document.createElement('label');
-    findLabel.textContent = '찾을 내용:';
+    findLabel.textContent = t('find.find_target');
     findLabel.className = 'find-dialog-label';
     this.queryInput = document.createElement('input');
     this.queryInput.type = 'text';
@@ -120,7 +121,7 @@ export class FindDialog {
     this.replaceRow = document.createElement('div');
     this.replaceRow.className = 'find-dialog-row';
     const replaceLabel = document.createElement('label');
-    replaceLabel.textContent = '바꿀 내용:';
+    replaceLabel.textContent = t('find.replace_target');
     replaceLabel.className = 'find-dialog-label';
     this.replaceInput = document.createElement('input');
     this.replaceInput.type = 'text';
@@ -164,8 +165,8 @@ export class FindDialog {
     const btnRow = document.createElement('div');
     btnRow.className = 'find-dialog-buttons';
 
-    const prevBtn = this.createButton('이전 찾기', () => this.findPrev());
-    const nextBtn = this.createButton('다음 찾기', () => this.findNext());
+    const prevBtn = this.createButton(t('find.prev'), () => this.findPrev());
+    const nextBtn = this.createButton(t('find.next'), () => this.findNext());
     btnRow.appendChild(prevBtn);
     btnRow.appendChild(nextBtn);
     this.wrap.appendChild(btnRow);
@@ -173,8 +174,8 @@ export class FindDialog {
     // 바꾸기 버튼 행
     this.replaceButtonRow = document.createElement('div');
     this.replaceButtonRow.className = 'find-dialog-buttons';
-    const replaceBtn = this.createButton('바꾸기', () => this.doReplace());
-    const replaceAllBtn = this.createButton('모두 바꾸기', () => this.doReplaceAll());
+    const replaceBtn = this.createButton(t('find.replace_one'), () => this.doReplace());
+    const replaceAllBtn = this.createButton(t('find.replace_all'), () => this.doReplaceAll());
     this.replaceButtonRow.appendChild(replaceBtn);
     this.replaceButtonRow.appendChild(replaceAllBtn);
     this.wrap.appendChild(this.replaceButtonRow);
@@ -193,7 +194,7 @@ export class FindDialog {
 
   private applyMode(): void {
     const isReplace = this.mode === 'replace';
-    this.titleLabel.textContent = isReplace ? '찾아 바꾸기' : '찾기';
+    this.titleLabel.textContent = isReplace ? t('find.find_replace_title') : t('find.dialog_title');
     this.replaceRow.style.display = isReplace ? '' : 'none';
     this.replaceButtonRow.style.display = isReplace ? '' : 'none';
   }
@@ -235,14 +236,14 @@ export class FindDialog {
       this.navigateToHit(result);
       if (result.wrapped) {
         this.statusLabel.style.color = '#0066cc';
-        this.statusLabel.textContent = forward ? '맨 마지막입니다. 처음부터 계속합니다.' : '맨 처음입니다. 끝부터 계속합니다.';
+        this.statusLabel.textContent = forward ? t('find.reached_end') : t('find.reached_start');
       } else {
         this.statusLabel.textContent = '';
       }
     } else {
       this.currentHit = null;
       this.statusLabel.style.color = '#c00';
-      this.statusLabel.textContent = '검색 결과 없음';
+      this.statusLabel.textContent = t('find.no_result');
     }
   }
 
