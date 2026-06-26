@@ -5,6 +5,7 @@ import { MoveTableCommand, MovePictureCommand, MoveShapeCommand } from './comman
 import { getObjectProperties, setObjectProperties } from './input-handler-picture';
 import type { CellBbox } from '@/core/types';
 import type { BorderEdge } from './table-resize-renderer';
+import { t } from '@/i18n/t';
 
 export function startResizeDrag(this: any, 
   edge: BorderEdge,
@@ -298,7 +299,11 @@ export function finishImagePlacement(this: any, e: MouseEvent): void {
   } catch { /* 페이지 정보 없으면 그대로 */ }
 
   // 개체 설명문 생성 (한컴 기본 패턴)
-  const desc = `그림입니다.\r\n원본 그림의 이름: ${imgData.fileName}\r\n원본 그림의 크기: 가로 ${imgData.naturalWidth}pixel, 세로 ${imgData.naturalHeight}pixel`;
+  const desc = t('picture.alt_text.default', {
+    fileName: imgData.fileName,
+    width: imgData.naturalWidth,
+    height: imgData.naturalHeight,
+  });
 
   // WASM 호출
   try {

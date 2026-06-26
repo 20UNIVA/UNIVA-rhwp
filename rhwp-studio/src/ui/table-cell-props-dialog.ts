@@ -161,7 +161,7 @@ export class TableCellPropsDialog extends ModalDialog {
         { id: 'background', label: t('char_shape.bg.group'), builder: () => this.buildBackgroundTab() },
       ] as TabDef[] : []),
       { id: 'table', label: t('menu.table.label'), builder: () => this.buildTableTab() },
-      { id: 'cell', label: '셀', builder: () => this.buildCellTab() },
+      { id: 'cell', label: t('table.tab.cell'), builder: () => this.buildCellTab() },
     ];
 
     // 탭 헤더
@@ -385,16 +385,16 @@ export class TableCellPropsDialog extends ModalDialog {
     this.tableAutoBorderFields = document.createElement('div');
     this.tableAutoBorderFields.className = 'tcp-disabled';
     const abLineRow = this.row();
-    abLineRow.appendChild(this.label('종류(N)'));
+    abLineRow.appendChild(this.label(t('table.cell.label_kind_n')));
     const abLineType = this.selectOptions([
-      ['0', '없음'], ['1', '실선'], ['2', '파선'], ['3', '점선'],
-      ['4', '일점쇄선'], ['5', '이점쇄선'], ['6', '긴 파선'], ['7', '이중 실선'],
+      ['0', t('border.kind.none')], ['1', t('border.kind.solid')], ['2', t('border.kind.dash')], ['3', t('border.kind.dot')],
+      ['4', t('border.kind.dash_dot')], ['5', t('border.kind.dash_dot_dot')], ['6', t('border.kind.long_dash')], ['7', t('border.kind.double_solid')],
     ]);
     abLineType.disabled = true;
     abLineRow.appendChild(abLineType);
     this.tableAutoBorderFields.appendChild(abLineRow);
     const abWidthRow = this.row();
-    abWidthRow.appendChild(this.label('굵기(H)'));
+    abWidthRow.appendChild(this.label(t('table.cell.label_thickness_h')));
     const abWidth = this.selectOptions([
       ['0', '0.1mm'], ['1', '0.12mm'], ['2', '0.15mm'], ['3', '0.2mm'],
       ['4', '0.25mm'], ['5', '0.3mm'], ['6', '0.4mm'],
@@ -403,7 +403,7 @@ export class TableCellPropsDialog extends ModalDialog {
     abWidthRow.appendChild(abWidth);
     this.tableAutoBorderFields.appendChild(abWidthRow);
     const abColorRow = this.row();
-    abColorRow.appendChild(this.label('색(S)'));
+    abColorRow.appendChild(this.label(t('table.cell.label_color_s')));
     const abColor = document.createElement('input');
     abColor.type = 'color';
     abColor.value = '#000000';
@@ -465,7 +465,7 @@ export class TableCellPropsDialog extends ModalDialog {
     sizeSection.appendChild(sizeRow);
     const sizeNote = document.createElement('div');
     sizeNote.className = 'tcp-note';
-    sizeNote.textContent = '※ 표 크기는 읽기 전용입니다 (셀 크기의 합)';
+    sizeNote.textContent = t('table.note.size_readonly');
     sizeSection.appendChild(sizeNote);
     frag.appendChild(sizeSection);
 
@@ -783,14 +783,14 @@ export class TableCellPropsDialog extends ModalDialog {
     this.borderLineTypeGrid = document.createElement('div');
     this.borderLineTypeGrid.className = 'tcp-line-type-grid';
     const lineTypeDefs = [
-      { type: 0, label: '없음' },
+      { type: 0, label: t('border.kind.none') },
       { type: 1, dash: '' },        // 실선
       { type: 2, dash: '6,3' },     // 파선
       { type: 3, dash: '2,2' },     // 점선
       { type: 4, dash: '8,3,2,3' }, // 일점쇄선
       { type: 5, dash: '8,3,2,3,2,3' }, // 이점쇄선
       { type: 6, dash: '12,3' },    // 긴 파선
-      { type: 8, label: '이중' },   // 이중 실선 (HWP Double=8)
+      { type: 8, label: t('border.kind.double') },   // 이중 실선 (HWP Double=8)
     ];
     lineTypeDefs.forEach(def => {
       const item = document.createElement('div');
@@ -799,7 +799,7 @@ export class TableCellPropsDialog extends ModalDialog {
       if (def.type === 0) {
         const span = document.createElement('span');
         span.className = 'tcp-line-type-none';
-        span.textContent = '없음';
+        span.textContent = t('border.kind.none');
         item.appendChild(span);
       } else if (def.type === 8) {
         // 이중 실선 SVG
@@ -840,7 +840,7 @@ export class TableCellPropsDialog extends ModalDialog {
     // ── 굵기 + 색 ──
     const attrSection = this.createSection(t('table.border.line_attr'));
     const widthRow = this.row();
-    widthRow.appendChild(this.label('굵기'));
+    widthRow.appendChild(this.label(t('table.cell.label_thickness')));
     this.borderWidthSelect = document.createElement('select');
     this.borderWidthSelect.className = 'dialog-select';
     const widths = ['0.1mm', '0.12mm', '0.15mm', '0.2mm', '0.25mm', '0.3mm', '0.4mm'];
@@ -910,7 +910,7 @@ export class TableCellPropsDialog extends ModalDialog {
 
     const noteDiv = document.createElement('div');
     noteDiv.className = 'tcp-note';
-    noteDiv.textContent = '※ 표 테두리는 [셀 간격]에 값을 입력해야 나타납니다';
+    noteDiv.textContent = t('table.note.cell_spacing_required');
     spacingSection.appendChild(noteDiv);
     frag.appendChild(spacingSection);
 
@@ -924,16 +924,16 @@ export class TableCellPropsDialog extends ModalDialog {
     this.borderAutoBorderFields = document.createElement('div');
     this.borderAutoBorderFields.className = 'tcp-disabled';
     const abLineRow = this.row();
-    abLineRow.appendChild(this.label('종류'));
+    abLineRow.appendChild(this.label(t('table.cell.label_kind')));
     const abLineType = this.selectOptions([
-      ['0', '없음'], ['1', '실선'], ['2', '파선'], ['3', '점선'],
-      ['4', '일점쇄선'], ['5', '이점쇄선'], ['6', '긴 파선'], ['7', '이중 실선'],
+      ['0', t('border.kind.none')], ['1', t('border.kind.solid')], ['2', t('border.kind.dash')], ['3', t('border.kind.dot')],
+      ['4', t('border.kind.dash_dot')], ['5', t('border.kind.dash_dot_dot')], ['6', t('border.kind.long_dash')], ['7', t('border.kind.double_solid')],
     ]);
     abLineType.disabled = true;
     abLineRow.appendChild(abLineType);
     this.borderAutoBorderFields.appendChild(abLineRow);
     const abWidthRow = this.row();
-    abWidthRow.appendChild(this.label('굵기'));
+    abWidthRow.appendChild(this.label(t('table.cell.label_thickness')));
     const abWidth = this.selectOptions([
       ['0', '0.1mm'], ['1', '0.12mm'], ['2', '0.15mm'], ['3', '0.2mm'],
       ['4', '0.25mm'], ['5', '0.3mm'], ['6', '0.4mm'],
@@ -942,7 +942,7 @@ export class TableCellPropsDialog extends ModalDialog {
     abWidthRow.appendChild(abWidth);
     this.borderAutoBorderFields.appendChild(abWidthRow);
     const abColorRow = this.row();
-    abColorRow.appendChild(this.label('색'));
+    abColorRow.appendChild(this.label(t('table.cell.label_color')));
     const abColor = document.createElement('input');
     abColor.type = 'color'; abColor.value = '#000000';
     abColor.disabled = true;
@@ -1080,7 +1080,7 @@ export class TableCellPropsDialog extends ModalDialog {
     this.bgNoneRadio.checked = true;
     this.bgNoneRadio.addEventListener('change', () => this.updateBgPreview());
     noneRow.appendChild(this.bgNoneRadio);
-    noneRow.appendChild(document.createTextNode(' 채우기 없음'));
+    noneRow.appendChild(document.createTextNode(' ' + t('fill.none_fill')));
     fillSection.appendChild(noneRow);
 
     const colorRow = this.row();
@@ -1089,7 +1089,7 @@ export class TableCellPropsDialog extends ModalDialog {
     this.bgColorRadio.name = 'bgFill';
     this.bgColorRadio.addEventListener('change', () => this.updateBgPreview());
     colorRow.appendChild(this.bgColorRadio);
-    colorRow.appendChild(document.createTextNode(' 색(Q)'));
+    colorRow.appendChild(document.createTextNode(' ' + t('fill.color_q')));
     fillSection.appendChild(colorRow);
 
     // 면색 + 무늬색 + 무늬모양

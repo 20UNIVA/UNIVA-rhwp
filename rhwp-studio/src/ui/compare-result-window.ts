@@ -244,9 +244,9 @@ export class CompareResultWindow {
     const rk = this.parseKvSummary(rightRaw);
     const pick = (kv: Record<string, string>) => {
       const cp = kv.cprev;
-      if (cp && cp !== '(없음)') return cp;
+      if (cp && cp !== t('history.none')) return cp;
       const tp = kv.tprev;
-      if (tp && tp !== '(없음)') return tp;
+      if (tp && tp !== t('history.none')) return tp;
       return '';
     };
     const lc = pick(lk);
@@ -270,10 +270,10 @@ export class CompareResultWindow {
       const cb = Number(mb[2]);
       return ra !== rb ? ra - rb : ca - cb;
     });
-    if (changed.length === 0) return { left: '(셀 텍스트 동일)', right: '(셀 텍스트 동일)' };
-    const cellLabel = (k: string) => k.replace(/^r(\d+)c(\d+)$/i, '$1행$2열');
-    const left = changed.map((k) => `${cellLabel(k)}: ${Lm.get(k) ?? '(없음)'}`).join('\n');
-    const right = changed.map((k) => `${cellLabel(k)}: ${Rm.get(k) ?? '(없음)'}`).join('\n');
+    if (changed.length === 0) return { left: t('compare.diff.cell_text_same'), right: t('compare.diff.cell_text_same') };
+    const cellLabel = (k: string) => k.replace(/^r(\d+)c(\d+)$/i, (_, row, col) => t('compare.diff.cell_label', { row, col }));
+    const left = changed.map((k) => `${cellLabel(k)}: ${Lm.get(k) ?? t('history.none')}`).join('\n');
+    const right = changed.map((k) => `${cellLabel(k)}: ${Rm.get(k) ?? t('history.none')}`).join('\n');
     return { left, right };
   }
 
@@ -284,42 +284,43 @@ export class CompareResultWindow {
   }
 
   private formatInspectorText(raw: string): string {
-    if (!raw) return '(없음)';
+    if (!raw) return t('history.none');
     if (!raw.includes('=')) return raw;
 
     const kv = this.parseKvSummary(raw);
     if (Object.keys(kv).length === 0) return raw;
 
     const lines: string[] = [];
+    const noneText = t('history.none');
     const push = (label: string, value?: string) => {
-      if (!value || value === '(없음)' || value === 'nopix' || value === 'nobox') return;
+      if (!value || value === noneText || value === 'nopix' || value === 'nobox') return;
       lines.push(`${label}: ${value}`);
     };
 
     const cprev = kv.cprev;
-    if (cprev && cprev !== '(없음)') {
+    if (cprev && cprev !== noneText) {
       const cells = this.parseCellPreview(cprev);
       if (cells.length > 0) {
         for (const [cell, text] of cells.slice(0, 5)) {
-          lines.push(`${cell.replace(/^r(\d+)c(\d+)$/i, '$1행$2열')}: ${text}`);
+          lines.push(`${cell.replace(/^r(\d+)c(\d+)$/i, (_, row, col) => t('compare.diff.cell_label', { row, col }))}: ${text}`);
         }
-        if (cells.length > 5) lines.push(`... 외 ${cells.length - 5}개 셀`);
+        if (cells.length > 5) lines.push(t('compare.diff.more_cells_n', { n: cells.length - 5 }));
       } else {
-        push('셀 텍스트', cprev);
+        push(t('compare.diff.cell_text'), cprev);
       }
     }
 
-    push('행', kv.r);
-    push('열', kv.c);
-    push('크기', kv.box?.replace(/^(-?\d+)x(-?\d+)$/, '$1px × $2px'));
-    push('텍스트', kv.text);
-    push('자르기', kv.crop);
-    push('효과', kv.effect);
-    push('밝기/대비', kv.bc);
-    push('회전', kv.rot ? `${kv.rot}도` : undefined);
-    push('대칭', kv.flip);
-    push('배치', kv.wrap);
-    push('기준', kv.rel);
+    push(t('compare.diff.row'), kv.r);
+    push(t('compare.diff.col'), kv.c);
+    push(t('compare.diff.size'), kv.box?.replace(/^(-?\d+)x(-?\d+)$/, '$1px × $2px'));
+    push(t('compare.diff.text'), kv.text);
+    push(t('compare.diff.crop'), kv.crop);
+    push(t('compare.diff.effects'), kv.effect);
+    push(t('compare.diff.brightness_contrast'), kv.bc);
+    push(t('compare.diff.rotate'), kv.rot ? t('compare.diff.degree_suffix', { value: kv.rot }) : undefined);
+    push(t('compare.diff.flip'), kv.flip);
+    push(t('compare.diff.body_layout'), kv.wrap);
+    push(t('compare.diff.basis'), kv.rel);
 
     if (lines.length === 0) return raw;
     return lines.join('\n');
@@ -472,8 +473,8 @@ export class CompareResultWindow {
       const locShort = formatParagraphLocationForSide(item, side);
       const base =
         side === 'left'
-          ? '왼쪽: 스냅샷 직후 위치 정보가 없습니다. (텍스트 미리보기만 참고)'
-          : '오른쪽: 스냅샷 직후 위치 정보가 없습니다. (텍스트 미리보기만 참고)';
+          ? t('compare.snapshot_pos_missing_left')
+          : t('compare.snapshot_pos_missing_right');
       statusEl.textContent = locShort ? `${locShort} · ${base}` : base;
       const ctx = canvas.getContext('2d');
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -494,8 +495,8 @@ export class CompareResultWindow {
           canvas.height = Math.max(1, Math.floor(info.height * scale));
           wasm.renderPageToCanvasFiltered(pageIdx, canvas, scale, 'all');
           const locShort = formatParagraphLocationForSide(item, side);
-          const pageLine = `${ea.pageIndex + 1}쪽`;
-          const contextNote = !fromDiffEngine ? ' · 직전 정렬 짝 문단 기준(마커 없음)' : '';
+          const pageLine = t('compare.page_suffix', { page: ea.pageIndex + 1 });
+          const contextNote = !fromDiffEngine ? t('compare.context_no_marker') : '';
           if (fromDiffEngine) {
             marker.style.display = 'block';
             marker.style.left = `${Math.max(0, Math.floor(ea.x * scale))}px`;
@@ -505,7 +506,7 @@ export class CompareResultWindow {
           } else {
             marker.style.display = 'none';
           }
-          statusEl.textContent = `${locShort ? `${locShort} · ` : ''}${pageLine} 실제 화면${contextNote}`;
+          statusEl.textContent = `${locShort ? `${locShort} · ` : ''}${pageLine} ${t('compare.real_screen_label')}${contextNote}`;
           wrap.scrollTop = Math.max(0, marker.offsetTop - Math.floor(wrap.clientHeight * 0.15));
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

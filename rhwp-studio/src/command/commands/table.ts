@@ -4,6 +4,7 @@ import { TableCreateDialog } from '@/ui/table-create-dialog';
 import { CellSplitDialog } from '@/ui/cell-split-dialog';
 import { CellBorderBgDialog } from '@/ui/cell-border-bg-dialog';
 import { FormulaDialog } from '@/ui/formula-dialog';
+import { t } from '@/i18n/t';
 
 const inTable = (ctx: EditorContext) => ctx.inTable;
 
@@ -68,7 +69,7 @@ function openFormulaDialog(services: Parameters<CommandDef['execute']>[0]): void
 }
 
 export const tableCommands: CommandDef[] = [
-  { id: 'table:create', label: '표 만들기', icon: 'icon-table',
+  { id: 'table:create', label: t('cmd.table.create'), icon: 'icon-table',
     canExecute: (ctx) => ctx.hasDocument && !ctx.inTable,
     execute(services, params) {
       const ih = services.getInputHandler();
@@ -104,7 +105,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:cell-props',
-    label: '표/셀 속성',
+    label: t('cmd.table.cell_props'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -120,7 +121,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:border-each',
-    label: '각 셀마다 적용(E)...',
+    label: t('cmd.table.border_each'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -134,7 +135,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:border-one',
-    label: '하나의 셀처럼 적용(Z)...',
+    label: t('cmd.table.border_one'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -148,7 +149,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:insert-row-above',
-    label: '위쪽에 줄 추가하기',
+    label: t('cmd.table.insert_row_above'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -168,7 +169,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:insert-row-below',
-    label: '아래쪽에 줄 추가하기',
+    label: t('cmd.table.insert_row_below'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -188,7 +189,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:insert-col-left',
-    label: '왼쪽에 칸 추가하기',
+    label: t('cmd.table.insert_col_left'),
     shortcutLabel: 'Alt+Insert',
     canExecute: inTable,
     execute(services) {
@@ -209,7 +210,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:insert-col-right',
-    label: '오른쪽에 칸 추가하기',
+    label: t('cmd.table.insert_col_right'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -229,7 +230,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:delete-row',
-    label: '줄 지우기',
+    label: t('cmd.table.delete_row'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -249,7 +250,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:delete-col',
-    label: '칸 지우기',
+    label: t('cmd.table.delete_col'),
     shortcutLabel: 'Alt+Delete',
     canExecute: inTable,
     execute(services) {
@@ -270,7 +271,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:cell-split',
-    label: '셀 나누기',
+    label: t('cmd.table.cell_split'),
     shortcutLabel: 'S',
     canExecute: inTable,
     execute(services) {
@@ -319,7 +320,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:cell-merge',
-    label: '셀 합치기',
+    label: t('cmd.table.cell_merge'),
     shortcutLabel: 'M',
     canExecute: (ctx) => ctx.inCellSelectionMode,
     execute(services) {
@@ -342,7 +343,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:delete',
-    label: '표 지우기',
+    label: t('cmd.table.delete'),
     canExecute: (ctx) => ctx.inTable || ctx.inTableObjectSelection,
     execute(services) {
       const ih = services.getInputHandler();
@@ -373,7 +374,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:caption-toggle',
-    label: '캡션 넣기',
+    label: t('cmd.table.caption_toggle'),
     canExecute: (ctx) => ctx.inTable || ctx.inTableObjectSelection,
     execute(services) {
       const ih = services.getInputHandler();
@@ -418,7 +419,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:cell-height-equal',
-    label: '셀 높이를 같게',
+    label: t('cmd.table.cell_height_equal'),
     shortcutLabel: 'H',
     canExecute: inTable,
     execute(services) {
@@ -459,7 +460,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:cell-width-equal',
-    label: '셀 너비를 같게',
+    label: t('cmd.table.cell_width_equal'),
     shortcutLabel: 'W',
     canExecute: inTable,
     execute(services) {
@@ -500,23 +501,23 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:formula',
-    label: '계산식(F)...',
+    label: t('cmd.table.formula'),
     shortcutLabel: 'Ctrl+M,F',
     canExecute: inTable,
     execute(services) { openFormulaDialog(services); },
   },
   {
     id: 'table:block-formula',
-    label: '블록 계산식',
+    label: t('cmd.table.block_formula'),
     canExecute: inTable,
     execute(services) { openFormulaDialog(services); },
   },
-  blockCalcCommand('table:block-sum', '블록 합계', 'SUM', 'Ctrl+Shift+S'),
-  blockCalcCommand('table:block-avg', '블록 평균', 'AVERAGE', 'Ctrl+Shift+A'),
-  blockCalcCommand('table:block-product', '블록 곱', 'PRODUCT', 'Ctrl+Shift+P'),
+  blockCalcCommand('table:block-sum', t('cmd.table.block_sum'), 'SUM', 'Ctrl+Shift+S'),
+  blockCalcCommand('table:block-avg', t('cmd.table.block_avg'), 'AVERAGE', 'Ctrl+Shift+A'),
+  blockCalcCommand('table:block-product', t('cmd.table.block_product'), 'PRODUCT', 'Ctrl+Shift+P'),
   {
     id: 'table:thousand-sep',
-    label: '1,000 단위 구분 쉼표',
+    label: t('cmd.table.thousand_sep'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -553,7 +554,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:decimal-add',
-    label: '자릿점 넣기',
+    label: t('cmd.table.decimal_add'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();
@@ -586,7 +587,7 @@ export const tableCommands: CommandDef[] = [
   },
   {
     id: 'table:decimal-remove',
-    label: '자릿점 빼기',
+    label: t('cmd.table.decimal_remove'),
     canExecute: inTable,
     execute(services) {
       const ih = services.getInputHandler();

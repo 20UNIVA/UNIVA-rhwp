@@ -333,7 +333,7 @@ export class TableCreateDialog {
     treatChk.checked = true;
     const treatLbl = document.createElement('label');
     treatLbl.htmlFor = 'tc-treat-as-char';
-    treatLbl.textContent = ' 글자처럼 취급';
+    treatLbl.textContent = ' ' + t('table.placement.like_char');
     treatLbl.style.fontSize = '12px';
     treatRow.appendChild(treatChk);
     treatRow.appendChild(treatLbl);

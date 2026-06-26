@@ -6,6 +6,7 @@
 
 import type { CompareDocumentSnapshot } from '@/compare/types';
 import type { DocHistoryEntryMeta } from './types';
+import { t } from '@/i18n/t';
 
 const DB_NAME = 'rhwpStudioDocHistory';
 const DB_VER = 1;
@@ -154,7 +155,7 @@ export async function saveHistoryIrSnapshot(
   const byteLength = new TextEncoder().encode(json).length;
   const meta: MetaRow = {
     id,
-    label: label.trim() || `스냅샷 ${new Date(createdAt).toLocaleString('ko-KR')}`,
+    label: label.trim() || t('history.default_snapshot_label', { datetime: new Date(createdAt).toLocaleString('ko-KR') }),
     createdAt,
     sourceFileName,
     byteLength,
