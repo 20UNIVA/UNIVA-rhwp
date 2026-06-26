@@ -24,6 +24,7 @@ import * as _table from './input-handler-table';
 import * as _keyboard from './input-handler-keyboard';
 import * as _text from './input-handler-text';
 import * as _picture from './input-handler-picture';
+import { t } from '@/i18n/t';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DRAG_SCROLL_EDGE_PX = 48;
@@ -1202,9 +1203,9 @@ export class InputHandler {
       { type: 'command', commandId: 'edit:copy' },
       { type: 'command', commandId: 'edit:paste' },
       { type: 'separator' },
-      { type: 'command', commandId: 'table:caption-toggle', label: '캡션 넣기(A)' },
+      { type: 'command', commandId: 'table:caption-toggle', label: t('context_menu.caption_insert') },
       { type: 'separator' },
-      { type: 'command', commandId: 'table:cell-props', label: '표 속성...' },
+      { type: 'command', commandId: 'table:cell-props', label: t('context_menu.table_props_dots') },
       { type: 'separator' },
       { type: 'command', commandId: 'table:delete' },
     ];
@@ -1217,9 +1218,9 @@ export class InputHandler {
     // 다중 선택: 개체 묶기 메뉴
     if (this.cursor.isMultiPictureSelection()) {
       return [
-        { type: 'command', commandId: 'insert:group-shapes', label: '개체 묶기(G)' },
+        { type: 'command', commandId: 'insert:group-shapes', label: t('context_menu.group') },
         { type: 'separator' },
-        { type: 'command', commandId: 'insert:picture-delete', label: '지우기(D)' },
+        { type: 'command', commandId: 'insert:picture-delete', label: t('context_menu.delete') },
       ];
     }
 
@@ -1232,34 +1233,34 @@ export class InputHandler {
     // 수식 객체: "수식 편집..." 항목 추가
     if (ref?.type === 'equation') {
       items.push(
-        { type: 'command', commandId: 'insert:equation-edit', label: '수식 편집...' },
+        { type: 'command', commandId: 'insert:equation-edit', label: t('context_menu.equation_edit') },
         { type: 'separator' },
       );
     }
     items.push(
-      { type: 'command', commandId: 'insert:arrange-front', label: '맨 앞으로' },
-      { type: 'command', commandId: 'insert:arrange-forward', label: '앞으로' },
-      { type: 'command', commandId: 'insert:arrange-backward', label: '뒤로' },
-      { type: 'command', commandId: 'insert:arrange-back', label: '맨 뒤로' },
+      { type: 'command', commandId: 'insert:arrange-front', label: t('context_menu.bring_to_front') },
+      { type: 'command', commandId: 'insert:arrange-forward', label: t('context_menu.bring_forward') },
+      { type: 'command', commandId: 'insert:arrange-backward', label: t('context_menu.send_backward') },
+      { type: 'command', commandId: 'insert:arrange-back', label: t('context_menu.send_to_back') },
       { type: 'separator' },
     );
     // 그룹 개체: 개체 풀기
     if (ref?.type === 'group') {
       items.push(
-        { type: 'command', commandId: 'insert:ungroup-shapes', label: '개체 풀기(U)' },
+        { type: 'command', commandId: 'insert:ungroup-shapes', label: t('context_menu.ungroup') },
         { type: 'separator' },
       );
     }
     // 그림/도형 객체: 캡션 넣기
     if (ref?.type === 'image' || ref?.type === 'shape') {
       items.push(
-        { type: 'command', commandId: 'insert:caption-toggle', label: '캡션 넣기(A)' },
+        { type: 'command', commandId: 'insert:caption-toggle', label: t('context_menu.caption_insert') },
       );
     }
     items.push(
-      { type: 'command', commandId: 'insert:picture-props', label: '개체 속성(P)...' },
+      { type: 'command', commandId: 'insert:picture-props', label: t('context_menu.object_props_dots') },
       { type: 'separator' },
-      { type: 'command', commandId: 'insert:picture-delete', label: '지우기(D)' },
+      { type: 'command', commandId: 'insert:picture-delete', label: t('context_menu.delete') },
     );
     return items;
   }
@@ -1271,7 +1272,7 @@ export class InputHandler {
       { type: 'command', commandId: 'edit:copy' },
       { type: 'command', commandId: 'edit:paste' },
       { type: 'separator' },
-      { type: 'command', commandId: 'table:cell-props', label: '셀 속성...' },
+      { type: 'command', commandId: 'table:cell-props', label: t('context_menu.cell_props_dots') },
       { type: 'separator' },
       { type: 'command', commandId: 'table:insert-row-above' },
       { type: 'command', commandId: 'table:insert-row-below' },
@@ -1284,12 +1285,12 @@ export class InputHandler {
       { type: 'command', commandId: 'table:cell-merge' },
       { type: 'command', commandId: 'table:cell-split' },
       { type: 'separator' },
-      { type: 'command', commandId: 'table:border-each', label: '셀 테두리/배경 - 각 셀마다 적용(E)...' },
-      { type: 'command', commandId: 'table:border-one', label: '셀 테두리/배경 - 하나의 셀처럼 적용(Z)...' },
+      { type: 'command', commandId: 'table:border-each', label: t('context_menu.cell_border_each') },
+      { type: 'command', commandId: 'table:border-one', label: t('context_menu.cell_border_as_one') },
       { type: 'separator' },
-      { type: 'command', commandId: 'table:caption-toggle', label: '캡션 넣기(A)' },
+      { type: 'command', commandId: 'table:caption-toggle', label: t('context_menu.caption_insert') },
       { type: 'separator' },
-      { type: 'command', commandId: 'table:formula', label: '계산식(F)...' },
+      { type: 'command', commandId: 'table:formula', label: t('context_menu.formula_dots') },
       { type: 'separator' },
       { type: 'command', commandId: 'table:delete' },
     ];
@@ -1302,10 +1303,10 @@ export class InputHandler {
       { type: 'command', commandId: 'edit:copy' },
       { type: 'command', commandId: 'edit:paste' },
       { type: 'separator' },
-      { type: 'command', commandId: 'format:char-shape', label: '글자 모양' },
-      { type: 'command', commandId: 'format:para-shape', label: '문단 모양' },
+      { type: 'command', commandId: 'format:char-shape', label: t('context_menu.char_shape') },
+      { type: 'command', commandId: 'format:para-shape', label: t('context_menu.para_shape') },
       { type: 'separator' },
-      { type: 'command', commandId: 'format:para-num-shape', label: '문단 번호 모양(N)...' },
+      { type: 'command', commandId: 'format:para-num-shape', label: t('context_menu.numbering_shape') },
     ];
   }
 

@@ -25,6 +25,7 @@ import type { EventBus } from '@/core/event-bus';
 import { ModalDialog } from './dialog';
 import { CharShapeDialog } from './char-shape-dialog';
 import { ParaShapeDialog } from './para-shape-dialog';
+import { t } from '@/i18n/t';
 
 interface StyleInfo {
   id: number;
@@ -57,9 +58,9 @@ export class StyleEditDialog extends ModalDialog {
     mode: 'add' | 'edit',
     styleInfo?: StyleInfo,
   ) {
-    super(mode === 'add' ? '스타일 추가하기' : '스타일 편집하기', 480);
+    super(mode === 'add' ? t('style.dialog.add_title') : t('style.dialog.edit_title'), 480);
     this.addMode = mode === 'add';
-    this.styleInfo = styleInfo ?? { id: -1, name: '새 스타일', englishName: '', type: 0, nextStyleId: 0 };
+    this.styleInfo = styleInfo ?? { id: -1, name: t('style.new_default_name'), englishName: '', type: 0, nextStyleId: 0 };
   }
 
   protected createBody(): HTMLElement {
@@ -74,7 +75,7 @@ export class StyleEditDialog extends ModalDialog {
     nameGroup.className = 'se-field-group';
     const nameLabel = document.createElement('label');
     nameLabel.className = 'se-label';
-    nameLabel.textContent = '스타일 이름(N):';
+    nameLabel.textContent = t('style.field.name_n');
     this.nameInput = document.createElement('input');
     this.nameInput.className = 'se-field-input';
     this.nameInput.value = this.styleInfo.name;
@@ -85,7 +86,7 @@ export class StyleEditDialog extends ModalDialog {
     enGroup.className = 'se-field-group';
     const enLabel = document.createElement('label');
     enLabel.className = 'se-label';
-    enLabel.textContent = '영문 이름(E):';
+    enLabel.textContent = t('style.field.english_name_e');
     this.enNameInput = document.createElement('input');
     this.enNameInput.className = 'se-field-input';
     this.enNameInput.value = this.styleInfo.englishName;
@@ -106,7 +107,7 @@ export class StyleEditDialog extends ModalDialog {
       typeGroup.className = 'se-field-group';
       const typeLabel = document.createElement('div');
       typeLabel.className = 'se-label';
-      typeLabel.textContent = '스타일 종류';
+      typeLabel.textContent = t('style.field.kind');
       const radioGroup = document.createElement('div');
       radioGroup.className = 'se-type-radios';
 
@@ -118,7 +119,7 @@ export class StyleEditDialog extends ModalDialog {
       this.typePara.checked = true;
       this.typePara.addEventListener('change', () => this.onTypeChange());
       lblPara.appendChild(this.typePara);
-      lblPara.appendChild(document.createTextNode(' 문단(P)'));
+      lblPara.appendChild(document.createTextNode(' ' + t('style.field.kind_paragraph_p')));
 
       const lblChar = document.createElement('label');
       this.typeChar = document.createElement('input');
@@ -127,7 +128,7 @@ export class StyleEditDialog extends ModalDialog {
       this.typeChar.value = '1';
       this.typeChar.addEventListener('change', () => this.onTypeChange());
       lblChar.appendChild(this.typeChar);
-      lblChar.appendChild(document.createTextNode(' 글자(C)'));
+      lblChar.appendChild(document.createTextNode(' ' + t('style.field.kind_character_c')));
 
       radioGroup.appendChild(lblPara);
       radioGroup.appendChild(lblChar);
@@ -142,7 +143,7 @@ export class StyleEditDialog extends ModalDialog {
       nextGroup.className = 'se-field-group se-next-group';
       const nextLabel = document.createElement('label');
       nextLabel.className = 'se-label';
-      nextLabel.textContent = '다음 문단에 적용할 스타일(S):';
+      nextLabel.textContent = t('style.field.next_style_s');
       this.nextStyleSelect = document.createElement('select');
       this.nextStyleSelect.className = 'se-field-select';
       this.populateNextStyleSelect();
@@ -161,13 +162,13 @@ export class StyleEditDialog extends ModalDialog {
     const btnPara = document.createElement('button');
     btnPara.type = 'button';
     btnPara.className = 'se-shape-btn';
-    btnPara.textContent = '문단 모양(T)...';
+    btnPara.textContent = t('style.btn.para_shape_t');
     btnPara.addEventListener('click', () => this.openParaDialog());
 
     const btnChar = document.createElement('button');
     btnChar.type = 'button';
     btnChar.className = 'se-shape-btn';
-    btnChar.textContent = '글자 모양(L)...';
+    btnChar.textContent = t('style.btn.char_shape_l');
     btnChar.addEventListener('click', () => this.openCharDialog());
 
     shapeBtns.appendChild(btnPara);
@@ -177,7 +178,7 @@ export class StyleEditDialog extends ModalDialog {
     // ── 안내 문구 ──
     const note = document.createElement('div');
     note.className = 'se-note';
-    note.textContent = '스타일 이름은 다르지만 영문 이름이 같은 경우에는 두 스타일을 같은 스타일로 인식합니다.';
+    note.textContent = t('style.note.same_english_name');
     body.appendChild(note);
 
     return body;
@@ -266,7 +267,7 @@ export class StyleEditDialog extends ModalDialog {
     const nextStyleId = this.nextStyleSelect ? (parseInt(this.nextStyleSelect.value) || 0) : this.styleInfo.nextStyleId;
 
     if (!name) {
-      alert('스타일 이름을 입력하세요.');
+      alert(t('error.client.style_name_required'));
       return;
     }
 
@@ -297,7 +298,7 @@ export class StyleEditDialog extends ModalDialog {
     // 확인 버튼 텍스트를 모드에 맞게 변경
     const confirmBtn = this.dialog.querySelector('.dialog-btn-primary');
     if (confirmBtn) {
-      confirmBtn.textContent = this.addMode ? '추가(D)' : '설정(D)';
+      confirmBtn.textContent = this.addMode ? t('style.btn.add_d') : t('button.set');
     }
   }
 

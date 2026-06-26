@@ -1,6 +1,7 @@
 import type { CommandServices } from '@/command/types';
 import type { BookmarkInfo } from '@/core/types';
 import { ModalDialog } from './dialog';
+import { t } from '@/i18n/t';
 
 /**
  * 찾아가기 대화상자 — 쪽/책갈피 탭으로 이동 위치 선택
@@ -18,7 +19,7 @@ export class GotoDialog extends ModalDialog {
   private selectedBookmark: BookmarkInfo | null = null;
 
   constructor(services: CommandServices, tab?: 'page' | 'bookmark') {
-    super('찾아가기', 300);
+    super(t('find.goto_title'), 300);
     this.services = services;
     if (tab) this.activeTab = tab;
   }
@@ -33,12 +34,12 @@ export class GotoDialog extends ModalDialog {
 
     this.tabBtnPage = document.createElement('button');
     this.tabBtnPage.className = 'goto-tab-btn';
-    this.tabBtnPage.textContent = '쪽';
+    this.tabBtnPage.textContent = t('find.goto.page');
     this.tabBtnPage.addEventListener('click', () => this.switchTab('page'));
 
     this.tabBtnBookmark = document.createElement('button');
     this.tabBtnBookmark.className = 'goto-tab-btn';
-    this.tabBtnBookmark.textContent = '책갈피';
+    this.tabBtnBookmark.textContent = t('find.goto.bookmark');
     this.tabBtnBookmark.addEventListener('click', () => this.switchTab('bookmark'));
 
     tabBar.appendChild(this.tabBtnPage);
@@ -53,7 +54,7 @@ export class GotoDialog extends ModalDialog {
     const row = document.createElement('div');
     row.className = 'dialog-row';
     const label = document.createElement('label');
-    label.textContent = '쪽 번호:';
+    label.textContent = t('find.goto.page_number');
     label.style.width = '60px';
     this.pageInput = document.createElement('input');
     this.pageInput.type = 'number';
@@ -113,7 +114,7 @@ export class GotoDialog extends ModalDialog {
     if (bookmarks.length === 0) {
       const empty = document.createElement('div');
       empty.style.cssText = 'color:#999;font-size:11px;padding:12px;text-align:center';
-      empty.textContent = '등록된 책갈피가 없습니다.';
+      empty.textContent = t('find.goto.no_bookmark');
       this.bookmarkList.appendChild(empty);
       return;
     }
@@ -195,7 +196,7 @@ export class GotoDialog extends ModalDialog {
     const globalPage = pageNum - 1;
     const posResult = this.services.wasm.getPositionOfPage(globalPage);
     if (!posResult.ok) {
-      this.statusLabel.textContent = '해당 쪽을 찾을 수 없습니다.';
+      this.statusLabel.textContent = t('find.goto.page_not_found');
       return;
     }
 

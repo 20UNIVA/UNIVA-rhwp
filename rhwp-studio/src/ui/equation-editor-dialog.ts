@@ -2,6 +2,7 @@ import type { WasmBridge } from '@/core/wasm-bridge';
 import type { EventBus } from '@/core/event-bus';
 import type { EquationProperties } from '@/core/types';
 import { appendSvgMarkup } from './dom-utils';
+import { t } from '@/i18n/t';
 
 /**
  * 수식 편집 대화상자
@@ -303,7 +304,7 @@ export class EquationEditorDialog {
     titleBar.className = 'dialog-title';
 
     const titleText = document.createElement('span');
-    titleText.textContent = '수식 편집';
+    titleText.textContent = t('equation.dialog_title');
 
     // 모드 토글 버튼
     this.modeBtn = document.createElement('button');
@@ -382,7 +383,7 @@ export class EquationEditorDialog {
 
     const sizeLabel = document.createElement('span');
     sizeLabel.className = 'dialog-label';
-    sizeLabel.textContent = '글자 크기';
+    sizeLabel.textContent = t('equation.font_size');
     this.fontSizeInput = document.createElement('input');
     this.fontSizeInput.type = 'number';
     this.fontSizeInput.className = 'dialog-input';
@@ -410,11 +411,11 @@ export class EquationEditorDialog {
     footer.className = 'dialog-footer';
     const okBtn = document.createElement('button');
     okBtn.className = 'dialog-btn dialog-btn-primary';
-    okBtn.textContent = '확인';
+    okBtn.textContent = t('button.ok');
     okBtn.addEventListener('click', () => this.handleOk());
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'dialog-btn';
-    cancelBtn.textContent = '취소';
+    cancelBtn.textContent = t('button.cancel');
     cancelBtn.addEventListener('click', () => this.hide());
     footer.append(okBtn, cancelBtn);
 

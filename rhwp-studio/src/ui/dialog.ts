@@ -3,6 +3,8 @@
  *
  * DOM은 show() 호출 시 생성된다 (ES2022 class field 초기화 순서 이슈 방지).
  */
+import { t } from '@/i18n/t';
+
 export abstract class ModalDialog {
   protected overlay!: HTMLDivElement;
   protected dialog!: HTMLDivElement;
@@ -51,7 +53,7 @@ export abstract class ModalDialog {
 
     const confirmBtn = document.createElement('button');
     confirmBtn.className = 'dialog-btn dialog-btn-primary';
-    confirmBtn.textContent = '확인';
+    confirmBtn.textContent = t('button.ok');
     confirmBtn.addEventListener('click', () => {
       const shouldClose = this.onConfirm();
       if (shouldClose !== false) this.hide();
@@ -59,7 +61,7 @@ export abstract class ModalDialog {
 
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'dialog-btn';
-    cancelBtn.textContent = '취소';
+    cancelBtn.textContent = t('button.cancel');
     cancelBtn.addEventListener('click', () => this.hide());
 
     footer.appendChild(confirmBtn);

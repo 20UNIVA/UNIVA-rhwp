@@ -5,6 +5,7 @@
  * showSaveAs() 헬퍼로 간단히 사용 가능.
  */
 import { ModalDialog } from './dialog';
+import { t } from '@/i18n/t';
 
 class SaveAsDialog extends ModalDialog {
   private defaultName: string;
@@ -12,7 +13,7 @@ class SaveAsDialog extends ModalDialog {
   private resolve!: (value: string | null) => void;
 
   constructor(defaultName: string) {
-    super('다른 이름으로 저장', 380);
+    super(t('dialog.save_as.title'), 380);
     this.defaultName = defaultName;
   }
 
@@ -21,7 +22,7 @@ class SaveAsDialog extends ModalDialog {
     body.style.padding = '16px 20px';
 
     const label = document.createElement('label');
-    label.textContent = '파일 이름(N):';
+    label.textContent = t('dialog.save_as.filename_label');
     label.style.display = 'block';
     label.style.marginBottom = '6px';
     label.style.fontSize = '13px';

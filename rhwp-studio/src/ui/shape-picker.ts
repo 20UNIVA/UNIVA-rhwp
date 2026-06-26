@@ -3,6 +3,8 @@
  * 한컴 스타일 층구조: 그리기 개체 / 연결선
  */
 
+import { t, type MessageKey } from '@/i18n/t';
+
 export type ShapeType = 'line' | 'rectangle' | 'ellipse' | 'polygon' | 'arc'
   | 'connector-straight' | 'connector-stroke' | 'connector-arc'
   | 'connector-straight-arrow' | 'connector-stroke-arrow' | 'connector-arc-arrow';
@@ -12,33 +14,33 @@ export interface ShapePickerOptions {
 }
 
 interface ShapeGroup {
-  title: string;
+  titleKey: MessageKey;
   columns: number;
-  items: { type: ShapeType; label: string; icon: string }[];
+  items: { type: ShapeType; labelKey: MessageKey; icon: string }[];
 }
 
 const GROUPS: ShapeGroup[] = [
   {
-    title: '그리기 개체',
+    titleKey: 'shape.picker.group.drawing',
     columns: 5,
     items: [
-      { type: 'line',      label: '직선',   icon: '╲' },
-      { type: 'rectangle', label: '사각형', icon: '▭' },
-      { type: 'ellipse',   label: '타원',   icon: '⬭' },
-      { type: 'polygon',   label: '다각형', icon: '△' },
-      { type: 'arc',       label: '호',     icon: '⌒' },
+      { type: 'line',      labelKey: 'shape.picker.line',      icon: '╲' },
+      { type: 'rectangle', labelKey: 'shape.picker.rectangle', icon: '▭' },
+      { type: 'ellipse',   labelKey: 'shape.picker.ellipse',   icon: '⬭' },
+      { type: 'polygon',   labelKey: 'shape.picker.polygon',   icon: '△' },
+      { type: 'arc',       labelKey: 'shape.picker.arc',       icon: '⌒' },
     ],
   },
   {
-    title: '연결선',
+    titleKey: 'shape.picker.group.connector',
     columns: 3,
     items: [
-      { type: 'connector-straight',       label: '직선',         icon: '─' },
-      { type: 'connector-straight-arrow', label: '직선 화살표', icon: '→' },
-      { type: 'connector-stroke',         label: '꺾인',         icon: '⌐' },
-      { type: 'connector-stroke-arrow',   label: '꺾인 화살표', icon: '⮎' },
-      { type: 'connector-arc',            label: '곡선',         icon: '∼' },
-      { type: 'connector-arc-arrow',      label: '곡선 화살표', icon: '↝' },
+      { type: 'connector-straight',       labelKey: 'shape.picker.line',           icon: '─' },
+      { type: 'connector-straight-arrow', labelKey: 'shape.picker.line_arrow',     icon: '→' },
+      { type: 'connector-stroke',         labelKey: 'shape.picker.polyline',       icon: '⌐' },
+      { type: 'connector-stroke-arrow',   labelKey: 'shape.picker.polyline_arrow', icon: '⮎' },
+      { type: 'connector-arc',            labelKey: 'shape.picker.curve',          icon: '∼' },
+      { type: 'connector-arc-arrow',      labelKey: 'shape.picker.curve_arrow',    icon: '↝' },
     ],
   },
 ];
@@ -69,7 +71,7 @@ export function showShapePicker(anchorEl: HTMLElement, opts: ShapePickerOptions)
     // 그룹 제목
     const title = document.createElement('div');
     title.className = 'shape-picker-title';
-    title.textContent = group.title;
+    title.textContent = t(group.titleKey);
     panel.appendChild(title);
 
     // 아이콘 그리드
@@ -78,15 +80,16 @@ export function showShapePicker(anchorEl: HTMLElement, opts: ShapePickerOptions)
     grid.style.gridTemplateColumns = `repeat(${group.columns}, 1fr)`;
 
     for (const shape of group.items) {
+      const labelText = t(shape.labelKey);
       const btn = document.createElement('button');
       btn.className = 'shape-picker-btn';
-      btn.title = shape.label;
+      btn.title = labelText;
       const icon = document.createElement('span');
       icon.className = 'shape-picker-icon';
       icon.textContent = shape.icon;
       const label = document.createElement('span');
       label.className = 'shape-picker-label';
-      label.textContent = shape.label;
+      label.textContent = labelText;
       btn.appendChild(icon);
       btn.appendChild(label);
       btn.addEventListener('click', () => {

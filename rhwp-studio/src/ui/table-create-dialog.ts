@@ -16,6 +16,7 @@
  */
 
 import { makeOption } from './dom-utils';
+import { t } from '@/i18n/t';
 
 const GRID_ROWS = 8;
 const GRID_COLS = 10;
@@ -89,7 +90,7 @@ export class TableCreateDialog {
     const header = document.createElement('div');
     header.style.cssText = 'padding:4px 6px;border-bottom:1px solid #e0e0e0;';
     const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = '취소';
+    cancelBtn.textContent = t('button.cancel');
     cancelBtn.style.cssText =
       'width:100%;padding:3px 0;font-size:12px;border:1px solid #ccc;' +
       'background:#f8f8f8;cursor:pointer;border-radius:2px;';
@@ -170,7 +171,7 @@ export class TableCreateDialog {
     icon.style.marginRight = '4px';
     icon.textContent = '\u229E';
     footer.appendChild(icon);
-    footer.appendChild(document.createTextNode('표 만들기...'));
+    footer.appendChild(document.createTextNode(t('table.create.title_with_ellipsis')));
     footer.addEventListener('mouseenter', () => { footer.style.background = '#e8f0fe'; });
     footer.addEventListener('mouseleave', () => { footer.style.background = ''; });
     footer.addEventListener('click', () => {
@@ -246,7 +247,7 @@ export class TableCreateDialog {
     // 타이틀
     const title = document.createElement('div');
     title.className = 'dialog-title';
-    title.textContent = '표 만들기';
+    title.textContent = t('table.create.title');
     const closeBtn = document.createElement('button');
     closeBtn.className = 'dialog-close';
     closeBtn.textContent = '\u00D7';
@@ -264,22 +265,22 @@ export class TableCreateDialog {
     form.style.cssText = 'flex:1;';
 
     // 줄/칸 섹션
-    const sec1 = createSection('줄/칸');
-    const rowInput = createSpinnerRow(sec1, '줄 개수', 4, 1, 256);
-    const colInput = createSpinnerRow(sec1, '칸 개수', 5, 1, 256);
+    const sec1 = createSection(t('table.create.lines_cols'));
+    const rowInput = createSpinnerRow(sec1, t('table.create.lines'), 4, 1, 256);
+    const colInput = createSpinnerRow(sec1, t('table.create.cols'), 5, 1, 256);
     form.appendChild(sec1);
 
     // 크기 지정 섹션
-    const sec2 = createSection('크기 지정');
+    const sec2 = createSection(t('table.create.size_spec'));
 
     const widthRow = document.createElement('div');
     widthRow.className = 'dialog-row';
-    widthRow.appendChild(makeLabel('너비'));
+    widthRow.appendChild(makeLabel(t('table.create.width')));
     const widthMode = document.createElement('select');
     widthMode.className = 'dialog-select';
     widthMode.style.width = '90px';
-    widthMode.appendChild(makeOption('fit', '단에 맞춤'));
-    widthMode.appendChild(makeOption('custom', '직접 지정'));
+    widthMode.appendChild(makeOption('fit', t('table.create.column_fit')));
+    widthMode.appendChild(makeOption('custom', t('table.create.direct')));
     widthRow.appendChild(widthMode);
     const widthVal = document.createElement('input');
     widthVal.className = 'dialog-input';
@@ -298,12 +299,12 @@ export class TableCreateDialog {
 
     const heightRow = document.createElement('div');
     heightRow.className = 'dialog-row';
-    heightRow.appendChild(makeLabel('높이'));
+    heightRow.appendChild(makeLabel(t('table.create.height')));
     const heightMode = document.createElement('select');
     heightMode.className = 'dialog-select';
     heightMode.style.width = '90px';
-    heightMode.appendChild(makeOption('auto', '자동'));
-    heightMode.appendChild(makeOption('custom', '직접 지정'));
+    heightMode.appendChild(makeOption('auto', t('table.create.auto')));
+    heightMode.appendChild(makeOption('custom', t('table.create.direct')));
     heightRow.appendChild(heightMode);
     const heightVal = document.createElement('input');
     heightVal.className = 'dialog-input';
@@ -323,7 +324,7 @@ export class TableCreateDialog {
     form.appendChild(sec2);
 
     // 기타 섹션
-    const sec3 = createSection('기타');
+    const sec3 = createSection(t('page.section.obj_other'));
     const treatRow = document.createElement('div');
     treatRow.className = 'dialog-row';
     const treatChk = document.createElement('input');
@@ -346,12 +347,12 @@ export class TableCreateDialog {
     btnCol.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding-top:2px;';
     const okBtn = document.createElement('button');
     okBtn.className = 'dialog-btn dialog-btn-primary';
-    okBtn.textContent = '만들기';
+    okBtn.textContent = t('table.create.create_btn');
     okBtn.style.width = '72px';
     okBtn.addEventListener('click', doApply);
     const cancelBtn2 = document.createElement('button');
     cancelBtn2.className = 'dialog-btn';
-    cancelBtn2.textContent = '취소';
+    cancelBtn2.textContent = t('button.cancel');
     cancelBtn2.style.width = '72px';
     cancelBtn2.addEventListener('click', close);
     btnCol.appendChild(okBtn);
