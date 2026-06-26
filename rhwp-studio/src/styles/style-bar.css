@@ -139,6 +139,13 @@
   font-family: '맑은 고딕', 'Malgun Gothic', sans-serif;
 }
 
+/* en/ja 박은 자체 자체 'A' 박는다 — 16px 박는다 */
+html[lang="en"] .sb-ga,
+html[lang="ja"] .sb-ga {
+  font-size: 16px;
+  font-family: 'Arial', 'Helvetica', sans-serif;
+}
+
 .sb-bold { font-weight: bold; }
 .sb-italic { font-style: italic; }
 .sb-underline { text-decoration: underline; text-underline-offset: 2px; }

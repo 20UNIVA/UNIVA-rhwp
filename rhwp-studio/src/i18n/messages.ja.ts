@@ -986,7 +986,7 @@ export const messages_ja: Record<keyof typeof messages_ko, string> = {
   'cell.diagonal_x': 'X字',
 
   // === 서식바 아이콘 ===
-  'stylebar.icon_letter': 'あ',
+  'stylebar.icon_letter': 'A',
 
   // === m700-7.1 누락 키 ===
   'stylebar.text_color_other': 'その他の色...',
