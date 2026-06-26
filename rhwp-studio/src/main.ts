@@ -56,7 +56,8 @@ import {
 
 /**
  * index.html 박힌 *정적 한국어*를 현재 lang 자료로 교체한다.
- * data-i18n="키" → textContent, data-i18n-aria="키" → aria-label.
+ * data-i18n="키" → textContent, data-i18n-aria="키" → aria-label,
+ * data-i18n-title="키" → title 속성.
  * 진입 시점과 onLangChange 시점에 호출.
  */
 function applyStaticTexts(): void {
@@ -67,6 +68,10 @@ function applyStaticTexts(): void {
   document.querySelectorAll<HTMLElement>('[data-i18n-aria]').forEach((el) => {
     const key = el.dataset.i18nAria as MessageKey | undefined;
     if (key) el.setAttribute('aria-label', t(key));
+  });
+  document.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => {
+    const key = el.dataset.i18nTitle as MessageKey | undefined;
+    if (key) el.setAttribute('title', t(key));
   });
 }
 
