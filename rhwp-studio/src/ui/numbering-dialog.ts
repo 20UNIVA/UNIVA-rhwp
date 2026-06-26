@@ -48,19 +48,25 @@ const NUM_FMT = {
 
 /** 프리셋 정의 */
 interface NumberingPreset {
-  label: string;
+  /** 사전 키 (있으면 우선) 또는 정적 문자열 (label) */
+  labelKey?: import('@/i18n/t').MessageKey;
+  label?: string;
   levelFormats: string[];
   numberFormats: number[];
 }
 
+function presetLabel(p: NumberingPreset): string {
+  return p.labelKey ? t(p.labelKey) : (p.label ?? '');
+}
+
 const PRESETS: NumberingPreset[] = [
   {
-    label: '(없음)',
+    labelKey: 'numbering.none_paren',
     levelFormats: ['', '', '', '', '', '', ''],
     numberFormats: [0, 0, 0, 0, 0, 0, 0],
   },
   {
-    label: '1. 가. 1) 가) (1) (가) ①',
+    labelKey: 'numbering.preset.hangul_basic',
     levelFormats: ['^1.', '^2.', '^3)', '^4)', '(^5)', '(^6)', '^7'],
     numberFormats: [NUM_FMT.DIGIT, NUM_FMT.HANGUL_MIXED, NUM_FMT.DIGIT, NUM_FMT.HANGUL_MIXED, NUM_FMT.DIGIT, NUM_FMT.HANGUL_MIXED, NUM_FMT.CIRCLE_DIGIT],
   },
@@ -75,17 +81,17 @@ const PRESETS: NumberingPreset[] = [
     numberFormats: [NUM_FMT.ROMAN_UPPER, NUM_FMT.ALPHA_UPPER, NUM_FMT.DIGIT, NUM_FMT.ALPHA_LOWER, NUM_FMT.DIGIT, NUM_FMT.ALPHA_LOWER, NUM_FMT.CIRCLE_DIGIT],
   },
   {
-    label: '제1장 제1절 1. 가. 1) 가) (1)',
+    labelKey: 'numbering.preset.chapter_section',
     levelFormats: ['제^1장', '제^2절', '^3.', '^4.', '^5)', '^6)', '(^7)'],
     numberFormats: [NUM_FMT.DIGIT, NUM_FMT.DIGIT, NUM_FMT.DIGIT, NUM_FMT.HANGUL_MIXED, NUM_FMT.DIGIT, NUM_FMT.HANGUL_MIXED, NUM_FMT.DIGIT],
   },
   {
-    label: '一 二 三 (한자)',
+    labelKey: 'numbering.preset.hanja',
     levelFormats: ['^1', '^2', '^3', '^4', '^5', '^6', '^7'],
     numberFormats: [NUM_FMT.HANJA, NUM_FMT.HANJA, NUM_FMT.HANJA, NUM_FMT.HANJA, NUM_FMT.HANJA, NUM_FMT.HANJA, NUM_FMT.HANJA],
   },
   {
-    label: '① ② ③ (원문자)',
+    labelKey: 'numbering.preset.circled',
     levelFormats: ['^1', '^2', '^3', '^4', '^5', '^6', '^7'],
     numberFormats: [NUM_FMT.CIRCLE_DIGIT, NUM_FMT.CIRCLE_DIGIT, NUM_FMT.CIRCLE_DIGIT, NUM_FMT.CIRCLE_DIGIT, NUM_FMT.CIRCLE_DIGIT, NUM_FMT.CIRCLE_DIGIT, NUM_FMT.CIRCLE_DIGIT],
   },
@@ -306,7 +312,7 @@ export class NumberingDialog extends ModalDialog {
       });
       this.radioButtons.push(radio);
       lbl.appendChild(radio);
-      lbl.appendChild(document.createTextNode(` ${preset.label}`));
+      lbl.appendChild(document.createTextNode(` ${presetLabel(preset)}`));
       radioGroup.appendChild(lbl);
     }
     fmtSection.appendChild(radioGroup);

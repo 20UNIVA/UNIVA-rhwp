@@ -37,7 +37,7 @@ export class AboutDialog extends ModalDialog {
     // 제품 한글명
     const titleKo = document.createElement('div');
     titleKo.className = 'about-product-name-ko';
-    titleKo.textContent = 'HWP 오픈소스 편집';
+    titleKo.textContent = t('about.product_name_ko');
     body.appendChild(titleKo);
 
     // 버전
@@ -55,14 +55,13 @@ export class AboutDialog extends ModalDialog {
     // HWP 스펙 고지 문구 (필수)
     const notice = document.createElement('div');
     notice.className = 'about-notice';
-    notice.textContent =
-      '본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.';
+    notice.textContent = t('about.spec_notice');
     body.appendChild(notice);
 
     // 오픈소스 라이선스
     const licenseTitle = document.createElement('div');
     licenseTitle.className = 'about-license-title';
-    licenseTitle.textContent = '오픈소스 라이선스';
+    licenseTitle.textContent = t('about.licenses_title');
     body.appendChild(licenseTitle);
 
     const licenseTable = document.createElement('table');

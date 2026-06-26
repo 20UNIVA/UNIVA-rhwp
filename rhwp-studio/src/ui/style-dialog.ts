@@ -38,13 +38,17 @@ interface StyleEntry {
 }
 
 function alignLabel(key: string | undefined): string {
-  // 짧은 정렬 라벨 — 사전 단일 키 부재 (style.align.justify·distribute·split 미정의)
-  // 사전 도입 전 임시 인라인 (보고)
-  const map: Record<string, string> = {
-    justify: '양쪽', left: '왼쪽', right: '오른쪽',
-    center: '가운데', distribute: '배분', split: '나눔',
-  };
-  return map[key ?? 'justify'] ?? key ?? '';
+  // 짧은 정렬 라벨 — 사전 키 style.align_short.*
+  const k = key ?? 'justify';
+  switch (k) {
+    case 'justify': return t('style.align_short.justify');
+    case 'left': return t('style.align_short.left');
+    case 'right': return t('style.align_short.right');
+    case 'center': return t('style.align_short.center');
+    case 'distribute': return t('style.align_short.distribute');
+    case 'split': return t('style.align_short.split');
+    default: return key ?? '';
+  }
 }
 
 export class StyleDialog extends ModalDialog {

@@ -658,6 +658,21 @@ export const messages_ko = {
   'context_menu.para_shape': '문단 모양',
   'context_menu.object_props': '개체 속성',
   'context_menu.table_cell_props': '표/셀 속성',
+  'context_menu.table_props_dots': '표 속성...',
+  'context_menu.cell_props_dots': '셀 속성...',
+  'context_menu.caption_insert': '캡션 넣기(A)',
+  'context_menu.cell_border_each': '셀 테두리/배경 - 각 셀마다 적용(E)...',
+  'context_menu.cell_border_as_one': '셀 테두리/배경 - 하나의 셀처럼 적용(Z)...',
+  'context_menu.object_props_dots': '개체 속성(P)...',
+  'context_menu.bring_forward': '앞으로',
+  'context_menu.bring_to_front': '맨 앞으로',
+  'context_menu.send_backward': '뒤로',
+  'context_menu.send_to_back': '맨 뒤로',
+  'context_menu.group': '개체 묶기(G)',
+  'context_menu.ungroup': '개체 풀기(U)',
+  'context_menu.equation_edit': '수식 편집...',
+  'context_menu.formula_dots': '계산식(F)...',
+  'context_menu.numbering_shape': '문단 번호 모양(N)...',
 
   // === §18. 토스트·진행 표시 ===
   'toast.action_settings': '설정 열기',
@@ -1051,6 +1066,10 @@ export const messages_ko = {
   'numbering.level_with_marker': '수준 {level}: {marker}',
   'numbering.new.dialog_title': '새 번호로 시작',
   'numbering.new.start_label': '시작 번호:',
+  'numbering.preset.hangul_basic': '1. 가. 1) 가) (1) (가) ①',
+  'numbering.preset.chapter_section': '제1장 제1절 1. 가. 1) 가) (1)',
+  'numbering.preset.hanja': '一 二 三 (한자)',
+  'numbering.preset.circled': '① ② ③ (원문자)',
 
   // font-set-dialog
   'font_set.add': '대표 글꼴 추가하기',
@@ -1089,6 +1108,17 @@ export const messages_ko = {
   'style.char_info.size_pt': '크기: {size} pt',
   'style.char_info.ratio_spacing': '장평: {ratio}%&nbsp;&nbsp;자간: {spacing}%',
   'style.confirm.delete': "'{name}' 스타일을 삭제하시겠습니까?\n이 스타일을 사용 중인 문단은 바탕글로 변경됩니다.",
+  'style.align_short.justify': '양쪽',
+  'style.align_short.left': '왼쪽',
+  'style.align_short.right': '오른쪽',
+  'style.align_short.center': '가운데',
+  'style.align_short.distribute': '배분',
+  'style.align_short.split': '나눔',
+
+  // about-dialog
+  'about.product_name_ko': 'HWP 오픈소스 편집',
+  'about.spec_notice': '본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.',
+  'about.licenses_title': '오픈소스 라이선스',
 
   // style-edit-dialog
   'style.dialog.add_title': '스타일 추가하기',
@@ -1222,4 +1252,33 @@ export const messages_ko = {
   // 상태 표시줄 정적 자료
   'statusbar.page_default': '1 / 1 쪽',
   'statusbar.section_default': '구역: 1 / 1',
+
+  // === 스타일 이름·정보 라벨 ===
+  'style.name.normal': '바탕글',
+  'style_info.char_name': '글꼴',
+  'style_info.size': '크기',
+  'style_info.ratio': '장평',
+  'style_info.spacing': '자간',
+  'style_info.line_spacing': '줄간격',
+  'style_info.left_margin': '왼쪽 여백',
+  'style_info.first_line': '첫 줄',
+  'style_info.align_center': '가운데',
+  'style_info.indent_normal': '보통',
+  'style_info.indent_hanging': '내어쓰기',
+  'style_info.indent_first_line': '들여쓰기',
+  'style_info.next_style': '다음 스타일',
+  'style_info.para_heading_type': '문단 종류',
+  'style_info.para_heading_bullet': '글머리표',
+  'style_info.para_heading_bullet_image': '그림 글머리표',
+  'style_info.para_heading_number': '번호',
+  'style_info.para_heading_outline': '개요',
+  'style_info.none': '없음',
+
+  // === 문서 요약 필드 라벨 ===
+  'summary.title': '제목',
+  'summary.subject': '주제',
+  'summary.author': '지은이',
+  'summary.date': '날짜',
+  'summary.keywords': '키워드',
+  'summary.comments': '기타',
 } as const;

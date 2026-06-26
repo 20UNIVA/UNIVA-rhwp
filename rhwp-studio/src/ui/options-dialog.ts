@@ -135,7 +135,7 @@ export class OptionsDialog extends ModalDialog {
 
     const localDesc = document.createElement('p');
     localDesc.className = 'opt-desc';
-    localDesc.textContent = 'PC에 설치된 글꼴을 감지하여 글꼴 목록에 추가합니다. (Chrome/Edge 지원)';
+    localDesc.textContent = t('prefs.local_fonts_desc');
     localSection.appendChild(localDesc);
 
     const localRow = document.createElement('div');
@@ -151,7 +151,7 @@ export class OptionsDialog extends ModalDialog {
     // 이미 감지된 글꼴이 있으면 상태 표시
     const cached = getLocalFonts();
     if (cached.length > 0) {
-      localStatus.textContent = `${cached.length}개 로컬 글꼴 감지됨`;
+      localStatus.textContent = t('prefs.local_fonts_detected', { count: cached.length });
     }
 
     localBtn.addEventListener('click', async () => {

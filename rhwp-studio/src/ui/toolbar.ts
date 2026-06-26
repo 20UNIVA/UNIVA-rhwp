@@ -5,6 +5,7 @@ import type { CommandDispatcher } from '@/command/dispatcher';
 import { userSettings } from '@/core/user-settings';
 import type { FontSet } from '@/core/user-settings';
 import { getLocalFonts } from '@/core/local-fonts';
+import { STYLE_INFO } from '@/core/hwp-constants';
 import { t } from '@/i18n/t';
 
 /** 서식 도구 모음 (style-bar) 컨트롤러 */
@@ -511,7 +512,11 @@ export class Toolbar {
       for (const style of styles) {
         const opt = document.createElement('option');
         opt.value = String(style.id);
-        opt.textContent = style.name;
+        // 시스템 기본 스타일 "바탕글"만 i18n 박는다 (WASM 자료 자체 박힌 자료).
+        // 다른 스타일은 사용자가 작성한 자료라 그대로 둔다.
+        opt.textContent = style.name === STYLE_INFO.NORMAL_STYLE
+          ? t('style.name.normal')
+          : style.name;
         this.styleName.appendChild(opt);
       }
       this.styleDropdownInitialized = true;
