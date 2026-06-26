@@ -2,6 +2,7 @@ import { formatDiffLocationCombined, formatParagraphLocationForSide, isComparePr
 import type { CompareSessionStore } from '@/compare/session';
 import type { CompareSession, DiffAnchor, DiffItem } from '@/compare/types';
 import { WasmBridge } from '@/core/wasm-bridge';
+import { t } from '@/i18n/t';
 
 type CompareSourceDocument = {
   bytes: Uint8Array;
@@ -56,9 +57,9 @@ export class CompareResultWindow {
       this.build();
       document.body.appendChild(this.wrap);
     }
-    this.titleEl.textContent = `문서 비교 상세 · ${session.left.name} ↔ ${session.right.name}`;
-    this.leftTitleEl.textContent = `왼쪽 문서: ${session.left.name}`;
-    this.rightTitleEl.textContent = `오른쪽 문서: ${session.right.name}`;
+    this.titleEl.textContent = t('compare.detail_title_pair', { left: session.left.name, right: session.right.name });
+    this.leftTitleEl.textContent = t('compare.left_name', { name: session.left.name });
+    this.rightTitleEl.textContent = t('compare.right_name', { name: session.right.name });
     void this.focusDiff(initialIndex);
   }
 
@@ -102,7 +103,7 @@ export class CompareResultWindow {
     const head = document.createElement('div');
     head.className = 'compare-inspector-head';
     this.titleEl = document.createElement('span');
-    this.titleEl.textContent = '문서 비교 상세';
+    this.titleEl.textContent = t('compare.detail_title');
     const close = document.createElement('button');
     close.className = 'dialog-close';
     close.textContent = '\u00D7';
@@ -120,10 +121,10 @@ export class CompareResultWindow {
     const leftWrap = document.createElement('div');
     leftWrap.className = 'compare-inspector-pane';
     this.leftTitleEl = document.createElement('h4');
-    this.leftTitleEl.textContent = '왼쪽 문서';
+    this.leftTitleEl.textContent = t('compare.left_doc');
     this.leftStatusEl = document.createElement('div');
     this.leftStatusEl.className = 'compare-inspector-page-status';
-    this.leftStatusEl.textContent = '페이지 준비 중...';
+    this.leftStatusEl.textContent = t('compare.page_preparing');
     this.leftCanvasWrap = document.createElement('div');
     this.leftCanvasWrap.className = 'compare-inspector-canvas-wrap';
     this.leftCanvas = document.createElement('canvas');
@@ -138,10 +139,10 @@ export class CompareResultWindow {
     const rightWrap = document.createElement('div');
     rightWrap.className = 'compare-inspector-pane';
     this.rightTitleEl = document.createElement('h4');
-    this.rightTitleEl.textContent = '오른쪽 문서';
+    this.rightTitleEl.textContent = t('compare.right_doc');
     this.rightStatusEl = document.createElement('div');
     this.rightStatusEl.className = 'compare-inspector-page-status';
-    this.rightStatusEl.textContent = '페이지 준비 중...';
+    this.rightStatusEl.textContent = t('compare.page_preparing');
     this.rightCanvasWrap = document.createElement('div');
     this.rightCanvasWrap.className = 'compare-inspector-canvas-wrap';
     this.rightCanvas = document.createElement('canvas');
@@ -158,7 +159,7 @@ export class CompareResultWindow {
     nav.className = 'compare-inspector-nav';
     const prev = document.createElement('button');
     prev.className = 'dialog-btn';
-    prev.textContent = '이전 차이';
+    prev.textContent = t('compare.prev_diff');
     prev.addEventListener('click', () => {
       const item = this.store?.prevDiff();
       if (!item || !this.session) return;
@@ -166,7 +167,7 @@ export class CompareResultWindow {
     });
     const next = document.createElement('button');
     next.className = 'dialog-btn';
-    next.textContent = '다음 차이';
+    next.textContent = t('compare.next_diff');
     next.addEventListener('click', () => {
       const item = this.store?.nextDiff();
       if (!item || !this.session) return;
@@ -371,8 +372,8 @@ export class CompareResultWindow {
   private async ensureCompareDocumentsLoaded(): Promise<void> {
     if (!this.leftSource || !this.rightSource) return;
     const token = ++this.loadingToken;
-    this.leftStatusEl.textContent = '왼쪽 문서 로딩 중...';
-    this.rightStatusEl.textContent = '오른쪽 문서 로딩 중...';
+    this.leftStatusEl.textContent = t('compare.left_loading');
+    this.rightStatusEl.textContent = t('compare.right_loading');
     try {
       const leftKey = `${this.leftSource.fileName}:${this.leftSource.bytes.byteLength}`;
       const rightKey = `${this.rightSource.fileName}:${this.rightSource.bytes.byteLength}`;
@@ -407,12 +408,12 @@ export class CompareResultWindow {
         /* noop */
       }
       if (this.loadingToken !== token) return;
-      this.leftStatusEl.textContent = '왼쪽 문서 페이지 준비 완료';
-      this.rightStatusEl.textContent = '오른쪽 문서 페이지 준비 완료';
+      this.leftStatusEl.textContent = t('compare.left_ready');
+      this.rightStatusEl.textContent = t('compare.right_ready');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      this.leftStatusEl.textContent = `페이지 로드 실패: ${msg}`;
-      this.rightStatusEl.textContent = `페이지 로드 실패: ${msg}`;
+      this.leftStatusEl.textContent = t('compare.page_load_failed', { message: msg });
+      this.rightStatusEl.textContent = t('compare.page_load_failed', { message: msg });
     }
   }
 
@@ -462,7 +463,7 @@ export class CompareResultWindow {
     item: DiffItem,
   ): void {
     if (!wasm) {
-      statusEl.textContent = '문서가 아직 로드되지 않았습니다.';
+      statusEl.textContent = t('compare.no_doc_loaded');
       marker.style.display = 'none';
       return;
     }
@@ -508,7 +509,7 @@ export class CompareResultWindow {
           wrap.scrollTop = Math.max(0, marker.offsetTop - Math.floor(wrap.clientHeight * 0.15));
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          statusEl.textContent = `페이지 렌더 실패: ${msg}`;
+          statusEl.textContent = t('compare.page_render_failed', { message: msg });
           marker.style.display = 'none';
         }
       };
@@ -517,7 +518,7 @@ export class CompareResultWindow {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      statusEl.textContent = `페이지 렌더 실패: ${msg}`;
+      statusEl.textContent = t('compare.page_render_failed', { message: msg });
       marker.style.display = 'none';
     }
   }

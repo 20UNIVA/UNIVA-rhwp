@@ -5,6 +5,7 @@
  */
 import type { CommandServices } from '@/command/types';
 import type { BookmarkInfo } from '@/core/types';
+import { t } from '@/i18n/t';
 
 type SortMode = 'name' | 'position';
 
@@ -70,7 +71,7 @@ export class BookmarkDialog {
     // 타이틀
     const titleBar = document.createElement('div');
     titleBar.className = 'dialog-title';
-    titleBar.textContent = '책갈피';
+    titleBar.textContent = t('bookmark.dialog_title');
     const closeBtn = document.createElement('button');
     closeBtn.className = 'dialog-close';
     closeBtn.textContent = '\u00D7';
@@ -87,7 +88,7 @@ export class BookmarkDialog {
     nameRow.className = 'bm-row';
     const nameLabel = document.createElement('label');
     nameLabel.className = 'bm-label';
-    nameLabel.textContent = '책갈피 이름(N):';
+    nameLabel.textContent = t('bookmark.rename_label');
     this.nameInput = document.createElement('input');
     this.nameInput.type = 'text';
     this.nameInput.className = 'bm-name-input';
@@ -106,17 +107,17 @@ export class BookmarkDialog {
     listCol.className = 'bm-list-col';
     const listLabel = document.createElement('div');
     listLabel.className = 'bm-label';
-    listLabel.textContent = '책갈피 목록(L):';
+    listLabel.textContent = t('bookmark.list');
     listCol.appendChild(listLabel);
 
     // 목록 헤더
     const listHeader = document.createElement('div');
     listHeader.className = 'bm-list-header';
     const hName = document.createElement('span');
-    hName.textContent = '이름';
+    hName.textContent = t('bookmark.sort.name');
     hName.className = 'bm-list-hcol';
     const hType = document.createElement('span');
-    hType.textContent = '종류';
+    hType.textContent = t('bookmark.sort.kind');
     hType.className = 'bm-list-hcol bm-list-hcol-type';
     listHeader.appendChild(hName);
     listHeader.appendChild(hType);
@@ -137,10 +138,10 @@ export class BookmarkDialog {
     // 버튼 컬럼
     const btnCol = document.createElement('div');
     btnCol.className = 'bm-btn-col';
-    const addBtn = this.createButton('넣기(D)', () => this.doAdd());
+    const addBtn = this.createButton(t('bookmark.insert_btn'), () => this.doAdd());
     addBtn.classList.add('dialog-btn-primary');
-    const cancelBtn = this.createButton('취소', () => this.hide());
-    const moveBtn = this.createButton('이동(M)', () => this.doMove());
+    const cancelBtn = this.createButton(t('bookmark.cancel_btn'), () => this.hide());
+    const moveBtn = this.createButton(t('bookmark.goto_btn'), () => this.doMove());
     btnCol.appendChild(addBtn);
     btnCol.appendChild(cancelBtn);
     btnCol.appendChild(moveBtn);
@@ -153,12 +154,12 @@ export class BookmarkDialog {
     iconRow.className = 'bm-icon-row';
     const renameBtn = document.createElement('button');
     renameBtn.className = 'bm-icon-btn';
-    renameBtn.title = '책갈피 이름 바꾸기';
+    renameBtn.title = t('bookmark.rename_title');
     renameBtn.textContent = '✏';
     renameBtn.addEventListener('click', () => this.doRename());
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'bm-icon-btn';
-    deleteBtn.title = '삭제';
+    deleteBtn.title = t('bookmark.delete_btn');
     deleteBtn.textContent = '✕';
     deleteBtn.addEventListener('click', () => this.doDelete());
     iconRow.appendChild(renameBtn);
@@ -170,7 +171,7 @@ export class BookmarkDialog {
     sortRow.className = 'bm-sort-row';
     const sortLabel = document.createElement('span');
     sortLabel.className = 'bm-label';
-    sortLabel.textContent = '책갈피 정렬 기준';
+    sortLabel.textContent = t('bookmark.sort_by');
     sortRow.appendChild(sortLabel);
 
     const radioName = document.createElement('label');
@@ -223,7 +224,7 @@ export class BookmarkDialog {
     if (this.bookmarks.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'bm-empty';
-      empty.textContent = '최근에 등록한 [책갈피]가 없습니다.\n사용자가 편집 문서에 책갈피를 삽입하면 [책갈피 목록]에 등록됩니다.';
+      empty.textContent = t('bookmark.empty_state');
       this.listEl.appendChild(empty);
       return;
     }
@@ -237,7 +238,7 @@ export class BookmarkDialog {
       nameSpan.textContent = bm.name || '(이름 없음)';
       const typeSpan = document.createElement('span');
       typeSpan.className = 'bm-item-type';
-      typeSpan.textContent = '위치';
+      typeSpan.textContent = t('bookmark.sort.position');
       row.appendChild(nameSpan);
       row.appendChild(typeSpan);
       row.addEventListener('click', () => this.selectItem(i));
@@ -263,7 +264,7 @@ export class BookmarkDialog {
     if (!ih) return;
     // 기존 선택 텍스트나 커서 주변 텍스트를 기본 이름으로 제안
     const count = this.bookmarks.length + 1;
-    this.nameInput.value = `책갈피${count}`;
+    this.nameInput.value = t('bookmark.default_name', { count });
   }
 
   // ── 동작 ──
@@ -271,7 +272,7 @@ export class BookmarkDialog {
   private doAdd(): void {
     const name = this.nameInput.value.trim();
     if (!name) {
-      this.statusLabel.textContent = '책갈피 이름을 입력하세요.';
+      this.statusLabel.textContent = t('bookmark.enter_name');
       this.statusLabel.style.color = '#c00';
       return;
     }
@@ -289,7 +290,7 @@ export class BookmarkDialog {
       this.hide();
     } else {
       this.statusLabel.style.color = '#c00';
-      this.statusLabel.textContent = result.error ?? '책갈피 추가 실패';
+      this.statusLabel.textContent = result.error ?? t('bookmark.add_failed');
     }
   }
 
@@ -317,7 +318,7 @@ export class BookmarkDialog {
     if (this.selectedIdx < 0 || this.selectedIdx >= this.bookmarks.length) return;
     const bm = this.bookmarks[this.selectedIdx];
 
-    if (!confirm(`선택한 책갈피 '${bm.name}'를 지울까요?`)) return;
+    if (!confirm(t('bookmark.confirm_delete', { name: bm.name }))) return;
 
     const result = this.services.wasm.deleteBookmark(bm.sec, bm.para, bm.ctrlIdx);
     if (result.ok) {
@@ -330,7 +331,7 @@ export class BookmarkDialog {
   private doRename(): void {
     if (this.selectedIdx < 0 || this.selectedIdx >= this.bookmarks.length) return;
     const bm = this.bookmarks[this.selectedIdx];
-    const newName = prompt('새 책갈피 이름:', bm.name);
+    const newName = prompt(t('bookmark.new_name'), bm.name);
     if (!newName || newName.trim() === '' || newName === bm.name) return;
 
     const result = this.services.wasm.renameBookmark(bm.sec, bm.para, bm.ctrlIdx, newName.trim());
@@ -339,7 +340,7 @@ export class BookmarkDialog {
       this.refreshList();
     } else {
       this.statusLabel.style.color = '#c00';
-      this.statusLabel.textContent = result.error ?? '이름 변경 실패';
+      this.statusLabel.textContent = result.error ?? t('bookmark.rename_failed');
     }
   }
 }

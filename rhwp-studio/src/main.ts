@@ -1,3 +1,5 @@
+import { t, onLangChange, type MessageKey } from '@/i18n/t';
+import { applyInitialLangFromUrl, attachLangPostMessageListener } from '@/i18n/lang-boundary';
 import { WasmBridge } from '@/core/wasm-bridge';
 import type { DocumentInfo } from '@/core/types';
 import { EventBus } from '@/core/event-bus';
@@ -51,6 +53,41 @@ import {
     /* postMessage 실패해도 앱 진행에 영향 없음 — silent */
   }
 })();
+
+/**
+ * index.html 박힌 *정적 한국어*를 현재 lang 자료로 교체한다.
+ * data-i18n="키" → textContent, data-i18n-aria="키" → aria-label,
+ * data-i18n-title="키" → title 속성.
+ * 진입 시점과 onLangChange 시점에 호출.
+ */
+function applyStaticTexts(): void {
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
+    const key = el.dataset.i18n as MessageKey | undefined;
+    if (key) el.textContent = t(key);
+  });
+  document.querySelectorAll<HTMLElement>('[data-i18n-aria]').forEach((el) => {
+    const key = el.dataset.i18nAria as MessageKey | undefined;
+    if (key) el.setAttribute('aria-label', t(key));
+  });
+  document.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => {
+    const key = el.dataset.i18nTitle as MessageKey | undefined;
+    if (key) el.setAttribute('title', t(key));
+  });
+}
+
+// 경계 결선: URL ?sysLang= 자료 + 부모 postMessage 자료 두 자리 모두 수신.
+{
+  const parentOrigin = new URLSearchParams(location.search).get('parentOrigin') || '*';
+  applyInitialLangFromUrl();
+  attachLangPostMessageListener(parentOrigin);
+  // DOM 준비된 시점에 한 번 + lang 바뀌면 또 한 번.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyStaticTexts);
+  } else {
+    applyStaticTexts();
+  }
+  onLangChange(applyStaticTexts);
+}
 
 const wasm = new WasmBridge();
 const eventBus = new EventBus();
@@ -846,9 +883,9 @@ const sbZoomVal = () => document.getElementById('sb-zoom-val')!;
 async function initialize(): Promise<void> {
   const msg = sbMessage();
   try {
-    msg.textContent = '웹폰트 로딩 중...';
+    msg.textContent = t('main.loading.webfont');
     await loadWebFonts([]);  // CSS @font-face 등록 + CRITICAL 폰트만 로드
-    msg.textContent = 'WASM 로딩 중...';
+    msg.textContent = t('main.loading.wasm');
     await wasm.initialize();
     if (import.meta.env.DEV) {
       initRhwpDev(wasm);
@@ -866,7 +903,7 @@ async function initialize(): Promise<void> {
     let canvaskitRenderer: CanvasKitLayerRenderer | null = null;
 
     if (renderBackend === 'canvaskit') {
-      msg.textContent = 'CanvasKit 로딩 중...';
+      msg.textContent = t('main.loading.canvaskit');
       try {
         const { CanvasKitLayerRenderer } = await import('@/view/canvaskit-renderer');
         canvaskitRenderer = await CanvasKitLayerRenderer.create(canvaskitMode, canvaskitSurfaceRequest);
@@ -875,7 +912,7 @@ async function initialize(): Promise<void> {
         renderBackend = 'canvas2d';
       }
     }
-    msg.textContent = 'HWP 파일을 선택해주세요.';
+    msg.textContent = t('main.prompt.select_file');
 
     const container = document.getElementById('scroll-container')!;
     canvasView = new CanvasView(
@@ -997,7 +1034,7 @@ async function initialize(): Promise<void> {
       (window as any).__dispatcher = dispatcher;
     }
   } catch (error) {
-    msg.textContent = `WASM 초기화 실패: ${error}`;
+    msg.textContent = t('main.error.wasm_init_failed', { error: String(error) });
     console.error('[main] WASM 초기화 실패:', error);
   }
 }
@@ -1046,7 +1083,7 @@ function setupFileInput(): void {
     if (!file) return;
     const name = file.name.toLowerCase();
     if (!name.endsWith('.hwp') && !name.endsWith('.hwpx')) {
-      alert('HWP/HWPX 파일만 지원합니다.');
+      alert(t('main.error.hwp_only'));
       fileInput.value = '';
       return;
     }
@@ -1092,7 +1129,7 @@ function setupFileInput(): void {
       return;
     }
     if (!dropName.endsWith('.hwp') && !dropName.endsWith('.hwpx')) {
-      alert('HWP/HWPX 파일 또는 이미지 파일만 지원합니다.');
+      alert(t('main.error.hwp_or_image_only'));
       return;
     }
     await loadFile(file);
@@ -1168,13 +1205,13 @@ let totalSections = 1;
 function setupEventListeners(): void {
   eventBus.on('current-page-changed', (page, _total) => {
     const pageIdx = page as number;
-    sbPage().textContent = `${pageIdx + 1} / ${_total} 쪽`;
+    sbPage().textContent = t('statusbar.page', { current: pageIdx + 1, total: _total as number });
 
     // 구역 정보: 현재 페이지의 sectionIndex로 갱신
     if (wasm.pageCount > 0) {
       try {
         const pageInfo = wasm.getPageInfo(pageIdx);
-        sbSection().textContent = `구역: ${pageInfo.sectionIndex + 1} / ${totalSections}`;
+        sbSection().textContent = t('statusbar.section', { current: pageInfo.sectionIndex + 1, total: totalSections });
       } catch { /* 무시 */ }
     }
   });
@@ -1185,7 +1222,7 @@ function setupEventListeners(): void {
 
   // 삽입/수정 모드 토글
   eventBus.on('insert-mode-changed', (insertMode) => {
-    document.getElementById('sb-mode')!.textContent = (insertMode as boolean) ? '삽입' : '수정';
+    document.getElementById('sb-mode')!.textContent = (insertMode as boolean) ? t('statusbar.insert_mode') : t('statusbar.overwrite_mode');
   });
 
   eventBus.on('document-mutated', (reason) => {
@@ -1209,7 +1246,7 @@ function setupEventListeners(): void {
     const fi = info as { fieldId: number; fieldType: string; guideName?: string } | null;
     if (fi) {
       const label = fi.guideName || `#${fi.fieldId}`;
-      sbField.textContent = `[누름틀] ${label}`;
+      sbField.textContent = t('statusbar.field_label', { label });
       sbField.style.display = '';
     } else {
       sbField.textContent = '';
@@ -1239,7 +1276,7 @@ function setupEventListeners(): void {
       hfGroup.style.display = isActive ? '' : 'none';
     }
     if (hfLabel) {
-      hfLabel.textContent = (mode as string) === 'header' ? '머리말' : (mode as string) === 'footer' ? '꼬리말' : '';
+      hfLabel.textContent = (mode as string) === 'header' ? t('menu.page.header') : (mode as string) === 'footer' ? t('menu.page.footer') : '';
     }
     defaultTbGroups.forEach((el) => {
       (el as HTMLElement).style.display = isActive ? 'none' : '';
@@ -1264,13 +1301,13 @@ async function initializeDocument(docInfo: DocumentInfo, displayName: string): P
     console.log('[initDoc] 1. 폰트 로딩 시작');
     if (docInfo.fontsUsed?.length) {
       await loadWebFonts(docInfo.fontsUsed, (loaded, total) => {
-        msg.textContent = `폰트 로딩 중... (${loaded}/${total})`;
+        msg.textContent = t('main.loading.fonts_progress', { loaded, total });
       });
     }
     console.log('[initDoc] 2. 폰트 로딩 완료');
     msg.textContent = displayName;
     totalSections = docInfo.sectionCount ?? 1;
-    sbSection().textContent = `구역: 1 / ${totalSections}`;
+    sbSection().textContent = t('statusbar.section', { current: 1, total: totalSections });
     console.log('[initDoc] 3. inputHandler deactivate');
     inputHandler?.deactivate();
     console.log('[initDoc] 4. canvasView loadDocument');
@@ -1296,7 +1333,7 @@ async function initializeDocument(docInfo: DocumentInfo, displayName: string): P
           console.log(`[validation] reflowed ${n} paragraphs`);
           // 렌더 재계산
           canvasView?.loadDocument();
-          msg.textContent = `${displayName} (비표준 lineseg ${n}건 자동 보정됨)`;
+          msg.textContent = t('main.lineseg_auto_fixed', { displayName, n });
           normalizedDuringLoad = n > 0;
         }
       }
@@ -1310,7 +1347,7 @@ async function initializeDocument(docInfo: DocumentInfo, displayName: string): P
     }
   } catch (error) {
     console.error('[initDoc] 오류:', error);
-    if (window.innerWidth < 768) alert(`초기화 오류: ${error}`);
+    if (window.innerWidth < 768) alert(t('error.client.init_failed', { message: String(error) }));
   }
 }
 
@@ -1321,7 +1358,7 @@ async function loadFile(file: File, options: { skipUnsavedGuard?: boolean } = {}
       const canReplace = await confirmSaveBeforeReplacingDocument(commandServices);
       if (!canReplace) return false;
     }
-    msg.textContent = '파일 로딩 중...';
+    msg.textContent = t('main.loading.file');
     const startTime = performance.now();
     const data = new Uint8Array(await file.arrayBuffer());
     await loadBytes(data, file.name, null, startTime);
@@ -1351,7 +1388,7 @@ async function loadBytes(
   const elapsed = performance.now() - startTime;
   // initializeDocument 안에서 #177 validation 모달이 표시될 수 있음.
   // HWPX 토스트는 모달과의 이벤트 충돌을 피하기 위해 모달 닫힌 후 표시.
-  await initializeDocument(docInfo, `${fileName} — ${docInfo.pageCount}페이지 (${elapsed.toFixed(1)}ms)`);
+  await initializeDocument(docInfo, t('main.doc_loaded_summary', { fileName, pages: docInfo.pageCount, ms: elapsed.toFixed(1) }));
   notifyHwpxSaveModeIfNeeded();
 
   // SSR 세션 연결
@@ -1392,19 +1429,19 @@ function notifyHwpxSaveModeIfNeeded(): void {
   if (wasm.getSourceFormat() !== 'hwpx') return;
 
   showToast({
-    message: 'HWPX 문서는 저장 시 HWP 형식으로 변환 저장됩니다.\n원본 HWPX를 덮어쓰지 않도록 .hwp 파일명으로 저장합니다.',
+    message: t('toast.hwpx_to_hwp_notice'),
     durationMs: 0, // 자동 페이드 없음 — 사용자가 확인 버튼으로 닫음
     action: {
-      label: '이슈 보기',
+      label: t('toast.action_issue'),
       onClick: () => {
         window.open('https://github.com/edwardkim/rhwp/issues/888', '_blank');
       },
     },
-    confirmLabel: '확인',
+    confirmLabel: t('toast.action_ok'),
   });
 
   const sb = sbMessage();
-  if (sb) sb.textContent = 'HWPX 변환 저장 모드 — 저장 시 HWP(.hwp)로 내보냅니다';
+  if (sb) sb.textContent = t('main.statusbar.hwpx_convert_mode');
 }
 
 type DocumentByteKind = 'hwp' | 'hwpx' | 'html' | 'unknown';
@@ -1445,20 +1482,20 @@ function assertRemoteDocumentBytes(bytes: Uint8Array, contentType?: string | nul
   if (kind === 'hwp' || kind === 'hwpx') return;
 
   if (kind === 'html') {
-    throw new Error('실제 HWP/HWPX 파일이 아닙니다. 파일 미리보기/오류 페이지가 반환되었습니다.');
+    throw new Error(t('main.error.not_hwp_html_preview'));
   }
 
-  throw new Error('실제 HWP/HWPX 파일이 아닙니다. 파일 시그니처를 확인할 수 없습니다.');
+  throw new Error(t('main.error.not_hwp_unknown_signature'));
 }
 
 async function createNewDocument(): Promise<void> {
   const msg = sbMessage();
   try {
-    msg.textContent = '새 문서 생성 중...';
+    msg.textContent = t('main.creating_new_doc');
     const docInfo = wasm.createNewDocument();
-    await initializeDocument(docInfo, `새 문서.hwp — ${docInfo.pageCount}페이지`);
+    await initializeDocument(docInfo, t('main.new_doc_summary', { pages: docInfo.pageCount }));
   } catch (error) {
-    msg.textContent = `새 문서 생성 실패: ${error}`;
+    msg.textContent = t('main.error.new_doc_failed', { error: String(error) });
     console.error('[main] 새 문서 생성 실패:', error);
   }
 }
@@ -1490,7 +1527,7 @@ eventBus.on('open-document-bytes', async (payload) => {
   };
   try {
     if (!await canReplaceCurrentDocument(data.skipUnsavedGuard)) {
-      notifyDone(false, '문서 열기가 취소되었습니다.');
+      notifyDone(false, t('main.error.doc_open_cancelled'));
       return;
     }
     await loadBytes(data.bytes, data.fileName, data.fileHandle);
@@ -1521,7 +1558,7 @@ async function loadFromUrlParam(): Promise<void> {
   const msg = sbMessage();
 
   try {
-    msg.textContent = '파일 로딩 중...';
+    msg.textContent = t('main.loading.file');
     console.log(`[loadFromUrlParam] ${fileUrl}`);
 
     let response: Response;
@@ -1590,16 +1627,16 @@ async function isFileSchemeAccessAllowed(): Promise<boolean | null> {
  * 확장 컨텍스트의 chrome.tabs.create 로 연다.
  */
 function showFileUrlAccessGuidance(): void {
-  const errMsg = '로컬 파일을 열려면 확장 프로그램의 "파일 URL에 대한 액세스 허용"을 켜야 합니다.\n설정에서 권한을 허용한 뒤 파일을 다시 열어 주세요.';
+  const errMsg = t('main.error.file_url_access_denied_long');
   const sb = sbMessage();
-  if (sb) sb.textContent = '파일 로드 실패: 파일 URL 액세스 권한이 필요합니다.';
+  if (sb) sb.textContent = t('main.error.file_url_access_denied_short');
   console.error('[main] file:// 로드 실패 — 파일 URL 액세스 미허용 (#1131)');
   showToast({
     message: errMsg,
     durationMs: 0, // 사용자가 읽고 직접 닫기
-    confirmLabel: '확인',
+    confirmLabel: t('toast.action_ok'),
     action: {
-      label: '설정 열기',
+      label: t('toast.action_settings'),
       onClick: () => {
         if (typeof chrome !== 'undefined' && chrome.tabs?.create && chrome.runtime?.id) {
           chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
@@ -1618,14 +1655,14 @@ function showFileUrlAccessGuidance(): void {
  */
 function showLoadError(error: unknown): void {
   const raw = String(error).replace(/^Error:\s*/, '');
-  const errMsg = `파일 로드 실패: ${raw}`;
+  const errMsg = t('main.error.file_load_failed', { reason: raw });
   const sb = sbMessage();
   if (sb) sb.textContent = errMsg;
   console.error('[main] 파일 로드 실패:', error);
   showToast({
     message: errMsg,
     durationMs: 0, // 에러는 자동 페이드 없음 — 사용자가 읽고 닫기
-    confirmLabel: '확인',
+    confirmLabel: t('toast.action_ok'),
   });
 }
 
@@ -1644,7 +1681,7 @@ window.addEventListener('message', async (e) => {
     try {
       await initPromise;
       if (!await canReplaceCurrentDocument(Boolean(msg.skipUnsavedGuard))) {
-        e.source?.postMessage({ type: 'rhwp-response', id: msg.id, error: '문서 열기가 취소되었습니다.' }, { targetOrigin: '*' });
+        e.source?.postMessage({ type: 'rhwp-response', id: msg.id, error: t('main.error.doc_open_cancelled') }, { targetOrigin: '*' });
         return;
       }
       const bytes = new Uint8Array(msg.data);
@@ -1673,7 +1710,7 @@ window.addEventListener('message', async (e) => {
       case 'loadFile': {
         await initPromise;
         if (!await canReplaceCurrentDocument(Boolean(params?.skipUnsavedGuard))) {
-          reply(undefined, '문서 열기가 취소되었습니다.');
+          reply(undefined, t('main.error.doc_open_cancelled'));
           break;
         }
         const bytes = new Uint8Array(params.data);

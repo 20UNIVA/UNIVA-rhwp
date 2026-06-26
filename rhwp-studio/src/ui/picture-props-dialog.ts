@@ -13,6 +13,7 @@
 import type { PictureProperties, ShapeProperties } from '@/core/types';
 import type { WasmBridge } from '@/core/wasm-bridge';
 import type { EventBus } from '@/core/event-bus';
+import { t } from '@/i18n/t';
 
 /** HWPUNIT ↔ mm 변환 상수 (1 inch = 25.4 mm = 7200 HWPUNIT) */
 const HWP_PER_MM = 7200 / 25.4; // ≈ 283.46
@@ -41,12 +42,26 @@ function hexToColorRef(hex: string): number {
   return (b << 16) | (g << 8) | r;
 }
 
-/** 탭 이름 — 그림용 */
-const PICTURE_TAB_NAMES = ['기본', '여백/캡션', '선', '그림', '그림자', '반사', '네온', '열은 테두리'];
-/** 탭 이름 — 글상자용 */
-const SHAPE_TAB_NAMES = ['기본', '여백/캡션', '선', '채우기', '글상자', '그림자'];
-/** 탭 이름 — 직선용 (채우기/글상자 불필요) */
-const LINE_TAB_NAMES = ['기본', '여백/캡션', '선', '그림자'];
+/** 탭 키 (안정 식별자 — 언어 무관) */
+type TabKey = 'basic' | 'margin_caption' | 'line' | 'picture' | 'shadow' | 'reflection' | 'glow' | 'soft_edge' | 'fill' | 'textbox';
+
+function tabLabel(key: TabKey): string {
+  switch (key) {
+    case 'basic': return t('shape.tab.basic');
+    case 'margin_caption': return '여백/캡션';
+    case 'line': return t('shape.tab.line');
+    case 'picture': return t('shape.tab.picture');
+    case 'shadow': return t('shape.tab.shadow');
+    case 'reflection': return t('shape.effects.reflection');
+    case 'glow': return t('shape.effects.glow');
+    case 'soft_edge': return t('shape.effects.soft_edge');
+    case 'fill': return t('shape.tab.fill');
+    case 'textbox': return t('shape.textbox.title');
+  }
+}
+const PICTURE_TAB_KEYS: TabKey[] = ['basic', 'margin_caption', 'line', 'picture', 'shadow', 'reflection', 'glow', 'soft_edge'];
+const SHAPE_TAB_KEYS: TabKey[] = ['basic', 'margin_caption', 'line', 'fill', 'textbox', 'shadow'];
+const LINE_TAB_KEYS: TabKey[] = ['basic', 'margin_caption', 'line', 'shadow'];
 
 export class PicturePropsDialog {
   private overlay!: HTMLDivElement;
@@ -277,7 +292,7 @@ export class PicturePropsDialog {
     // 타이틀 바
     const titleBar = document.createElement('div');
     titleBar.className = 'dialog-title';
-    titleBar.textContent = '개체 속성';
+    titleBar.textContent = t('shape.dialog_title');
     const closeBtn = document.createElement('button');
     closeBtn.className = 'dialog-close';
     closeBtn.textContent = '\u00D7';
@@ -308,11 +323,11 @@ export class PicturePropsDialog {
     rightCol.className = 'cs-right-col';
     const okBtn = document.createElement('button');
     okBtn.className = 'dialog-btn dialog-btn-primary';
-    okBtn.textContent = '설정(D)';
+    okBtn.textContent = t('button.set');
     okBtn.addEventListener('click', () => this.handleOk());
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'dialog-btn';
-    cancelBtn.textContent = '취소';
+    cancelBtn.textContent = t('button.cancel');
     cancelBtn.addEventListener('click', () => this.hide());
     rightCol.appendChild(okBtn);
     rightCol.appendChild(cancelBtn);
@@ -345,34 +360,34 @@ export class PicturePropsDialog {
     this.tabs = [];
     this.panels = [];
 
-    const tabNames = this.objectType === 'line' ? LINE_TAB_NAMES
-      : this.objectType === 'shape' ? SHAPE_TAB_NAMES
-      : PICTURE_TAB_NAMES;
-    tabNames.forEach((name, i) => {
+    const tabKeys: TabKey[] = this.objectType === 'line' ? LINE_TAB_KEYS
+      : this.objectType === 'shape' ? SHAPE_TAB_KEYS
+      : PICTURE_TAB_KEYS;
+    tabKeys.forEach((key, i) => {
       const btn = document.createElement('button');
       btn.className = 'dialog-tab';
-      btn.textContent = name;
+      btn.textContent = tabLabel(key);
       btn.addEventListener('click', () => this.switchTab(i));
       this.tabGroup.appendChild(btn);
       this.tabs.push(btn);
     });
 
     // 패널 생성
-    const builders: Record<string, () => HTMLDivElement> = {
-      '기본': () => this.buildBasicPanel(),
-      '여백/캡션': () => this.buildMarginCaptionPanel(),
-      '선': () => this.buildLinePanel(),
-      '채우기': () => this.buildFillPanel(),
-      '글상자': () => this.buildTextboxPanel(),
-      '그림': () => this.buildPicturePanel(),
-      '그림자': () => this.buildShadowPanel(),
-      '반사': () => this.buildReflectionPanel(),
-      '네온': () => this.buildGlowPanel(),
-      '열은 테두리': () => this.buildSoftEdgePanel(),
+    const builders: Record<TabKey, () => HTMLDivElement> = {
+      'basic': () => this.buildBasicPanel(),
+      'margin_caption': () => this.buildMarginCaptionPanel(),
+      'line': () => this.buildLinePanel(),
+      'fill': () => this.buildFillPanel(),
+      'textbox': () => this.buildTextboxPanel(),
+      'picture': () => this.buildPicturePanel(),
+      'shadow': () => this.buildShadowPanel(),
+      'reflection': () => this.buildReflectionPanel(),
+      'glow': () => this.buildGlowPanel(),
+      'soft_edge': () => this.buildSoftEdgePanel(),
     };
-    tabNames.forEach((name) => {
-      const builder = builders[name];
-      const panel = builder ? builder() : this.buildStubPanel(name);
+    tabKeys.forEach((key) => {
+      const builder = builders[key];
+      const panel = builder ? builder() : this.buildStubPanel(tabLabel(key));
       this.panels.push(panel);
       this.body.appendChild(panel);
     });
@@ -387,12 +402,12 @@ export class PicturePropsDialog {
     panel.className = 'dialog-tab-panel';
 
     // ── 크기 ──
-    const sizeFs = this.fieldset('크기');
+    const sizeFs = this.fieldset(t('shape.size.title'));
     panel.appendChild(sizeFs);
 
     // 너비
     const wRow = this.row();
-    wRow.appendChild(this.label('너비(W)'));
+    wRow.appendChild(this.label(t('shape.size.width')));
     wRow.appendChild(this.sizeTypeSelect());
     this.widthInput = this.numberInput(0);
     wRow.appendChild(this.widthInput);
@@ -401,13 +416,13 @@ export class PicturePropsDialog {
 
     // 높이
     const hRow = this.row();
-    hRow.appendChild(this.label('높이(H)'));
+    hRow.appendChild(this.label(t('shape.size.height')));
     hRow.appendChild(this.sizeTypeSelect());
     this.heightInput = this.numberInput(0);
     hRow.appendChild(this.heightInput);
     hRow.appendChild(this.unit('mm'));
     // 크기 고정
-    const sfLabel = this.checkboxLabel('크기 고정(S)');
+    const sfLabel = this.checkboxLabel(t('shape.size.locked'));
     this.sizeFixedCheck = sfLabel.querySelector('input') as HTMLInputElement;
     hRow.appendChild(sfLabel);
     sizeFs.appendChild(hRow);
@@ -429,12 +444,12 @@ export class PicturePropsDialog {
     });
 
     // ── 위치 ──
-    const posFs = this.fieldset('위치');
+    const posFs = this.fieldset(t('table.pos.title'));
     panel.appendChild(posFs);
 
     // 글자처럼 취급
     const tacRow = this.row();
-    const tacLabel = this.checkboxLabel('글자처럼 취급(C)');
+    const tacLabel = this.checkboxLabel(t('table.placement.like_char'));
     this.treatAsCharCheck = tacLabel.querySelector('input') as HTMLInputElement;
     tacRow.appendChild(tacLabel);
     posFs.appendChild(tacRow);
@@ -443,9 +458,9 @@ export class PicturePropsDialog {
     // 본문과의 배치 (아이콘 버튼 5개) + 본문 위치 드롭다운
     const wrapRow = this.row();
     wrapRow.classList.add('pp-pos-detail');
-    wrapRow.appendChild(this.label('본문과의 배치:'));
+    wrapRow.appendChild(this.label(t('table.placement.title') + ':'));
     const wrapIcons = ['⬒', '⬓', '⬔', '⬕', '⬖'];
-    const wrapTitles = ['자리 차지', '어울림', '빈 공간 채움', '글 뒤로', '글 앞으로'];
+    const wrapTitles = [t('table.placement.take_space'), t('table.placement.wrap'), t('shape.fill.spread'), t('table.placement.behind_text'), t('table.placement.in_front')];
     this.wrapBtns = [];
     wrapTitles.forEach((title, i) => {
       const btn = document.createElement('button');
@@ -457,10 +472,10 @@ export class PicturePropsDialog {
       this.wrapBtns.push(btn);
     });
     // 본문 위치(P)
-    wrapRow.appendChild(this.label('본문 위치(P):'));
+    wrapRow.appendChild(this.label(t('shape.textbox.body_position')));
     this.bodyPosSelect = this.selectEl([
-      ['Both', '양쪽'], ['Left', '왼쪽'], ['Right', '오른쪽'],
-      ['Larger', '큰 쪽'], ['Smaller', '작은 쪽'],
+      ['Both', t('shape.pos.both')], ['Left', t('table.pos.left')], ['Right', t('table.pos.right')],
+      ['Larger', t('shape.fill.big_side')], ['Smaller', t('shape.fill.small_side')],
     ]);
     this.bodyPosSelect.disabled = true;
     wrapRow.appendChild(this.bodyPosSelect);
@@ -470,17 +485,17 @@ export class PicturePropsDialog {
     // 가로
     const hPosRow = this.row();
     hPosRow.classList.add('pp-pos-detail');
-    hPosRow.appendChild(this.label('가로(I):'));
+    hPosRow.appendChild(this.label(t('table.pos.horizontal') + '(I):'));
     this.horzRelSelect = this.selectEl([
-      ['Paper', '종이'], ['Page', '쪽'], ['Column', '단'],
+      ['Paper', t('table.pos.paper')], ['Page', t('table.pos.page')], ['Column', t('table.pos.column')],
     ]);
     hPosRow.appendChild(this.horzRelSelect);
-    hPosRow.appendChild(this.unit('의'));
+    hPosRow.appendChild(this.unit(t('table.pos.of')));
     this.horzAlignSelect = this.selectEl([
-      ['Left', '왼쪽'], ['Center', '가운데'], ['Right', '오른쪽'], ['Outside', '바깥쪽'],
+      ['Left', t('table.pos.left')], ['Center', t('table.pos.center')], ['Right', t('table.pos.right')], ['Outside', t('table.pos.outer')],
     ]);
     hPosRow.appendChild(this.horzAlignSelect);
-    hPosRow.appendChild(this.unit('기준'));
+    hPosRow.appendChild(this.unit(t('table.pos.basis')));
     this.horzOffsetInput = this.numberInput();
     hPosRow.appendChild(this.horzOffsetInput);
     hPosRow.appendChild(this.unit('mm'));
@@ -490,17 +505,17 @@ export class PicturePropsDialog {
     // 세로
     const vPosRow = this.row();
     vPosRow.classList.add('pp-pos-detail');
-    vPosRow.appendChild(this.label('세로(V):'));
+    vPosRow.appendChild(this.label(t('table.pos.vertical') + '(V):'));
     this.vertRelSelect = this.selectEl([
-      ['Paper', '종이'], ['Page', '쪽'], ['Paragraph', '문단'],
+      ['Paper', t('table.pos.paper')], ['Page', t('table.pos.page')], ['Paragraph', t('table.pos.paragraph')],
     ]);
     vPosRow.appendChild(this.vertRelSelect);
-    vPosRow.appendChild(this.unit('의'));
+    vPosRow.appendChild(this.unit(t('table.pos.of')));
     this.vertAlignSelect = this.selectEl([
-      ['Top', '위'], ['Center', '가운데'], ['Bottom', '아래'],
+      ['Top', t('table.pos.up')], ['Center', t('table.pos.center')], ['Bottom', t('table.pos.down')],
     ]);
     vPosRow.appendChild(this.vertAlignSelect);
-    vPosRow.appendChild(this.unit('기준'));
+    vPosRow.appendChild(this.unit(t('table.pos.basis')));
     this.vertOffsetInput = this.numberInput();
     vPosRow.appendChild(this.vertOffsetInput);
     vPosRow.appendChild(this.unit('mm'));
@@ -510,11 +525,11 @@ export class PicturePropsDialog {
     // 쪽 영역 안으로 제한 / 서로 겹침 허용
     const optRow = this.row();
     optRow.classList.add('pp-pos-detail');
-    const palLabel = this.checkboxLabel('쪽 영역 안으로 제한(B)');
+    const palLabel = this.checkboxLabel(t('table.placement.restrict_to_page'));
     this.pageAreaLimitCheck = palLabel.querySelector('input') as HTMLInputElement;
     this.pageAreaLimitCheck.disabled = true;
     optRow.appendChild(palLabel);
-    const oaLabel = this.checkboxLabel('서로 겹침 허용(L)');
+    const oaLabel = this.checkboxLabel(t('table.placement.allow_overlap'));
     this.overlapAllowCheck = oaLabel.querySelector('input') as HTMLInputElement;
     this.overlapAllowCheck.checked = true;
     this.overlapAllowCheck.disabled = true;
@@ -525,7 +540,7 @@ export class PicturePropsDialog {
     // 개체와 조판 부호를 항상 같은 쪽에 놓기
     const spRow = this.row();
     spRow.classList.add('pp-pos-detail');
-    const spLabel = this.checkboxLabel('개체와 조판 부호를 항상 같은 쪽에 놓기(A)');
+    const spLabel = this.checkboxLabel(t('table.placement.keep_with_anchor'));
     this.samePageCheck = spLabel.querySelector('input') as HTMLInputElement;
     this.samePageCheck.disabled = true;
     spRow.appendChild(spLabel);
@@ -533,10 +548,10 @@ export class PicturePropsDialog {
     this.posDetailEls.push(spRow);
 
     // ── 개체 회전 ──
-    const rotFs = this.fieldset('개체 회전/대칭');
+    const rotFs = this.fieldset(t('shape.tab.rotate_flip'));
     panel.appendChild(rotFs);
     const rotRow = this.row();
-    rotRow.appendChild(this.label('회전각(E):'));
+    rotRow.appendChild(this.label(t('shape.rotate.angle')));
     this.rotationInput = this.numberInput(-360, 360, 1);
     this.rotationInput.disabled = true;
     rotRow.appendChild(this.rotationInput);
@@ -554,14 +569,14 @@ export class PicturePropsDialog {
     this.horzFlipCheck = document.createElement('input');
     this.horzFlipCheck.type = 'checkbox';
     this.horzFlipCheck.disabled = true;
-    const horzLabel = this.label('좌우 대칭');
+    const horzLabel = this.label(t('shape.rotate.flip_horizontal'));
     horzLabel.style.cursor = 'pointer';
     horzLabel.prepend(this.horzFlipCheck);
     flipRow.appendChild(horzLabel);
     this.vertFlipCheck = document.createElement('input');
     this.vertFlipCheck.type = 'checkbox';
     this.vertFlipCheck.disabled = true;
-    const vertLabel = this.label('상하 대칭');
+    const vertLabel = this.label(t('shape.rotate.flip_vertical'));
     vertLabel.style.cursor = 'pointer';
     vertLabel.style.marginLeft = '12px';
     vertLabel.prepend(this.vertFlipCheck);
@@ -569,7 +584,7 @@ export class PicturePropsDialog {
     rotFs.appendChild(flipRow);
 
     // ── 기울이기 ──
-    const skewFs = this.fieldset('기울이기');
+    const skewFs = this.fieldset(t('table.text_dir.skew'));
     panel.appendChild(skewFs);
     const skewRow = this.row();
     skewRow.appendChild(this.label('가로(Y):'));
@@ -585,21 +600,21 @@ export class PicturePropsDialog {
     skewFs.appendChild(skewRow);
 
     // ── 기타 ──
-    const etcFs = this.fieldset('기타');
+    const etcFs = this.fieldset(t('char_shape.misc.misc'));
     panel.appendChild(etcFs);
     const etcRow = this.row();
     etcRow.appendChild(this.label('번호 종류(N):'));
-    const numTypeSelect = this.selectEl([['Picture', '그림']]);
+    const numTypeSelect = this.selectEl([['Picture', t('shape.tab.picture')]]);
     numTypeSelect.disabled = true;
     etcRow.appendChild(numTypeSelect);
     // 개체 보호하기
-    const protLabel = this.checkboxLabel('개체 보호하기(K)');
+    const protLabel = this.checkboxLabel(t('shape.protect'));
     this.protectCheck = protLabel.querySelector('input') as HTMLInputElement;
     this.protectCheck.disabled = true;
     etcRow.appendChild(protLabel);
     const descBtn = document.createElement('button');
     descBtn.className = 'dialog-btn pp-desc-btn';
-    descBtn.textContent = '개체 설명문(X)...';
+    descBtn.textContent = t('shape.alt_text.btn');
     descBtn.addEventListener('click', () => this.showDescriptionPrompt());
     etcRow.appendChild(descBtn);
     etcFs.appendChild(etcRow);
@@ -2454,7 +2469,7 @@ export class PicturePropsDialog {
     // 타이틀
     const titleBar = document.createElement('div');
     titleBar.className = 'dialog-title';
-    titleBar.textContent = '개체 설명문';
+    titleBar.textContent = t('shape.alt_text.title');
     const closeBtn = document.createElement('button');
     closeBtn.className = 'dialog-close';
     closeBtn.textContent = '\u00D7';
@@ -2477,14 +2492,14 @@ export class PicturePropsDialog {
     rightCol.className = 'cs-right-col';
     const okBtn = document.createElement('button');
     okBtn.className = 'dialog-btn dialog-btn-primary';
-    okBtn.textContent = '확인(D)';
+    okBtn.textContent = t('shape.confirm');
     okBtn.addEventListener('click', () => {
       this.descInput.value = textarea.value;
       overlay.remove();
     });
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'dialog-btn';
-    cancelBtn.textContent = '취소';
+    cancelBtn.textContent = t('button.cancel');
     cancelBtn.addEventListener('click', () => overlay.remove());
     rightCol.appendChild(okBtn);
     rightCol.appendChild(cancelBtn);
