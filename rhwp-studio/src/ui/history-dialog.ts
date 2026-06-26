@@ -88,7 +88,7 @@ export class HistoryDialog {
 
     const title = document.createElement('div');
     title.className = 'compare-dialog-title';
-    title.innerHTML = '<span>문서 이력 관리</span>';
+    title.innerHTML = `<span>${t('history.dialog_title')}</span>`;
     const close = document.createElement('button');
     close.className = 'dialog-close';
     close.textContent = '\u00D7';
@@ -101,8 +101,7 @@ export class HistoryDialog {
 
     const hint = document.createElement('p');
     hint.className = 'history-hint';
-    hint.textContent =
-      '이력은 문단 stable_id가 보존된 IR 스냅샷(JSON)으로 저장됩니다. "선택과 현재 비교"는 같은 편집 세션에서 identity(Map) 비교가 됩니다. 예전에 HWP 바이트만 저장된 항목(legacy)은 비교 시 정렬(alignment)로 폴백됩니다.';
+    hint.textContent = t('history.intro_hint');
     body.appendChild(hint);
 
     const saveRow = document.createElement('div');
@@ -173,7 +172,7 @@ export class HistoryDialog {
       if (e.id === this.selectedId) li.classList.add('selected');
       li.dataset.id = e.id;
       const dt = new Date(e.createdAt).toLocaleString('ko-KR');
-      const kindNote = e.storageKind === 'legacy' ? ' · 구바이트' : '';
+      const kindNote = e.storageKind === 'legacy' ? ` · ${t('history.legacy_suffix')}` : '';
       li.innerHTML = `<strong>${this.escape(e.label)}</strong><div class="history-entry-meta">${this.escape(e.sourceFileName)} · ${(e.byteLength / 1024).toFixed(1)} KB${kindNote} · ${dt}</div>`;
       li.addEventListener('click', () => {
         this.selectedId = e.id;
@@ -233,8 +232,8 @@ export class HistoryDialog {
       return;
     }
     const meta = this.entries.find((x) => x.id === this.selectedId);
-    const leftName = meta?.label ?? '이력 스냅샷';
-    const rightName = wasm.fileName || '현재 문서.hwp';
+    const leftName = meta?.label ?? t('history.snapshot_default_label');
+    const rightName = wasm.fileName || t('history.current_doc_default');
     this.resultMetaEl.textContent = t('compare.in_progress');
     this.resultListEl.replaceChildren();
     try {
@@ -255,8 +254,8 @@ export class HistoryDialog {
       console.log('[rhwp:history] 최종 Diff 배열', session.diffItems);
       this.compareSessionStore.set(session);
       const mode =
-        session.textCompareStrategyUsed === 'identity' ? '본문=id(Map)' : '본문=정렬(alignment)';
-      this.resultMetaEl.textContent = `${session.diffItems.length}개 차이 · ${mode} · "${leftName}" vs "${rightName}"`;
+        session.textCompareStrategyUsed === 'identity' ? t('history.body_id_map') : t('history.body_alignment');
+      this.resultMetaEl.textContent = t('history.summary_line', { count: session.diffItems.length, mode, left: leftName, right: rightName });
       this.renderDiffList(session.diffItems);
       this.services.eventBus.emit('compare:mode-changed', true);
       if (session.diffItems.length > 0) {
@@ -302,7 +301,7 @@ export class HistoryDialog {
 
   private formatPreviewText(text: string): string {
     const trimmed = text.trim();
-    if (!trimmed) return '(없음)';
+    if (!trimmed) return t('history.none');
     const visible = this.makeWhitespaceVisible(trimmed);
     return this.truncateText(visible, 140);
   }
@@ -336,7 +335,7 @@ export class HistoryDialog {
       const l = this.formatPreviewText(item.leftPreview);
       const r = this.formatPreviewText(item.rightPreview);
       if (l === r) return '';
-      return `<div class="compare-result-kv compare-result-kv-text"><div class="compare-result-kv-head">텍스트 변경</div><div class="compare-result-kv-line"><span class="k">기존</span><span class="v">${this.escape(l)}</span></div><div class="compare-result-kv-line"><span class="k">변경</span><span class="v">${this.escape(r)}</span></div></div>`;
+      return `<div class="compare-result-kv compare-result-kv-text"><div class="compare-result-kv-head">${t('history.text_changed_section')}</div><div class="compare-result-kv-line"><span class="k">${t('compare.diff.before')}</span><span class="v">${this.escape(l)}</span></div><div class="compare-result-kv-line"><span class="k">${t('compare.diff.changed')}</span><span class="v">${this.escape(r)}</span></div></div>`;
     }
     const left = this.parseKvSummary(item.leftPreview);
     const right = this.parseKvSummary(item.rightPreview);
@@ -344,29 +343,29 @@ export class HistoryDialog {
     if (keys.size === 0) return '';
 
     const labels: Record<string, string> = {
-      r: '행',
-      c: '열',
-      tprev: '텍스트',
-      cprev: '셀 텍스트',
-      txt: '텍스트 해시',
-      props: '속성 해시',
-      box: '크기',
-      sig: '시그니처',
-      crop: '자르기',
-      effect: '효과',
-      bc: '밝기/대비',
-      rot: '회전',
-      flip: '대칭',
-      wrap: '본문배치',
-      rel: '기준',
-      pix: '시각 내용',
+      r: t('history.diff.row'),
+      c: t('history.diff.col'),
+      tprev: t('history.diff.text'),
+      cprev: t('history.diff.cell_text'),
+      txt: t('history.diff.text_hash'),
+      props: t('history.diff.prop_hash'),
+      box: t('history.diff.size'),
+      sig: t('history.diff.signature'),
+      crop: t('history.diff.crop'),
+      effect: t('history.diff.effects'),
+      bc: t('history.diff.brightness_contrast'),
+      rot: t('history.diff.rotate'),
+      flip: t('history.diff.flip'),
+      wrap: t('history.diff.body_layout'),
+      rel: t('history.diff.basis'),
+      pix: t('history.diff.visual'),
     };
 
     const rows: string[] = [];
     for (const k of keys) {
       if (k === 'txt' || k === 'sig' || k === 'csha') continue;
-      const lv = left[k] ?? '(없음)';
-      const rv = right[k] ?? '(없음)';
+      const lv = left[k] ?? t('history.none');
+      const rv = right[k] ?? t('history.none');
       if (lv === rv) continue;
       if (k === 'cprev') {
         const cellDiff = this.formatCellPreviewDiff(lv, rv, left.csha, right.csha);
@@ -377,24 +376,24 @@ export class HistoryDialog {
       rows.push(`${labels[k] ?? k}: ${this.formatFieldValue(k, lv)} → ${this.formatFieldValue(k, rv)}`);
     }
     if (rows.length === 0) {
-      if (item.title.includes('텍스트 변경')) {
+      if (item.title.includes(t('history.text_changed_section'))) {
         const changedCells = this.countChangedCellsFromHash(left.csha, right.csha);
         if (changedCells > 0) {
-          return `<div class="compare-result-kv">변경값:<br/>변경 셀 ${changedCells}개 (셀 미리보기 범위를 벗어나거나 텍스트가 길어 일부 생략됨)</div>`;
+          return `<div class="compare-result-kv">${t('history.diff.changed_value')}:<br/>${t('history.diff.cell_changed_summary', { n: changedCells })}</div>`;
         }
       }
-      if (item.title.includes('속성 변경')) {
-        const lp = left.props ?? '(없음)';
-        const rp = right.props ?? '(없음)';
+      if (item.title.includes(t('compare.property_change'))) {
+        const lp = left.props ?? t('history.none');
+        const rp = right.props ?? t('history.none');
         if (lp !== rp) {
-          return `<div class="compare-result-kv">변경값:<br/>속성 해시: ${this.escape(lp)} → ${this.escape(rp)}</div>`;
+          return `<div class="compare-result-kv">${t('history.diff.changed_value')}:<br/>${t('history.diff.prop_hash_pair', { l: this.escape(lp), r: this.escape(rp) })}</div>`;
         }
-        return '<div class="compare-result-kv">변경값:<br/>속성 값 변경</div>';
+        return `<div class="compare-result-kv">${t('history.diff.changed_value')}:<br/>${t('history.diff.prop_change')}</div>`;
       }
       return '';
     }
     const body = rows.slice(0, 4).map((r) => this.escape(r)).join('<br/>');
-    return `<div class="compare-result-kv">변경값:<br/>${body}</div>`;
+    return `<div class="compare-result-kv">${t('history.diff.changed_value')}:<br/>${body}</div>`;
   }
 
   private parseKvSummary(summary: string): Record<string, string> {
@@ -415,14 +414,14 @@ export class HistoryDialog {
   }
 
   private formatFieldValue(key: string, value: string): string {
-    if (value === '(없음)') return value;
+    if (value === t('history.none')) return value;
     if (key === 'box') {
       const m = value.match(/^(-?\d+)x(-?\d+)$/);
       if (m) return `${m[1]}px × ${m[2]}px`;
     }
     if (key === 'crop') {
       const nums = value.split(',');
-      if (nums.length === 4) return `좌${nums[0]}, 상${nums[1]}, 우${nums[2]}, 하${nums[3]}`;
+      if (nums.length === 4) return t('history.diff.padding_quad', { l: nums[0], t: nums[1], r: nums[2], b: nums[3] });
     }
     if (key === 'cprev') {
       const map = this.parseCellPreviewMap(value);
@@ -433,25 +432,25 @@ export class HistoryDialog {
           .join(' | ');
       }
       const normalized = value.replaceAll('&amp;', '&');
-      return normalized || '(없음)';
+      return normalized || t('history.none');
     }
-    if (key === 'rot') return `${value}도`;
+    if (key === 'rot') return t('history.diff.degree_suffix', { value });
     if (key === 'bc') {
       const [b, c] = value.split('/');
-      if (b != null && c != null) return `밝기 ${b}, 대비 ${c}`;
+      if (b != null && c != null) return t('history.diff.brightness_contrast_pair', { b, c });
     }
     if (key === 'flip') {
-      if (value === '10') return '가로';
-      if (value === '01') return '세로';
-      if (value === '11') return '가로+세로';
-      if (value === '00') return '없음';
+      if (value === '10') return t('history.flip.horizontal');
+      if (value === '01') return t('history.flip.vertical');
+      if (value === '11') return t('history.flip.both');
+      if (value === '00') return t('history.none');
     }
     return value;
   }
 
   private parseCellPreviewMap(value: string): Map<string, string> {
     const map = new Map<string, string>();
-    if (!value || value === '(없음)') return map;
+    if (!value || value === t('history.none')) return map;
     const normalized = value.replaceAll('&amp;', '&');
     const parts = normalized.includes('&') ? normalized.split('&') : normalized.split(';');
     for (const part of parts) {
@@ -468,14 +467,14 @@ export class HistoryDialog {
         text = raw;
       }
       if (!cell) continue;
-      map.set(cell, text || '(빈값)');
+      map.set(cell, text || t('history.empty_value'));
     }
     return map;
   }
 
   private parseCellHashMap(value: string): Map<string, string> {
     const map = new Map<string, string>();
-    if (!value || value === '(없음)') return map;
+    if (!value || value === t('history.none')) return map;
     const normalized = value.replaceAll('&amp;', '&');
     const parts = normalized.includes('&') ? normalized.split('&') : normalized.split(';');
     for (const part of parts) {

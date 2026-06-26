@@ -1,5 +1,6 @@
 import type { CommandDef } from '../types';
 import { GridSettingsDialog } from '../../ui/grid-settings-dialog';
+import { t } from '@/i18n/t';
 
 /** 배율 고정값 커맨드 생성 헬퍼 */
 function zoomLevel(pct: number): CommandDef {
@@ -15,7 +16,7 @@ function zoomLevel(pct: number): CommandDef {
 export const viewCommands: CommandDef[] = [
   {
     id: 'view:zoom-in',
-    label: '확대',
+    label: t('cmd.view.zoom_in'),
     icon: 'icon-zoom-menu-in',
     shortcutLabel: 'Shift+Num +',
     execute(services) {
@@ -25,7 +26,7 @@ export const viewCommands: CommandDef[] = [
   },
   {
     id: 'view:zoom-out',
-    label: '축소',
+    label: t('cmd.view.zoom_out'),
     icon: 'icon-zoom-menu-out',
     shortcutLabel: 'Shift+Num -',
     execute(services) {
@@ -35,7 +36,7 @@ export const viewCommands: CommandDef[] = [
   },
   {
     id: 'view:zoom-fit-page',
-    label: '쪽 맞춤',
+    label: t('cmd.view.zoom_fit_page'),
     execute(services) {
       const vm = services.getViewportManager();
       if (!vm || services.wasm.pageCount === 0) return;
@@ -49,7 +50,7 @@ export const viewCommands: CommandDef[] = [
   },
   {
     id: 'view:zoom-fit-width',
-    label: '폭 맞춤',
+    label: t('cmd.view.zoom_fit_width'),
     execute(services) {
       const vm = services.getViewportManager();
       if (!vm || services.wasm.pageCount === 0) return;
@@ -70,7 +71,7 @@ export const viewCommands: CommandDef[] = [
   // ─── 보기 메뉴: 표시/숨기기 ─────────────────────────
   {
     id: 'view:ctrl-mark',
-    label: '조판 부호',
+    label: t('cmd.view.ctrl_mark'),
     icon: 'icon-ctrl-mark',
     shortcutLabel: 'Ctrl+G,C',
     canExecute: (ctx) => ctx.hasDocument,
@@ -94,7 +95,7 @@ export const viewCommands: CommandDef[] = [
     let showParaMarks = false;
     return {
       id: 'view:para-mark',
-      label: '문단 부호',
+      label: t('cmd.view.para_mark'),
       icon: 'icon-para-mark',
       canExecute: (ctx) => ctx.hasDocument,
       execute(services) {
@@ -109,7 +110,7 @@ export const viewCommands: CommandDef[] = [
   })(),
   {
     id: 'view:border-transparent',
-    label: '투명 선',
+    label: t('cmd.view.border_transparent'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       // WASM 실제 상태를 읽어 토글 — 셀 진입 자동 ON 등으로 인한 초기값 불일치 방지
@@ -126,7 +127,7 @@ export const viewCommands: CommandDef[] = [
     let clipEnabled = true; // 기본: 잘림 적용 (편집용지 클립)
     return {
       id: 'view:toggle-clip',
-      label: '잘림 보기',
+      label: t('cmd.view.toggle_clip'),
       canExecute: (ctx) => ctx.hasDocument,
       execute(services) {
         clipEnabled = !clipEnabled;
@@ -140,7 +141,7 @@ export const viewCommands: CommandDef[] = [
   })(),
   {
     id: 'view:grid-settings',
-    label: '격자 설정',
+    label: t('cmd.view.grid_settings'),
     icon: 'icon-grid',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -153,7 +154,7 @@ export const viewCommands: CommandDef[] = [
     let visible: boolean | null = null;
     return {
       id: 'view:toolbox-basic',
-      label: '기본',
+      label: t('cmd.view.toolbox_basic'),
       execute() {
         const el = document.getElementById('icon-toolbar');
         if (!el) return;
@@ -170,7 +171,7 @@ export const viewCommands: CommandDef[] = [
     let visible: boolean | null = null;
     return {
       id: 'view:toolbox-format',
-      label: '서식',
+      label: t('cmd.view.toolbox_format'),
       execute() {
         const el = document.getElementById('style-bar');
         if (!el) return;

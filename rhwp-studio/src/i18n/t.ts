@@ -29,6 +29,11 @@ const listeners = new Set<() => void>();
 export function setLang(lang: Lang): void {
   if (lang === currentLang) return;
   currentLang = lang;
+  // <html lang="..."> 박는다 — CSS `html[lang="en"]` selector 박은 자체 자체
+  // 언어별 폰트·크기 박는 자료 박는다.
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = lang;
+  }
   listeners.forEach((fn) => fn());
 }
 

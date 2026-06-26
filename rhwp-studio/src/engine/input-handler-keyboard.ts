@@ -13,6 +13,7 @@ import {
 } from './navigation-keymap';
 import type { DocumentPosition } from '@/core/types';
 import type { WasmBridge } from '@/core/wasm-bridge';
+import { t } from '@/i18n/t';
 
 const RHWP_CLIPBOARD_MARKER_RE = /<!--\s*rhwp-studio-clipboard:([A-Za-z0-9._:-]+)\s*-->/;
 
@@ -626,7 +627,7 @@ export function onKeyDown(this: any, e: KeyboardEvent): void {
       if (ref) {
         try {
           this.wasm.copyControl(ref.sec, ref.ppi, ref.ci);
-          const text = this.wasm.getClipboardText() || '[그림]';
+          const text = this.wasm.getClipboardText() || t('clipboard.fallback.image');
           let html = '';
           try { html = this.wasm.exportControlHtml(ref.sec, ref.ppi, ref.ci) || ''; } catch { /* 무시 */ }
           const markedHtml = prepareRhwpInternalClipboardHtml(this, html, text);
@@ -650,7 +651,7 @@ export function onKeyDown(this: any, e: KeyboardEvent): void {
       if (ref) {
         try {
           this.wasm.copyControl(ref.sec, ref.ppi, ref.ci);
-          const text = this.wasm.getClipboardText() || '[그림]';
+          const text = this.wasm.getClipboardText() || t('clipboard.fallback.image');
           let html = '';
           try { html = this.wasm.exportControlHtml(ref.sec, ref.ppi, ref.ci) || ''; } catch { /* 무시 */ }
           const markedHtml = prepareRhwpInternalClipboardHtml(this, html, text);
@@ -1272,7 +1273,7 @@ export function onCopy(this: any, e: ClipboardEvent): void {
       e.preventDefault();
       try {
         this.wasm.copyControl(ref.sec, ref.ppi, ref.ci);
-        const text = this.wasm.getClipboardText() || '[그림]';
+        const text = this.wasm.getClipboardText() || t('clipboard.fallback.image');
         let html = '';
         try { html = this.wasm.exportControlHtml(ref.sec, ref.ppi, ref.ci) || ''; } catch { /* HTML 내보내기 실패는 fallback */ }
         const markedHtml = prepareRhwpInternalClipboardHtml(this, html, text);

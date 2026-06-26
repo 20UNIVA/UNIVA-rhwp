@@ -6,11 +6,12 @@ import { StyleDialog } from '@/ui/style-dialog';
 import { StyleEditDialog } from '@/ui/style-edit-dialog';
 import { PicturePropsDialog } from '@/ui/picture-props-dialog';
 import { TableCellPropsDialog } from '@/ui/table-cell-props-dialog';
+import { t } from '@/i18n/t';
 
 export const formatCommands: CommandDef[] = [
   {
     id: 'format:bold',
-    label: '굵게',
+    label: t('cmd.format.bold'),
     shortcutLabel: 'Ctrl+B',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -19,7 +20,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:italic',
-    label: '기울임',
+    label: t('cmd.format.italic'),
     shortcutLabel: 'Ctrl+I',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -28,7 +29,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:underline',
-    label: '밑줄',
+    label: t('cmd.format.underline'),
     shortcutLabel: 'Ctrl+U',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -37,7 +38,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:strikethrough',
-    label: '취소선',
+    label: t('cmd.format.strikethrough'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.toggleFormat('strikethrough');
@@ -46,7 +47,7 @@ export const formatCommands: CommandDef[] = [
   // 양각/음각/외곽선/위첨자/아래첨자
   {
     id: 'format:emboss',
-    label: '양각',
+    label: t('cmd.format.emboss'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.toggleFormat('emboss');
@@ -54,7 +55,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:engrave',
-    label: '음각',
+    label: t('cmd.format.engrave'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.toggleFormat('engrave');
@@ -62,7 +63,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:outline',
-    label: '외곽선',
+    label: t('cmd.format.outline'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.toggleFormat('outline');
@@ -70,7 +71,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:superscript',
-    label: '위 첨자',
+    label: t('cmd.format.superscript'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.toggleFormat('superscript');
@@ -78,7 +79,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:subscript',
-    label: '아래 첨자',
+    label: t('cmd.format.subscript'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.toggleFormat('subscript');
@@ -87,7 +88,7 @@ export const formatCommands: CommandDef[] = [
   // 줄 간격
   {
     id: 'format:line-spacing',
-    label: '줄 간격',
+    label: t('cmd.format.line_spacing'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services, params) {
       const value = params?.value as number | undefined;
@@ -98,7 +99,7 @@ export const formatCommands: CommandDef[] = [
   // 줄 간격 줄이기 (Alt+Shift+A)
   {
     id: 'format:line-spacing-decrease',
-    label: '줄 간격 줄이기',
+    label: t('cmd.format.line_spacing_decrease'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -112,7 +113,7 @@ export const formatCommands: CommandDef[] = [
   // 줄 간격 늘리기 (Alt+Shift+Z)
   {
     id: 'format:line-spacing-increase',
-    label: '줄 간격 늘리기',
+    label: t('cmd.format.line_spacing_increase'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -126,7 +127,7 @@ export const formatCommands: CommandDef[] = [
   // 글꼴 크기 크게 (Alt+Shift+E)
   {
     id: 'format:font-size-increase',
-    label: '글꼴 크기 크게',
+    label: t('cmd.format.font_size_increase'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.adjustFontSize(100); // +1pt
@@ -135,7 +136,7 @@ export const formatCommands: CommandDef[] = [
   // 글꼴 크기 작게 (Alt+Shift+R)
   {
     id: 'format:font-size-decrease',
-    label: '글꼴 크기 작게',
+    label: t('cmd.format.font_size_decrease'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.adjustFontSize(-100); // -1pt
@@ -144,7 +145,7 @@ export const formatCommands: CommandDef[] = [
   // 문단 정렬
   {
     id: 'format:align-left',
-    label: '왼쪽 정렬',
+    label: t('cmd.format.align_left'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.applyParaAlign('left');
@@ -152,7 +153,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:align-center',
-    label: '가운데 정렬',
+    label: t('cmd.format.align_center'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.applyParaAlign('center');
@@ -160,7 +161,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:align-right',
-    label: '오른쪽 정렬',
+    label: t('cmd.format.align_right'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.applyParaAlign('right');
@@ -168,7 +169,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:align-justify',
-    label: '양쪽 정렬',
+    label: t('cmd.format.align_justify'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.applyParaAlign('justify');
@@ -176,7 +177,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:align-distribute',
-    label: '배분 정렬',
+    label: t('cmd.format.align_distribute'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.applyParaAlign('distribute');
@@ -184,7 +185,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:align-split',
-    label: '나눔 정렬',
+    label: t('cmd.format.align_split'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.applyParaAlign('split');
@@ -193,7 +194,7 @@ export const formatCommands: CommandDef[] = [
   // 글자 모양 대화상자
   {
     id: 'format:char-shape',
-    label: '글자 모양',
+    label: t('cmd.format.char_shape'),
     icon: 'icon-char-shape',
     shortcutLabel: 'Alt+L',
     canExecute: (ctx) => ctx.hasDocument,
@@ -220,7 +221,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:para-shape',
-    label: '문단 모양',
+    label: t('cmd.format.para_shape'),
     icon: 'icon-para-shape',
     shortcutLabel: 'Alt+T',
     canExecute: (ctx) => ctx.hasDocument,
@@ -241,7 +242,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:apply-style',
-    label: '스타일 적용',
+    label: t('cmd.format.apply_style'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services, params) {
       const styleId = params?.styleId as number | undefined;
@@ -251,7 +252,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:toggle-numbering',
-    label: '문단 번호 토글',
+    label: t('cmd.format.toggle_numbering'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       services.getInputHandler()?.toggleNumbering();
@@ -259,7 +260,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:toggle-bullet',
-    label: '글머리표 토글',
+    label: t('cmd.format.toggle_bullet'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services, params) {
       const bulletChar = params?.bulletChar as string | undefined;
@@ -268,7 +269,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:apply-bullet',
-    label: '글머리표 적용',
+    label: t('cmd.format.apply_bullet'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services, params) {
       const bulletChar = params?.bulletChar as string | undefined;
@@ -278,7 +279,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:para-num-shape',
-    label: '문단 번호 모양',
+    label: t('cmd.format.para_num_shape'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       const ih = services.getInputHandler();
@@ -330,7 +331,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:bullet-shape',
-    label: '글머리표 모양',
+    label: t('cmd.format.bullet_shape'),
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
       // 글머리표 버튼의 팝업을 프로그래밍적으로 열기
@@ -340,7 +341,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:level-increase',
-    label: '한 수준 증가',
+    label: t('cmd.format.level_increase'),
     shortcutLabel: 'Ctrl+Num -',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -349,7 +350,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:level-decrease',
-    label: '한 수준 감소',
+    label: t('cmd.format.level_decrease'),
     shortcutLabel: 'Ctrl+Num +',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -359,7 +360,7 @@ export const formatCommands: CommandDef[] = [
   // 스타일 대화상자
   {
     id: 'format:style-dialog',
-    label: '스타일',
+    label: t('cmd.format.style_dialog'),
     shortcutLabel: 'F6',
     canExecute: (ctx) => ctx.hasDocument,
     execute(services) {
@@ -400,7 +401,7 @@ export const formatCommands: CommandDef[] = [
   },
   {
     id: 'format:object-properties',
-    label: '개체 속성',
+    label: t('cmd.format.object_properties'),
     icon: 'icon-obj-props',
     shortcutLabel: 'P',
     canExecute: (ctx) => ctx.inPictureObjectSelection || ctx.inTableObjectSelection,

@@ -5,6 +5,7 @@
  * 이 대화상자는 앱 내부 문서 교체 동작에서만 사용한다.
  */
 import { ModalDialog } from './dialog';
+import { t } from '@/i18n/t';
 
 export type UnsavedChangesChoice = 'save' | 'discard' | 'cancel';
 
@@ -17,7 +18,7 @@ class UnsavedChangesDialog extends ModalDialog {
   private resolve!: (value: UnsavedChangesChoice) => void;
 
   constructor(private readonly options: UnsavedChangesDialogOptions) {
-    super('저장 확인', 420);
+    super(t('unsaved.dialog_title'), 420);
   }
 
   protected createBody(): HTMLElement {
@@ -26,10 +27,10 @@ class UnsavedChangesDialog extends ModalDialog {
     body.style.lineHeight = '1.6';
     body.style.whiteSpace = 'pre-line';
 
-    const fileName = this.options.fileName || '현재 문서';
+    const fileName = this.options.fileName || t('unsaved.fallback_filename');
     body.textContent = this.options.canSave
-      ? `"${fileName}" 문서에 저장하지 않은 변경사항이 있습니다.\n계속하기 전에 저장하시겠습니까?`
-      : `"${fileName}" 문서에 저장하지 않은 변경사항이 있습니다.\n이 문서는 현재 직접 저장할 수 없습니다. 변경사항을 버리고 계속할 수 있습니다.`;
+      ? t('unsaved.message_can_save', { fileName })
+      : t('unsaved.message_cannot_save', { fileName });
 
     return body;
   }
@@ -60,18 +61,18 @@ class UnsavedChangesDialog extends ModalDialog {
       const cancelBtn = footer?.querySelector('.dialog-btn:not(.dialog-btn-primary)') as HTMLButtonElement | null;
 
       if (saveBtn) {
-        saveBtn.textContent = '저장';
+        saveBtn.textContent = t('menu.file.save');
         saveBtn.disabled = !this.options.canSave;
-        saveBtn.title = this.options.canSave ? '' : 'HWPX 문서는 현재 직접 저장할 수 없습니다.';
+        saveBtn.title = this.options.canSave ? '' : t('unsaved.hwpx_save_disabled');
       }
       if (cancelBtn) {
-        cancelBtn.textContent = '취소';
+        cancelBtn.textContent = t('button.cancel');
       }
 
       const discardBtn = document.createElement('button');
       discardBtn.type = 'button';
       discardBtn.className = 'dialog-btn';
-      discardBtn.textContent = '저장 안 함';
+      discardBtn.textContent = t('unsaved.discard');
       discardBtn.addEventListener('click', () => {
         this.resolve('discard');
         super.hide();

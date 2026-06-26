@@ -78,7 +78,7 @@ export class CompareDialog {
 
     const title = document.createElement('div');
     title.className = 'compare-dialog-title';
-    title.innerHTML = '<span>문서 비교</span>';
+    title.innerHTML = `<span>${t('compare.dialog_title')}</span>`;
     const close = document.createElement('button');
     close.className = 'dialog-close';
     close.textContent = '\u00D7';
@@ -91,8 +91,7 @@ export class CompareDialog {
 
     const hint = document.createElement('p');
     hint.className = 'history-hint';
-    hint.textContent =
-      '두 문서를 업로드해 차이를 계산합니다. 결과를 클릭하면 좌/우 상세창에서 변경된 부분이 하이라이트되며 변경 구간 중심으로 표시됩니다.';
+    hint.textContent = t('compare.detail_intro');
     body.appendChild(hint);
 
     const leftRow = document.createElement('div');
@@ -102,10 +101,10 @@ export class CompareDialog {
     leftLabel.textContent = t('compare.left_doc');
     const leftBtn = document.createElement('button');
     leftBtn.className = 'dialog-btn';
-    leftBtn.textContent = '파일 선택';
+    leftBtn.textContent = t('compare.file_select');
     this.leftFileNameEl = document.createElement('span');
     this.leftFileNameEl.className = 'compare-file';
-    this.leftFileNameEl.textContent = '(선택 안 됨)';
+    this.leftFileNameEl.textContent = t('compare.no_selection');
     leftBtn.addEventListener('click', () => void this.pickFile('left'));
     leftRow.append(leftLabel, leftBtn, this.leftFileNameEl);
     body.appendChild(leftRow);
@@ -117,10 +116,10 @@ export class CompareDialog {
     rightLabel.textContent = t('compare.right_doc');
     const rightBtn = document.createElement('button');
     rightBtn.className = 'dialog-btn';
-    rightBtn.textContent = '파일 선택';
+    rightBtn.textContent = t('compare.file_select');
     this.rightFileNameEl = document.createElement('span');
     this.rightFileNameEl.className = 'compare-file';
-    this.rightFileNameEl.textContent = '(선택 안 됨)';
+    this.rightFileNameEl.textContent = t('compare.no_selection');
     rightBtn.addEventListener('click', () => void this.pickFile('right'));
     rightRow.append(rightLabel, rightBtn, this.rightFileNameEl);
     body.appendChild(rightRow);
@@ -150,7 +149,7 @@ export class CompareDialog {
     this.runBtn.addEventListener('click', () => void this.onRunCompare());
     this.openTwoPaneBtn = document.createElement('button');
     this.openTwoPaneBtn.className = 'dialog-btn';
-    this.openTwoPaneBtn.textContent = '2개 창 띄우기';
+    this.openTwoPaneBtn.textContent = t('compare.open_two_windows');
     this.openTwoPaneBtn.disabled = true;
     this.openTwoPaneBtn.addEventListener('click', () => this.openResultWindow());
     actions.append(this.runBtn, this.openTwoPaneBtn);
@@ -206,7 +205,7 @@ export class CompareDialog {
     if (!selected) return;
     const name = selected.name.toLowerCase();
     if (!name.endsWith('.hwp') && !name.endsWith('.hwpx')) {
-      this.resultMetaEl.textContent = 'HWP/HWPX 파일만 선택할 수 있습니다.';
+      this.resultMetaEl.textContent = t('compare.hwp_only');
       return;
     }
     const bytes = new Uint8Array(await selected.arrayBuffer());
@@ -230,11 +229,9 @@ export class CompareDialog {
     const ctx = this.services.getContext();
     if (ctx.hasDocument) {
       const detail = ctx.canUndo
-        ? '저장하지 않은 변경이 있으면 잃을 수 있습니다.'
-        : '현재 편집 중인 문서가 오른쪽과 다르면 에디터 내용이 오른쪽 파일로 바뀝니다.';
-      const ok = window.confirm(
-        `비교를 실행한 뒤 오른쪽 문서를 에디터에 불러옵니다.\n${detail}\n계속할까요?`,
-      );
+        ? t('compare.unsaved_warning')
+        : t('compare.left_overwrite_warning');
+      const ok = window.confirm(t('compare.load_after_run_confirm', { detail }));
       if (!ok) return;
     }
 
@@ -353,10 +350,10 @@ export class CompareDialog {
   }
 
   private formatPreviewText(text: string): string {
-    const t = text.trim().replaceAll('\r\n', '\n').replaceAll('\n', ' ↵ ').replace(/\s{2,}/g, ' ');
-    if (!t) return '(없음)';
-    if (t.length <= 140) return t;
-    return `${t.slice(0, 139)}…`;
+    const trimmed = text.trim().replaceAll('\r\n', '\n').replaceAll('\n', ' ↵ ').replace(/\s{2,}/g, ' ');
+    if (!trimmed) return t('history.none');
+    if (trimmed.length <= 140) return trimmed;
+    return `${trimmed.slice(0, 139)}…`;
   }
 
   private renderValueDiff(item: DiffItem): string {
@@ -365,7 +362,7 @@ export class CompareDialog {
       const l = this.formatPreviewText(item.leftPreview);
       const r = this.formatPreviewText(item.rightPreview);
       if (l === r) return '';
-      return `<div class="compare-result-kv compare-result-kv-text"><div class="compare-result-kv-head">텍스트 변경</div><div class="compare-result-kv-line"><span class="k">기존</span><span class="v">${this.escape(l)}</span></div><div class="compare-result-kv-line"><span class="k">변경</span><span class="v">${this.escape(r)}</span></div></div>`;
+      return `<div class="compare-result-kv compare-result-kv-text"><div class="compare-result-kv-head">${t('compare.text_change')}</div><div class="compare-result-kv-line"><span class="k">${t('compare.diff.before')}</span><span class="v">${this.escape(l)}</span></div><div class="compare-result-kv-line"><span class="k">${t('compare.diff.changed')}</span><span class="v">${this.escape(r)}</span></div></div>`;
     }
     const left = this.parseKvSummary(item.leftPreview);
     const right = this.parseKvSummary(item.rightPreview);
@@ -373,29 +370,29 @@ export class CompareDialog {
     if (keys.size === 0) return '';
 
     const labels: Record<string, string> = {
-      r: '행',
-      c: '열',
-      tprev: '텍스트',
-      cprev: '셀 텍스트',
-      txt: '텍스트 해시',
-      props: '속성 해시',
-      box: '크기',
-      sig: '시그니처',
-      crop: '자르기',
-      effect: '효과',
-      bc: '밝기/대비',
-      rot: '회전',
-      flip: '대칭',
-      wrap: '본문배치',
-      rel: '기준',
-      pix: '시각 내용',
+      r: t('compare.diff.row'),
+      c: t('compare.diff.col'),
+      tprev: t('compare.diff.text'),
+      cprev: t('compare.diff.cell_text'),
+      txt: t('compare.diff.text_hash'),
+      props: t('compare.diff.prop_hash'),
+      box: t('compare.diff.size'),
+      sig: t('compare.diff.signature'),
+      crop: t('compare.diff.crop'),
+      effect: t('compare.diff.effects'),
+      bc: t('compare.diff.brightness_contrast'),
+      rot: t('compare.diff.rotate'),
+      flip: t('compare.diff.flip'),
+      wrap: t('compare.diff.body_layout'),
+      rel: t('compare.diff.basis'),
+      pix: t('compare.diff.visual'),
     };
 
     const rows: string[] = [];
     for (const k of keys) {
       if (k === 'txt' || k === 'sig' || k === 'csha') continue;
-      const lv = left[k] ?? '(없음)';
-      const rv = right[k] ?? '(없음)';
+      const lv = left[k] ?? t('history.none');
+      const rv = right[k] ?? t('history.none');
       if (lv === rv) continue;
       if (k === 'cprev') {
         const cellDiff = this.formatCellPreviewDiff(lv, rv, left.csha, right.csha);
@@ -406,24 +403,24 @@ export class CompareDialog {
       rows.push(`${labels[k] ?? k}: ${this.formatFieldValue(k, lv)} → ${this.formatFieldValue(k, rv)}`);
     }
     if (rows.length === 0) {
-      if (item.title.includes('텍스트 변경')) {
+      if (item.title.includes(t('compare.text_change'))) {
         const changedCells = this.countChangedCellsFromHash(left.csha, right.csha);
         if (changedCells > 0) {
-          return `<div class="compare-result-kv">변경값:<br/>변경 셀 ${changedCells}개 (셀 미리보기 범위를 벗어나거나 텍스트가 길어 일부 생략됨)</div>`;
+          return `<div class="compare-result-kv">${t('compare.diff.changed_value')}:<br/>${t('compare.diff.changed_cells_summary', { n: changedCells })}</div>`;
         }
       }
-      if (item.title.includes('속성 변경')) {
-        const lp = left.props ?? '(없음)';
-        const rp = right.props ?? '(없음)';
+      if (item.title.includes(t('compare.property_change'))) {
+        const lp = left.props ?? t('history.none');
+        const rp = right.props ?? t('history.none');
         if (lp !== rp) {
-          return `<div class="compare-result-kv">변경값:<br/>속성 해시: ${this.escape(lp)} → ${this.escape(rp)}</div>`;
+          return `<div class="compare-result-kv">${t('compare.diff.changed_value')}:<br/>${t('compare.diff.prop_hash_change', { left: this.escape(lp), right: this.escape(rp) })}</div>`;
         }
-        return '<div class="compare-result-kv">변경값:<br/>속성 값 변경</div>';
+        return `<div class="compare-result-kv">${t('compare.diff.changed_value')}:<br/>${t('compare.diff.prop_value_change')}</div>`;
       }
       return '';
     }
     const body = rows.slice(0, 4).map((r) => this.escape(r)).join('<br/>');
-    return `<div class="compare-result-kv">변경값:<br/>${body}</div>`;
+    return `<div class="compare-result-kv">${t('compare.diff.changed_value')}:<br/>${body}</div>`;
   }
 
   private parseKvSummary(summary: string): Record<string, string> {
@@ -444,14 +441,14 @@ export class CompareDialog {
   }
 
   private formatFieldValue(key: string, value: string): string {
-    if (value === '(없음)') return value;
+    if (value === t('history.none')) return value;
     if (key === 'box') {
       const m = value.match(/^(-?\d+)x(-?\d+)$/);
       if (m) return `${m[1]}px × ${m[2]}px`;
     }
     if (key === 'crop') {
       const nums = value.split(',');
-      if (nums.length === 4) return `좌${nums[0]}, 상${nums[1]}, 우${nums[2]}, 하${nums[3]}`;
+      if (nums.length === 4) return t('compare.diff.padding_quad', { l: nums[0], t: nums[1], r: nums[2], b: nums[3] });
     }
     if (key === 'cprev') {
       const map = this.parseCellPreviewMap(value);
@@ -462,12 +459,12 @@ export class CompareDialog {
           .join(' | ');
       }
       const normalized = value.replaceAll('&amp;', '&');
-      return normalized || '(없음)';
+      return normalized || t('history.none');
     }
-    if (key === 'rot') return `${value}도`;
+    if (key === 'rot') return t('compare.diff.degree_suffix', { value });
     if (key === 'bc') {
       const [b, c] = value.split('/');
-      if (b != null && c != null) return `밝기 ${b}, 대비 ${c}`;
+      if (b != null && c != null) return t('compare.diff.brightness_contrast_pair', { b, c });
     }
     if (key === 'flip') {
       if (value === '10') return '가로';

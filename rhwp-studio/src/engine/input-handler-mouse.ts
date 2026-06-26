@@ -3,6 +3,7 @@
 
 import type { ContextMenuItem } from '@/ui/context-menu';
 import * as _connector from './input-handler-connector';
+import { t } from '@/i18n/t';
 
 export function onClick(this: any, e: MouseEvent): void {
   // 연결선 드로잉 모드: 연결점 클릭으로 시작/끝
@@ -1029,8 +1030,8 @@ export function onContextMenu(this: any, e: MouseEvent): void {
       items = [
         ...items,
         { type: 'separator' },
-        { type: 'command', commandId: 'field:edit', label: '누름틀 고치기(E)...' },
-        { type: 'command', commandId: 'field:remove', label: '누름틀 지우기(J)' },
+        { type: 'command', commandId: 'field:edit', label: t('context_menu.field_edit') },
+        { type: 'command', commandId: 'field:remove', label: t('context_menu.field_remove') },
       ];
     }
   } catch { /* 무시 */ }

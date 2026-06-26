@@ -4,6 +4,7 @@
  * 누름틀(ClickHere) 필드의 안내문, 메모, 필드 이름, 양식 모드 편집 가능 여부를 편집한다.
  */
 import { ModalDialog } from './dialog';
+import { t } from '@/i18n/t';
 
 export interface ClickHereProps {
   guide: string;
@@ -24,7 +25,7 @@ export class FieldEditDialog extends ModalDialog {
   private initialProps: ClickHereProps = { guide: '', memo: '', name: '', editable: true };
 
   constructor() {
-    super('필드 입력 고치기', 420);
+    super(t('field_edit.dialog_title'), 420);
   }
 
   /** 대화상자를 열고 초기값을 설정한다 */
@@ -52,7 +53,7 @@ export class FieldEditDialog extends ModalDialog {
     tabBar.className = 'dialog-tabs';
     const tab = document.createElement('button');
     tab.className = 'dialog-tab active';
-    tab.textContent = '누름틀';
+    tab.textContent = t('field_edit.tab_clickhere');
     tab.type = 'button';
     tabBar.appendChild(tab);
     body.appendChild(tabBar);
@@ -63,7 +64,7 @@ export class FieldEditDialog extends ModalDialog {
     // ── 입력할 내용의 안내문(P) ──
     const guideLabel = document.createElement('label');
     guideLabel.className = 'field-edit-label';
-    guideLabel.textContent = '입력할 내용의 안내문(P):';
+    guideLabel.textContent = t('field_edit.guide_label');
     panel.appendChild(guideLabel);
 
     this.guideInput = document.createElement('input');
@@ -74,7 +75,7 @@ export class FieldEditDialog extends ModalDialog {
     // ── 메모 내용(M) ──
     const memoLabel = document.createElement('label');
     memoLabel.className = 'field-edit-label';
-    memoLabel.textContent = '메모 내용(M):';
+    memoLabel.textContent = t('field_edit.memo_label');
     panel.appendChild(memoLabel);
 
     this.memoInput = document.createElement('textarea');
@@ -85,7 +86,7 @@ export class FieldEditDialog extends ModalDialog {
     // ── 필드 이름(N) ──
     const nameLabel = document.createElement('label');
     nameLabel.className = 'field-edit-label';
-    nameLabel.textContent = '필드 이름(N):';
+    nameLabel.textContent = t('field_edit.name_label');
     panel.appendChild(nameLabel);
 
     this.nameInput = document.createElement('input');
@@ -99,7 +100,7 @@ export class FieldEditDialog extends ModalDialog {
     this.editableCheckbox = document.createElement('input');
     this.editableCheckbox.type = 'checkbox';
     editableRow.appendChild(this.editableCheckbox);
-    const editableText = document.createTextNode(' 양식 모드에서 편집 가능(F)');
+    const editableText = document.createTextNode(' ' + t('field_edit.editable_label'));
     editableRow.appendChild(editableText);
     panel.appendChild(editableRow);
 
@@ -125,8 +126,8 @@ export class FieldEditDialog extends ModalDialog {
     const footer = this.dialog.querySelector('.dialog-footer');
     if (footer) {
       const buttons = footer.querySelectorAll('button');
-      if (buttons[0]) buttons[0].textContent = '고치기(D)';
-      if (buttons[1]) buttons[1].textContent = '취소';
+      if (buttons[0]) buttons[0].textContent = t('field_edit.btn_apply');
+      if (buttons[1]) buttons[1].textContent = t('button.cancel');
     }
   }
 }

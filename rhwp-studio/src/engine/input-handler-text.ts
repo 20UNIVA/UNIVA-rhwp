@@ -11,9 +11,7 @@ import {
   type NavigationAction,
   type NavigationKeyInput,
 } from './navigation-keymap';
-
-const FOOTNOTE_DELETE_TITLE = '각주 삭제';
-const FOOTNOTE_DELETE_MESSAGE = '각주를 삭제하시겠습니까?';
+import { t } from '@/i18n/t';
 
 /** IME 조합 종료 후 대기 중인 탐색 키를 처리한다 */
 function executeNavigationAction(this: any, action: NavigationAction, shiftKey: boolean): void {
@@ -111,7 +109,7 @@ function tryDeleteBodyFootnoteAtCursor(
     const paragraphIndex = hit.paragraphIndex ?? pos.paragraphIndex;
     const controlIndex = hit.controlIndex;
 
-    void showConfirm(FOOTNOTE_DELETE_TITLE, FOOTNOTE_DELETE_MESSAGE)
+    void showConfirm(t('footnote.delete.title'), t('footnote.delete.message'))
       .then((ok) => {
         if (!ok) {
           this.textarea?.focus();

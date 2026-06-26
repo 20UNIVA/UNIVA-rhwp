@@ -125,7 +125,7 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   [
     { value: '0', label: t('para_shape.tab.fill_none') },
     { value: '1', label: t('para_shape.tab.fill_solid') },
-    { value: '2', label: '긴 점선 - - - -' },
+    { value: '2', label: t('para_shape.line.long_dot_label') },
     { value: '3', label: t('para_shape.tab.fill_dot') },
     { value: '4', label: '-·-·-·-·-·' },
     { value: '5', label: '-··-··-··-··' },
@@ -181,7 +181,7 @@ export function buildTabSettingsTab(state: TabState): TabSettingsResult {
   const tabTable = document.createElement('table');
   tabTable.className = 'ps-tab-table';
   const thead = document.createElement('thead');
-  appendHeaderRow(thead, ['위치', '종류']);
+  appendHeaderRow(thead, [t('para_shape.tab_header.position'), t('para_shape.tab_header.kind')]);
   tabTable.appendChild(thead);
   const tabListBody = document.createElement('tbody');
   tabTable.appendChild(tabListBody);
@@ -408,12 +408,12 @@ export function buildBorderTab(
   bdTypeSelect.className = 'dialog-select';
   bdTypeSelect.style.width = '100px';
   for (const [val, lbl] of [
-    ['0', '선 없음'], ['1', '실선'], ['2', '파선'], ['3', '점선'],
-    ['4', '일점쇄선'], ['5', '이점쇄선'], ['6', '긴 파선'], ['7', '동그라미'],
-    ['8', '이중선'], ['9', '가는선+굵은선'], ['10', '굵은선+가는선'],
-    ['11', '삼중선'], ['12', '물결'], ['13', '이중 물결'],
-    ['14', '두꺼운 3D'], ['15', '두꺼운 3D(반대)'],
-    ['16', '3D 단선'], ['17', '3D 단선(반대)'],
+    ['0', t('para_shape.line_kind.none_outline')], ['1', t('para_shape.line_kind.solid')], ['2', t('para_shape.line_kind.dash')], ['3', t('para_shape.line_kind.dot')],
+    ['4', t('para_shape.line_kind.dash_dot')], ['5', t('para_shape.line_kind.dash_dot_dot')], ['6', t('para_shape.line_kind.long_dash')], ['7', t('para_shape.line_kind.circle')],
+    ['8', t('para_shape.line_kind.double')], ['9', t('para_shape.line_kind.thin_thick')], ['10', t('para_shape.line_kind.thick_thin')],
+    ['11', t('para_shape.line_kind.triple')], ['12', t('para_shape.line_kind.wave')], ['13', t('para_shape.line_kind.double_wave')],
+    ['14', t('para_shape.line_kind.thick_3d')], ['15', t('para_shape.line_kind.thick_3d_inv')],
+    ['16', t('para_shape.line_kind.line_3d')], ['17', t('para_shape.line_kind.line_3d_inv')],
   ] as const) {
     const o = document.createElement('option');
     o.value = val; o.textContent = lbl;
@@ -460,7 +460,7 @@ export function buildBorderTab(
   bdConnectCb.id = 'ps-bd-connect';
   const connectLabel = document.createElement('label');
   connectLabel.htmlFor = 'ps-bd-connect';
-  connectLabel.textContent = ' 문단 테두리 연결(M)';
+  connectLabel.textContent = ' ' + t('para_shape.connect_label');
   connectRow.appendChild(bdConnectCb);
   connectRow.appendChild(connectLabel);
   borderLeft.appendChild(connectRow);
@@ -473,7 +473,7 @@ export function buildBorderTab(
   bdApplyImmCb.checked = true;
   const applyLabel = document.createElement('label');
   applyLabel.htmlFor = 'ps-bd-apply-imm';
-  applyLabel.textContent = ' 선 모양 바로 적용(I)';
+  applyLabel.textContent = ' ' + t('para_shape.apply_immediately_label');
   applyRow.appendChild(bdApplyImmCb);
   applyRow.appendChild(applyLabel);
   borderLeft.appendChild(applyRow);
@@ -552,7 +552,7 @@ export function buildBorderTab(
   bgPatShapeSelect.className = 'dialog-select';
   bgPatShapeSelect.style.width = '90px';
   for (const [val, lbl] of [
-    ['0', '없음'], ['1', '━'], ['2', '┃'],
+    ['0', t('char_shape.misc.none')], ['1', t('para_shape.line_kind.horizontal')], ['2', t('para_shape.line_kind.vertical')],
     ['3', '╲'], ['4', '╱'], ['5', '┼'], ['6', '╳'],
   ] as const) {
     const o = document.createElement('option');
@@ -610,7 +610,7 @@ export function buildBorderTab(
   bdIgnoreMarginCb.id = 'ps-bd-ignore-margin';
   const ignoreLabel = document.createElement('label');
   ignoreLabel.htmlFor = 'ps-bd-ignore-margin';
-  ignoreLabel.textContent = ' 문단 여백 무시(B)';
+  ignoreLabel.textContent = ' ' + t('para_shape.ignore_margin_label');
   ignoreCell.appendChild(bdIgnoreMarginCb);
   ignoreCell.appendChild(ignoreLabel);
   spacingGrid.appendChild(ignoreCell);
@@ -622,19 +622,19 @@ export function buildBorderTab(
 
   function onBorderControlChange(): void {
     if (!bdApplyImmCb?.checked) return;
-    const t = parseInt(bdTypeSelect.value);
+    const tp = parseInt(bdTypeSelect.value);
     const w = parseInt(bdWidthSelect.value);
     const c = bdColorInput.value;
     for (const side of ['left', 'right', 'top', 'bottom'] as const) {
       if (bdSideToggles[side]) {
-        borderStates[side] = { type: t, width: w, color: c };
+        borderStates[side] = { type: tp, width: w, color: c };
       }
     }
     updateBdPreview();
   }
 
   function applyBorderPreset(mode: 'none' | 'box' | 'toggleAll'): void {
-    const t = parseInt(bdTypeSelect.value);
+    const tp = parseInt(bdTypeSelect.value);
     const w = parseInt(bdWidthSelect.value);
     const c = bdColorInput.value;
     for (const side of ['left', 'right', 'top', 'bottom'] as const) {
@@ -642,14 +642,14 @@ export function buildBorderTab(
         borderStates[side] = { type: 0, width: 0, color: '#000000' };
         bdSideToggles[side] = false;
       } else if (mode === 'box') {
-        borderStates[side] = { type: t || 1, width: w, color: c };
+        borderStates[side] = { type: tp || 1, width: w, color: c };
         bdSideToggles[side] = true;
       } else {
         if (bdSideToggles[side]) {
           borderStates[side] = { type: 0, width: 0, color: '#000000' };
           bdSideToggles[side] = false;
         } else {
-          borderStates[side] = { type: t || 1, width: w, color: c };
+          borderStates[side] = { type: tp || 1, width: w, color: c };
           bdSideToggles[side] = true;
         }
       }

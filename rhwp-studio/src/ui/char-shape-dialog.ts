@@ -67,7 +67,7 @@ function getAttrIcons(): { id: string; title: string }[] {
 
 function createAttrIconContent(id: string): HTMLSpanElement {
   const span = document.createElement('span');
-  span.textContent = '가';
+  span.textContent = t('char_shape.misc.preview_letter');
   switch (id) {
     case 'bold':
       span.style.fontWeight = 'bold';
@@ -91,7 +91,7 @@ function createAttrIconContent(id: string): HTMLSpanElement {
     case 'superscript': {
       span.textContent = '';
       span.style.fontSize = '12px';
-      span.appendChild(document.createTextNode('가'));
+      span.appendChild(document.createTextNode(t('char_shape.misc.preview_letter')));
       const sup = document.createElement('sup');
       sup.style.fontSize = '8px';
       sup.textContent = '1';
@@ -101,7 +101,7 @@ function createAttrIconContent(id: string): HTMLSpanElement {
     case 'subscript': {
       span.textContent = '';
       span.style.fontSize = '12px';
-      span.appendChild(document.createTextNode('가'));
+      span.appendChild(document.createTextNode(t('char_shape.misc.preview_letter')));
       const sub = document.createElement('sub');
       sub.style.fontSize = '8px';
       sub.textContent = '1';
@@ -455,7 +455,7 @@ export class CharShapeDialog {
     const radioRow = this.row();
     this.shadowRadios = [];
     const shadowOpts: [string, string, string][] = [
-      ['0', '없음(N)', 'N'], ['1', '비연속(U)', 'U'], ['2', '연속(T)', 'T'],
+      ['0', t('char_shape.attr.none_n'), 'N'], ['1', t('char_shape.line.discontinuous'), 'U'], ['2', t('char_shape.line.continuous'), 'T'],
     ];
     shadowOpts.forEach(([val, lbl, key]) => {
       const lb = document.createElement('label');
@@ -474,19 +474,19 @@ export class CharShapeDialog {
 
     // X 방향 / Y 방향 / 색
     const xyRow = this.row();
-    xyRow.appendChild(this.label('X 방향(X):'));
+    xyRow.appendChild(this.label(t('char_shape.label.x_direction')));
     this.shadowXInput = this.numberInput(-100, 100);
     this.shadowXInput.style.width = '42px';
     xyRow.appendChild(this.shadowXInput);
     xyRow.appendChild(this.unit('%'));
-    const yLabel = this.label('Y 방향(Y):');
+    const yLabel = this.label(t('char_shape.label.y_direction'));
     yLabel.style.marginLeft = '10px';
     xyRow.appendChild(yLabel);
     this.shadowYInput = this.numberInput(-100, 100);
     this.shadowYInput.style.width = '42px';
     xyRow.appendChild(this.shadowYInput);
     xyRow.appendChild(this.unit('%'));
-    const scLabel = this.label('색(C):');
+    const scLabel = this.label(t('char_shape.label.color_c'));
     scLabel.style.marginLeft = '10px';
     xyRow.appendChild(scLabel);
     this.shadowColorInput = document.createElement('input');
@@ -503,25 +503,25 @@ export class CharShapeDialog {
     this.ulPosSelect = document.createElement('select');
     this.ulPosSelect.className = 'dialog-select';
     this.ulPosSelect.style.width = '68px';
-    for (const [val, lbl] of [['None', '없음'], ['Bottom', '아래'], ['Top', '위']] as const) {
+    for (const [val, lbl] of [['None', t('char_shape.misc.none')], ['Bottom', t('char_shape.underline.location_below')], ['Top', t('char_shape.underline.location_above')]] as const) {
       const o = document.createElement('option');
       o.value = val; o.textContent = lbl;
       this.ulPosSelect.appendChild(o);
     }
     ulRow.appendChild(this.ulPosSelect);
 
-    const ulmLabel = this.label('모양(M):');
+    const ulmLabel = this.label(t('char_shape.underline.shape_m_label'));
     ulmLabel.style.marginLeft = '10px';
     ulRow.appendChild(ulmLabel);
     this.ulShapeSelect = document.createElement('select');
     this.ulShapeSelect.className = 'dialog-select';
     this.ulShapeSelect.style.width = '90px';
     for (const [val, lbl] of [
-      ['0', '━━━━ 실선'], ['1', '- - - 긴점선'], ['2', '········ 점선'],
-      ['3', '━·━· 일점쇄선'], ['4', '━··━ 이점쇄선'],
-      ['5', '━━━ 긴파선'], ['6', '●●●● 원형점'],
-      ['7', '══ 이중선'], ['8', '━═ 가는+굵은'],
-      ['9', '═━ 굵은+가는'], ['10', '≡≡ 삼중선'],
+      ['0', t('char_shape.line_shape.solid')], ['1', t('char_shape.line_shape.long_dot')], ['2', t('char_shape.line_shape.dot')],
+      ['3', t('char_shape.line_shape.dash_dot')], ['4', t('char_shape.line_shape.dash_dot_dot')],
+      ['5', t('char_shape.line_shape.long_dash')], ['6', t('char_shape.line_shape.circle_dot')],
+      ['7', t('char_shape.line_shape.double')], ['8', t('char_shape.line_shape.thin_thick')],
+      ['9', t('char_shape.line_shape.thick_thin')], ['10', t('char_shape.line_shape.triple')],
     ] as const) {
       const o = document.createElement('option');
       o.value = val; o.textContent = lbl;
@@ -529,7 +529,7 @@ export class CharShapeDialog {
     }
     ulRow.appendChild(this.ulShapeSelect);
 
-    const ulcLabel = this.label('색(B):');
+    const ulcLabel = this.label(t('char_shape.label.color_b'));
     ulcLabel.style.marginLeft = '10px';
     ulRow.appendChild(ulcLabel);
     this.ulColorInput = document.createElement('input');
@@ -542,16 +542,16 @@ export class CharShapeDialog {
     // ── 취소선
     const stFs = this.createFieldset(t('char_shape.attr.strikethrough'));
     const stRow = this.row();
-    stRow.appendChild(this.label('모양(S):'));
+    stRow.appendChild(this.label(t('char_shape.strikethrough.shape_s_label')));
     this.strikeShapeSelect = document.createElement('select');
     this.strikeShapeSelect.className = 'dialog-select';
     this.strikeShapeSelect.style.width = '90px';
     for (const [val, lbl] of [
-      ['0', '━━━━ 실선'], ['1', '- - - 긴점선'], ['2', '········ 점선'],
-      ['3', '━·━· 일점쇄선'], ['4', '━··━ 이점쇄선'],
-      ['5', '━━━ 긴파선'], ['6', '●●●● 원형점'],
-      ['7', '══ 이중선'], ['8', '━═ 가는+굵은'],
-      ['9', '═━ 굵은+가는'], ['10', '≡≡ 삼중선'],
+      ['0', t('char_shape.line_shape.solid')], ['1', t('char_shape.line_shape.long_dot')], ['2', t('char_shape.line_shape.dot')],
+      ['3', t('char_shape.line_shape.dash_dot')], ['4', t('char_shape.line_shape.dash_dot_dot')],
+      ['5', t('char_shape.line_shape.long_dash')], ['6', t('char_shape.line_shape.circle_dot')],
+      ['7', t('char_shape.line_shape.double')], ['8', t('char_shape.line_shape.thin_thick')],
+      ['9', t('char_shape.line_shape.thick_thin')], ['10', t('char_shape.line_shape.triple')],
     ] as const) {
       const o = document.createElement('option');
       o.value = val; o.textContent = lbl;
@@ -559,7 +559,7 @@ export class CharShapeDialog {
     }
     stRow.appendChild(this.strikeShapeSelect);
 
-    const stcLabel = this.label('색(H):');
+    const stcLabel = this.label(t('char_shape.label.color_h'));
     stcLabel.style.marginLeft = '10px';
     stRow.appendChild(stcLabel);
     this.strikeColorInput = document.createElement('input');
@@ -572,11 +572,11 @@ export class CharShapeDialog {
     // ── 기타
     const etcFs = this.createFieldset(t('char_shape.misc.misc'));
     const etcRow1 = this.row();
-    etcRow1.appendChild(this.label('외곽선(O):'));
+    etcRow1.appendChild(this.label(t('char_shape.label.outline_o')));
     this.outlineTypeSelect = document.createElement('select');
     this.outlineTypeSelect.className = 'dialog-select';
     this.outlineTypeSelect.style.width = '80px';
-    ['없음', '실선', '점선', '굵은 선', '파선', '일점쇄선', '이점쇄선'].forEach((lbl, i) => {
+    [t('char_shape.misc.none'), t('char_shape.line.solid'), t('char_shape.line.dot'), t('char_shape.outline.thick_line'), t('char_shape.line.dash'), t('char_shape.line.dash_dot'), t('char_shape.line.dash_dot_dot')].forEach((lbl, i) => {
       const o = document.createElement('option');
       o.value = String(i); o.textContent = lbl;
       this.outlineTypeSelect.appendChild(o);
@@ -590,7 +590,7 @@ export class CharShapeDialog {
     this.emphasisSelect.className = 'dialog-select';
     this.emphasisSelect.style.width = '80px';
     for (const [val, lbl] of [
-      ['0', '없음'], ['1', '● 검정 동그라미'], ['2', '○ 속빈 동그라미'],
+      ['0', t('char_shape.misc.none')], ['1', t('char_shape.emphasis.black_circle')], ['2', t('char_shape.emphasis.empty_circle')],
       ['3', 'ˇ'], ['4', '˜'], ['5', '･'], ['6', '˸'],
     ] as const) {
       const o = document.createElement('option');
@@ -643,8 +643,8 @@ export class CharShapeDialog {
     this.borderTypeSelect.className = 'dialog-select';
     this.borderTypeSelect.style.width = '100px';
     for (const [val, lbl] of [
-      ['0', '선 없음'], ['1', '실선'], ['2', '파선'],
-      ['3', '점선'], ['4', '일점쇄선'], ['8', '이중선'],
+      ['0', t('char_shape.border.none_outline')], ['1', t('char_shape.line.solid')], ['2', t('char_shape.line.dash')],
+      ['3', t('char_shape.line.dot')], ['4', t('char_shape.line.dash_dot')], ['8', t('char_shape.line.double')],
     ] as const) {
       const o = document.createElement('option');
       o.value = val; o.textContent = lbl;
@@ -767,7 +767,7 @@ export class CharShapeDialog {
     this.patShapeSelect.className = 'dialog-select';
     this.patShapeSelect.style.width = '90px';
     for (const [val, lbl] of [
-      ['0', '없음'], ['1', '━'], ['2', '┃'],
+      ['0', t('char_shape.misc.none')], ['1', t('char_shape.bg.pattern.horizontal')], ['2', t('char_shape.bg.pattern.vertical')],
       ['3', '╲'], ['4', '╱'], ['5', '╳'], ['6', '┼'],
     ] as const) {
       const o = document.createElement('option');

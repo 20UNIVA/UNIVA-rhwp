@@ -149,14 +149,14 @@ export class CellBorderBgDialog extends ModalDialog {
     this.borderLineTypeGrid = document.createElement('div');
     this.borderLineTypeGrid.className = 'tcp-line-type-grid';
     const lineTypeDefs = [
-      { type: 0, label: '없음' },
+      { type: 0, label: t('border.kind.none') },
       { type: 1, dash: '' },
       { type: 2, dash: '6,3' },
       { type: 3, dash: '2,2' },
       { type: 4, dash: '8,3,2,3' },
       { type: 5, dash: '8,3,2,3,2,3' },
       { type: 6, dash: '12,3' },
-      { type: 8, label: '이중' },
+      { type: 8, label: t('border.kind.double') },
     ];
     lineTypeDefs.forEach(def => {
       const item = document.createElement('div');
@@ -165,7 +165,7 @@ export class CellBorderBgDialog extends ModalDialog {
       if (def.type === 0) {
         const span = document.createElement('span');
         span.className = 'tcp-line-type-none';
-        span.textContent = '없음';
+        span.textContent = t('border.kind.none');
         item.appendChild(span);
       } else if (def.type === 8) {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -373,7 +373,7 @@ export class CellBorderBgDialog extends ModalDialog {
     this.bgNoneRadio.checked = true;
     this.bgNoneRadio.addEventListener('change', () => this.updateBgPreview());
     noneRow.appendChild(this.bgNoneRadio);
-    noneRow.appendChild(document.createTextNode(' 채우기 없음'));
+    noneRow.appendChild(document.createTextNode(' ' + t('fill.none_fill')));
     fillSection.appendChild(noneRow);
 
     const colorRow = this.row();
@@ -382,7 +382,7 @@ export class CellBorderBgDialog extends ModalDialog {
     this.bgColorRadio.name = 'cellBgFill';
     this.bgColorRadio.addEventListener('change', () => this.updateBgPreview());
     colorRow.appendChild(this.bgColorRadio);
-    colorRow.appendChild(document.createTextNode(' 색(Q)'));
+    colorRow.appendChild(document.createTextNode(' ' + t('fill.color_q')));
     fillSection.appendChild(colorRow);
 
     // 면색 + 무늬색 + 무늬모양
@@ -421,7 +421,7 @@ export class CellBorderBgDialog extends ModalDialog {
     patTypeRow.appendChild(this.label(t('table.fill.pattern_shape')));
     this.bgPatternTypeSelect = this.selectOptions([
       ['0', t('char_shape.misc.none')], ['1', t('table.border.horizontal_line')], ['2', t('table.border.vertical_line')], ['3', t('table.border.backslash')],
-      ['4', t('table.border.slash')], ['5', t('table.border.cross')], ['6', 'X자'],
+      ['4', t('table.border.slash')], ['5', t('table.border.cross')], ['6', t('cell.diagonal_x')],
     ]);
     this.bgPatternTypeSelect.addEventListener('change', () => {
       this.bgColorRadio.checked = true;
@@ -475,12 +475,12 @@ export class CellBorderBgDialog extends ModalDialog {
     frag.className = 'tcp-tab-content';
 
     // 선 속성
-    const lineSection = this.createSection('선 속성');
+    const lineSection = this.createSection(t('border.section_props'));
     const typeRow = this.row();
     typeRow.appendChild(this.label(t('table.border.kind').replace(/\(N\)$/, '')));
     this.diagLineTypeSelect = this.selectOptions([
-      ['0', '없음'], ['1', '실선'], ['2', '파선'], ['3', '점선'],
-      ['4', '일점쇄선'], ['5', '이점쇄선'], ['6', '긴 파선'], ['7', '이중 실선'],
+      ['0', t('border.kind.none')], ['1', t('border.kind.solid')], ['2', t('border.kind.dash')], ['3', t('border.kind.dot')],
+      ['4', t('border.kind.dash_dot')], ['5', t('border.kind.dash_dot_dot')], ['6', t('border.kind.long_dash')], ['7', t('border.kind.double_solid')],
     ]);
     typeRow.appendChild(this.diagLineTypeSelect);
     lineSection.appendChild(typeRow);
@@ -506,11 +506,11 @@ export class CellBorderBgDialog extends ModalDialog {
     frag.appendChild(lineSection);
 
     // 대각선 방향 아이콘
-    const dirSection = this.createSection('대각선 방향');
+    const dirSection = this.createSection(t('cell.diagonal_direction'));
 
     // \ 대각선
     const bsRow = this.row();
-    bsRow.appendChild(this.label('\\ 대각선'));
+    bsRow.appendChild(this.label(t('border.diagonal_backslash')));
     const bsGroup = document.createElement('div');
     bsGroup.className = 'dialog-btn-group';
     const bsBtn = document.createElement('button');
@@ -523,7 +523,7 @@ export class CellBorderBgDialog extends ModalDialog {
 
     // / 대각선
     const fsRow = this.row();
-    fsRow.appendChild(this.label('/ 대각선'));
+    fsRow.appendChild(this.label(t('border.diagonal_forwardslash')));
     const fsGroup = document.createElement('div');
     fsGroup.className = 'dialog-btn-group';
     const fsBtn = document.createElement('button');
@@ -536,7 +536,7 @@ export class CellBorderBgDialog extends ModalDialog {
 
     // + 중심선
     const csRow = this.row();
-    csRow.appendChild(this.label('+ 중심선'));
+    csRow.appendChild(this.label(t('border.diagonal_center')));
     const csGroup = document.createElement('div');
     csGroup.className = 'dialog-btn-group';
     const csBtn = document.createElement('button');
@@ -563,7 +563,7 @@ export class CellBorderBgDialog extends ModalDialog {
     radioGroup.className = 'dialog-radio-group';
     const radios: HTMLInputElement[] = [];
 
-    for (const [val, text] of [['selected', '선택된 셀(S)'], ['all', '모든 셀(E)']] as const) {
+    for (const [val, text] of [['selected', t('border.target_selected_cells')], ['all', t('border.target_all_cells')]] as const) {
       const lbl = document.createElement('label');
       const inp = document.createElement('input');
       inp.type = 'radio';

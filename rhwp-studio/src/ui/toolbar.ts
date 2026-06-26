@@ -339,7 +339,7 @@ export class Toolbar {
       this.highlightDropdown.classList.remove('open');
     });
     const btnOther = document.createElement('button');
-    btnOther.textContent = '다른 색...';
+    btnOther.textContent = t('stylebar.text_color_other');
     const hiddenPicker = document.createElement('input');
     hiddenPicker.type = 'color';
     hiddenPicker.value = this.highlightColor;
@@ -654,10 +654,11 @@ export class Toolbar {
     if (fontSets.length === 0) return;
 
     // 기존 optgroup 제거 (재호출 대비)
-    this.fontName.querySelectorAll('optgroup[label="대표 글꼴"]').forEach(g => g.remove());
+    const repLabel = t('stylebar.font_group.representative');
+    this.fontName.querySelectorAll(`optgroup[label="${repLabel}"]`).forEach(g => g.remove());
 
     const group = document.createElement('optgroup');
-    group.label = '대표 글꼴';
+    group.label = repLabel;
 
     for (const fs of fontSets) {
       const opt = document.createElement('option');
@@ -675,10 +676,11 @@ export class Toolbar {
     if (localFonts.length === 0) return;
 
     // 기존 로컬 글꼴 optgroup 제거 (재호출 대비)
-    this.fontName.querySelectorAll('optgroup[label="로컬 글꼴"]').forEach(g => g.remove());
+    const localLabel = t('stylebar.font_group.local');
+    this.fontName.querySelectorAll(`optgroup[label="${localLabel}"]`).forEach(g => g.remove());
 
     const group = document.createElement('optgroup');
-    group.label = '로컬 글꼴';
+    group.label = localLabel;
 
     for (const name of localFonts) {
       const opt = document.createElement('option');
@@ -688,7 +690,7 @@ export class Toolbar {
     }
 
     // 대표 글꼴 optgroup 다음에 삽입
-    const fontSetGroup = this.fontName.querySelector('optgroup[label="대표 글꼴"]');
+    const fontSetGroup = this.fontName.querySelector(`optgroup[label="${t('stylebar.font_group.representative')}"]`);
     if (fontSetGroup?.nextSibling) {
       this.fontName.insertBefore(group, fontSetGroup.nextSibling);
     } else {

@@ -2404,7 +2404,7 @@ export class InputHandler {
       if (ref) {
         try {
           this.wasm.copyControl(ref.sec, ref.ppi, ref.ci);
-          const text = this.wasm.getClipboardText() || '[그림]';
+          const text = this.wasm.getClipboardText() || t('clipboard.fallback.image');
           let html = '';
           try { html = this.wasm.exportControlHtml(ref.sec, ref.ppi, ref.ci) || ''; } catch { /* 무시 */ }
           const markedHtml = _keyboard.prepareRhwpInternalClipboardHtml(this, html, text);
@@ -2426,7 +2426,7 @@ export class InputHandler {
       if (ref) {
         try {
           this.wasm.copyControl(ref.sec, ref.ppi, ref.ci);
-          const text = this.wasm.getClipboardText() || '[표]';
+          const text = this.wasm.getClipboardText() || t('clipboard.fallback.table');
           let html = '';
           try { html = this.wasm.exportControlHtml(ref.sec, ref.ppi, ref.ci) || ''; } catch { /* 무시 */ }
           const markedHtml = _keyboard.prepareRhwpInternalClipboardHtml(this, html, text);

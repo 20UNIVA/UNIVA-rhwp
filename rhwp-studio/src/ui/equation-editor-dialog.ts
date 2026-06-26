@@ -2,7 +2,8 @@ import type { WasmBridge } from '@/core/wasm-bridge';
 import type { EventBus } from '@/core/event-bus';
 import type { EquationProperties } from '@/core/types';
 import { appendSvgMarkup } from './dom-utils';
-import { t } from '@/i18n/t';
+import { t, type MessageKey } from '@/i18n/t';
+import { t as tr } from '@/i18n/t';
 
 /**
  * 수식 편집 대화상자
@@ -16,13 +17,13 @@ import { t } from '@/i18n/t';
 type InputMode = 'hwp' | 'latex';
 
 interface TemplateEntry { label: string; hwp: string; latex: string }
-interface TemplateGroup { id: string; name: string; items: TemplateEntry[] }
+interface TemplateGroup { id: string; name: string; nameKey: MessageKey; items: TemplateEntry[] }
 
 interface CommandEntry { name: string; display: string; hwpInsert: string; latexInsert: string; group: string }
 
 const TEMPLATE_GROUPS: TemplateGroup[] = [
-  { id: 'struct', name: '구조', items: [
-    { label: '분수', hwp: '{} over {}', latex: '\\frac{}{}'  },
+  { id: 'struct', name: '구조', nameKey: 'equation.tab.struct', items: [
+    { label: tr('equation.struct.fraction'), hwp: '{} over {}', latex: '\\frac{}{}'  },
     { label: 'x²', hwp: '{}^{}', latex: '{}^{}' },
     { label: 'x₂', hwp: '{}_{}', latex: '{}_{}' },
     { label: '√', hwp: 'sqrt {}', latex: '\\sqrt{}' },
@@ -38,11 +39,11 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
     { label: '⌈⌉', hwp: 'LEFT lceil {} RIGHT rceil', latex: '\\left\\lceil {} \\right\\rceil' },
     { label: '⌊⌋', hwp: 'LEFT lfloor {} RIGHT rfloor', latex: '\\left\\lfloor {} \\right\\rfloor' },
     { label: '||', hwp: 'LEFT | {} RIGHT |', latex: '\\left| {} \\right|' },
-    { label: '행렬', hwp: 'matrix { {} # {} ; {} # {} }', latex: '\\begin{matrix} {} & {} \\\\ {} & {} \\end{matrix}' },
+    { label: tr('equation.struct.matrix'), hwp: 'matrix { {} # {} ; {} # {} }', latex: '\\begin{matrix} {} & {} \\\\ {} & {} \\end{matrix}' },
     { label: 'cases', hwp: 'cases { {} ; {} }', latex: '\\begin{cases} {} \\\\ {} \\end{cases}' },
     { label: 'lim', hwp: 'lim _{} {}', latex: '\\lim_{} {}' },
   ] },
-  { id: 'greek', name: '그리스', items: [
+  { id: 'greek', name: '그리스', nameKey: 'equation.tab.greek', items: [
     { label: 'α', hwp: 'alpha', latex: '\\alpha' },
     { label: 'β', hwp: 'beta', latex: '\\beta' },
     { label: 'γ', hwp: 'gamma', latex: '\\gamma' },
@@ -77,7 +78,7 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
     { label: 'Ψ', hwp: 'Psi', latex: '\\Psi' },
     { label: 'Ω', hwp: 'Omega', latex: '\\Omega' },
   ] },
-  { id: 'op', name: '연산자', items: [
+  { id: 'op', name: '연산자', nameKey: 'equation.tab.operator', items: [
     { label: '±', hwp: 'pm', latex: '\\pm' },
     { label: '∓', hwp: 'mp', latex: '\\mp' },
     { label: '×', hwp: 'times', latex: '\\times' },
@@ -112,7 +113,7 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
     { label: '∴', hwp: 'therefore', latex: '\\therefore' },
     { label: '∵', hwp: 'because', latex: '\\because' },
   ] },
-  { id: 'arrow', name: '화살표', items: [
+  { id: 'arrow', name: '화살표', nameKey: 'equation.tab.arrows', items: [
     { label: '←', hwp: 'larrow', latex: '\\leftarrow' },
     { label: '→', hwp: 'rarrow', latex: '\\rightarrow' },
     { label: '↑', hwp: 'uparrow', latex: '\\uparrow' },
@@ -125,7 +126,7 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
     { label: '↗', hwp: 'nearrow', latex: '\\nearrow' },
     { label: '↘', hwp: 'searrow', latex: '\\searrow' },
   ] },
-  { id: 'func', name: '함수', items: [
+  { id: 'func', name: '함수', nameKey: 'equation.tab.function', items: [
     { label: 'sin', hwp: 'sin', latex: '\\sin' },
     { label: 'cos', hwp: 'cos', latex: '\\cos' },
     { label: 'tan', hwp: 'tan', latex: '\\tan' },
@@ -147,7 +148,7 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
     { label: 'gcd', hwp: 'gcd', latex: '\\gcd' },
     { label: 'mod', hwp: 'mod', latex: '\\mod' },
   ] },
-  { id: 'deco', name: '장식', items: [
+  { id: 'deco', name: '장식', nameKey: 'equation.tab.decoration', items: [
     { label: 'â', hwp: 'hat {}', latex: '\\hat{}' },
     { label: 'ā', hwp: 'bar {}', latex: '\\bar{}' },
     { label: 'ã', hwp: 'tilde {}', latex: '\\tilde{}' },
@@ -159,7 +160,7 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
     { label: 'a̲', hwp: 'UNDERLINE {}', latex: '\\underline{}' },
     { label: 'a̅', hwp: 'OVERLINE {}', latex: '\\overline{}' },
   ] },
-  { id: 'special', name: '특수', items: [
+  { id: 'special', name: '특수', nameKey: 'equation.tab.special', items: [
     { label: 'ℓ', hwp: 'ell', latex: '\\ell' },
     { label: 'ℏ', hwp: 'hbar', latex: '\\hbar' },
     { label: 'ℵ', hwp: 'aleph', latex: '\\aleph' },
@@ -185,7 +186,7 @@ function buildCommandList(): CommandEntry[] {
     for (const t of grp.items) {
       const parts = t.hwp.split(/[\s{}_^]/);
       const name = parts.find(p => p.length > 0) || t.label;
-      cmds.push({ name, display: t.label, hwpInsert: t.hwp, latexInsert: t.latex, group: grp.name });
+      cmds.push({ name, display: t.label, hwpInsert: t.hwp, latexInsert: t.latex, group: tr(grp.nameKey) });
     }
   }
   return cmds;
@@ -335,7 +336,7 @@ export class EquationEditorDialog {
     this.searchInput = document.createElement('input');
     this.searchInput.type = 'text';
     this.searchInput.className = 'eq-search-input';
-    this.searchInput.placeholder = '기호 검색 (이름 또는 유니코드)';
+    this.searchInput.placeholder = t('equation.search_placeholder');
     this.searchInput.addEventListener('input', () => this.onSearchInput());
     this.searchResults = document.createElement('div');
     this.searchResults.className = 'eq-search-results';
@@ -347,10 +348,10 @@ export class EquationEditorDialog {
     this.latexHint = document.createElement('div');
     this.latexHint.className = 'eq-latex-hint';
     this.latexHint.style.display = 'none';
-    this.latexHint.innerHTML = '<span>💡 백슬래시(\\) 명령어가 감지됨 — </span>';
+    this.latexHint.innerHTML = `<span>💡 ${t('equation.latex_detected_hint')}</span>`;
     const hintLink = document.createElement('a');
     hintLink.href = '#';
-    hintLink.textContent = 'LaTeX 모드로 전환';
+    hintLink.textContent = t('equation.switch_to_latex');
     hintLink.addEventListener('click', (e) => { e.preventDefault(); this.setMode('latex'); });
     this.latexHint.appendChild(hintLink);
     body.appendChild(this.latexHint);
@@ -397,7 +398,7 @@ export class EquationEditorDialog {
 
     const colorLabel = document.createElement('span');
     colorLabel.className = 'dialog-label';
-    colorLabel.textContent = '색';
+    colorLabel.textContent = t('equation.color');
     this.colorInput = document.createElement('input');
     this.colorInput.type = 'color';
     this.colorInput.className = 'eq-color-input';
@@ -449,7 +450,7 @@ export class EquationEditorDialog {
   private setMode(m: InputMode): void {
     this.mode = m;
     this.modeBtn.textContent = m === 'hwp' ? 'HWP' : 'LaTeX';
-    this.modeBtn.title = m === 'hwp' ? 'LaTeX 모드로 전환' : 'HWP 모드로 전환';
+    this.modeBtn.title = m === 'hwp' ? t('equation.switch_to_latex') : t('equation.switch_to_hwp');
     this.latexHint.style.display = 'none';
     this.refreshToolbar();
   }
@@ -465,7 +466,7 @@ export class EquationEditorDialog {
     for (const grp of TEMPLATE_GROUPS) {
       const tab = document.createElement('button');
       tab.className = 'eq-tab' + (grp.id === this.activeTabId ? ' eq-tab-active' : '');
-      tab.textContent = grp.name;
+      tab.textContent = t(grp.nameKey);
       tab.dataset.tabId = grp.id;
       tab.addEventListener('click', () => {
         this.activeTabId = grp.id;
@@ -655,7 +656,7 @@ export class EquationEditorDialog {
   private updatePreview(): void {
     const script = this.scriptArea.value.trim();
     if (!script) {
-      this.showPreviewMessage('eq-preview-empty', '수식을 입력하세요');
+      this.showPreviewMessage('eq-preview-empty', t('equation.preview_empty'));
       return;
     }
 
@@ -668,7 +669,7 @@ export class EquationEditorDialog {
       this.previewContainer.replaceChildren();
       appendSvgMarkup(this.previewContainer, svg);
     } catch (err) {
-      this.showPreviewMessage('eq-preview-error', '미리보기 오류');
+      this.showPreviewMessage('eq-preview-error', t('equation.preview_error'));
       console.warn('[EquationEditor] 미리보기 오류:', err);
     }
   }

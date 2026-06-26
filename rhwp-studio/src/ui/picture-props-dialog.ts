@@ -48,7 +48,7 @@ type TabKey = 'basic' | 'margin_caption' | 'line' | 'picture' | 'shadow' | 'refl
 function tabLabel(key: TabKey): string {
   switch (key) {
     case 'basic': return t('shape.tab.basic');
-    case 'margin_caption': return '여백/캡션';
+    case 'margin_caption': return t('shape.margin_caption');
     case 'line': return t('shape.tab.line');
     case 'picture': return t('shape.tab.picture');
     case 'shadow': return t('shape.tab.shadow');
@@ -587,12 +587,12 @@ export class PicturePropsDialog {
     const skewFs = this.fieldset(t('table.text_dir.skew'));
     panel.appendChild(skewFs);
     const skewRow = this.row();
-    skewRow.appendChild(this.label('가로(Y):'));
+    skewRow.appendChild(this.label(t('shape.label.horizontal_y')));
     this.skewHInput = this.numberInput(0, 45, 1);
     this.skewHInput.disabled = true;
     skewRow.appendChild(this.skewHInput);
     skewRow.appendChild(this.unit('°'));
-    skewRow.appendChild(this.label('세로(U):'));
+    skewRow.appendChild(this.label(t('shape.label.vertical_u')));
     this.skewVInput = this.numberInput(0, 45, 1);
     this.skewVInput.disabled = true;
     skewRow.appendChild(this.skewVInput);
@@ -603,7 +603,7 @@ export class PicturePropsDialog {
     const etcFs = this.fieldset(t('char_shape.misc.misc'));
     panel.appendChild(etcFs);
     const etcRow = this.row();
-    etcRow.appendChild(this.label('번호 종류(N):'));
+    etcRow.appendChild(this.label(t('shape.label.number_kind_n')));
     const numTypeSelect = this.selectEl([['Picture', t('shape.tab.picture')]]);
     numTypeSelect.disabled = true;
     etcRow.appendChild(numTypeSelect);
@@ -640,24 +640,24 @@ export class PicturePropsDialog {
     panel.appendChild(marginFs);
 
     const row1 = this.row();
-    row1.appendChild(this.label('왼쪽(L):'));
+    row1.appendChild(this.label(t('shape.label.left_l')));
     this.outerMarginLeftInput = this.numberInput(0);
     this.outerMarginLeftInput.value = '0.00';
     row1.appendChild(this.outerMarginLeftInput);
     row1.appendChild(this.unit('mm'));
-    row1.appendChild(this.label('위쪽(T):'));
+    row1.appendChild(this.label(t('shape.label.top_t')));
     this.outerMarginTopInput = this.numberInput(0);
     this.outerMarginTopInput.value = '0.00';
     row1.appendChild(this.outerMarginTopInput);
     row1.appendChild(this.unit('mm'));
     // 모두(A) — ▲▼ 화살표만 있는 동기 스피너
-    row1.appendChild(this.label('모두'));
+    row1.appendChild(this.label(t('shape.label.all')));
     const syncWrap = document.createElement('div');
     syncWrap.className = 'pp-sync-arrows';
     const syncUp = document.createElement('button');
     syncUp.className = 'pp-sync-arrow-btn';
     syncUp.textContent = '▲';
-    syncUp.title = '모두 증가';
+    syncUp.title = t('shape.fill.transparency_increase_all');
     syncUp.addEventListener('click', () => {
       [this.outerMarginLeftInput, this.outerMarginRightInput,
        this.outerMarginTopInput, this.outerMarginBottomInput].forEach(inp => {
@@ -667,7 +667,7 @@ export class PicturePropsDialog {
     const syncDown = document.createElement('button');
     syncDown.className = 'pp-sync-arrow-btn';
     syncDown.textContent = '▼';
-    syncDown.title = '모두 감소';
+    syncDown.title = t('shape.fill.transparency_decrease_all');
     syncDown.addEventListener('click', () => {
       [this.outerMarginLeftInput, this.outerMarginRightInput,
        this.outerMarginTopInput, this.outerMarginBottomInput].forEach(inp => {
@@ -681,12 +681,12 @@ export class PicturePropsDialog {
     marginFs.appendChild(row1);
 
     const row2 = this.row();
-    row2.appendChild(this.label('오른쪽(R):'));
+    row2.appendChild(this.label(t('shape.label.right_r')));
     this.outerMarginRightInput = this.numberInput(0);
     this.outerMarginRightInput.value = '0.00';
     row2.appendChild(this.outerMarginRightInput);
     row2.appendChild(this.unit('mm'));
-    row2.appendChild(this.label('아래쪽(B):'));
+    row2.appendChild(this.label(t('shape.label.bottom_b')));
     this.outerMarginBottomInput = this.numberInput(0);
     this.outerMarginBottomInput.value = '0.00';
     row2.appendChild(this.outerMarginBottomInput);
@@ -706,9 +706,9 @@ export class PicturePropsDialog {
     grid.className = 'pp-caption-grid';
     this.captionBtns = [];
     const capTitles = [
-      '왼쪽 위', '위', '오른쪽 위',
-      '왼쪽', '가운데', '오른쪽',
-      '왼쪽 아래', '아래', '오른쪽 아래',
+      t('shape.body_pos.tl'), t('shape.body_pos.t'), t('shape.body_pos.tr'),
+      t('shape.body_pos.l'), t('shape.body_pos.c'), t('shape.body_pos.r'),
+      t('shape.body_pos.bl'), t('shape.body_pos.b'), t('shape.body_pos.br'),
     ];
     const capIcons = [
       '┌가1', '가1─', '가1┐',
@@ -735,7 +735,7 @@ export class PicturePropsDialog {
 
     // 크기
     const capRow1 = this.row();
-    capRow1.appendChild(this.label('크기(S):'));
+    capRow1.appendChild(this.label(t('shape.label.size_s')));
     this.captionSizeInput = this.numberInput(0);
     this.captionSizeInput.value = '30.00';
     this.captionSizeInput.disabled = true;
@@ -745,7 +745,7 @@ export class PicturePropsDialog {
 
     // 개체와의 간격
     const capRow2 = this.row();
-    capRow2.appendChild(this.label('개체와의 간격(G):'));
+    capRow2.appendChild(this.label(t('shape.caption.gap_label_g')));
     this.captionGapInput = this.numberInput(0);
     this.captionGapInput.value = '3.00';
     this.captionGapInput.disabled = true;
@@ -754,11 +754,11 @@ export class PicturePropsDialog {
     capRight.appendChild(capRow2);
 
     // 체크박스
-    const ceLabel = this.checkboxLabel('여백 부분까지 너비 확대(W)');
+    const ceLabel = this.checkboxLabel(t('shape.cap.expand_margin_w'));
     this.captionExpandCheck = ceLabel.querySelector('input') as HTMLInputElement;
     this.captionExpandCheck.disabled = true;
     capRight.appendChild(ceLabel);
-    const cslLabel = this.checkboxLabel('한 줄로 입력(O)');
+    const cslLabel = this.checkboxLabel(t('shape.cap.single_line_o'));
     this.captionSingleLineCheck = cslLabel.querySelector('input') as HTMLInputElement;
     this.captionSingleLineCheck.disabled = true;
     capRight.appendChild(cslLabel);
@@ -782,27 +782,27 @@ export class PicturePropsDialog {
     panel.appendChild(lineFs);
 
     const row1 = this.row();
-    row1.appendChild(this.label('색(C):'));
+    row1.appendChild(this.label(t('shape.label.color_c')));
     this.lineColorInput = this.colorInput('#000000');
     row1.appendChild(this.lineColorInput);
-    row1.appendChild(this.label('종류(L):'));
+    row1.appendChild(this.label(t('shape.label.kind_l')));
     // HWP 선 종류: attr bits 0-5 (0~17)
     this.lineTypeSelect = this.selectEl([
-      ['0', '선 없음'], ['1', '실선'], ['2', '파선'], ['3', '점선'],
-      ['4', '일점쇄선'], ['5', '이점쇄선'], ['6', '긴 파선'], ['7', '원형 점선'],
-      ['8', '2중선'], ['9', '가는선-굵은선'], ['10', '굵은선-가는선'], ['11', '3중선'],
+      ['0', t('shape.line.kind.none_outline')], ['1', t('shape.line.kind.solid')], ['2', t('shape.line.kind.dash')], ['3', t('shape.line.kind.dot')],
+      ['4', t('shape.line.kind.dash_dot')], ['5', t('shape.line.kind.dash_dot_dot')], ['6', t('shape.line.kind.long_dash')], ['7', t('shape.line.kind.circle_dot')],
+      ['8', t('shape.line.kind.double')], ['9', t('shape.line.kind.thin_thick')], ['10', t('shape.line.kind.thick_thin')], ['11', t('shape.line.kind.triple')],
     ]);
     row1.appendChild(this.lineTypeSelect);
     lineFs.appendChild(row1);
 
     const row2 = this.row();
-    row2.appendChild(this.label('끝 모양(E):'));
+    row2.appendChild(this.label(t('shape.label.end_shape_e')));
     // HWP 끝 모양: attr bits 6-9
     this.lineEndSelect = this.selectEl([
-      ['0', '둥근'], ['1', '평면'],
+      ['0', t('shape.line.cap_round_v2')], ['1', t('shape.line.cap_flat_v2')],
     ]);
     row2.appendChild(this.lineEndSelect);
-    row2.appendChild(this.label('굵기(T):'));
+    row2.appendChild(this.label(t('shape.label.thickness_t')));
     this.lineWidthInput = this.numberInput(0, undefined, 0.01);
     this.lineWidthInput.value = '0.12';
     row2.appendChild(this.lineWidthInput);
@@ -810,45 +810,45 @@ export class PicturePropsDialog {
     lineFs.appendChild(row2);
 
     // ── 화살표 ──
-    const arrowFs = this.fieldset('화살표');
+    const arrowFs = this.fieldset(t('shape.arrow_section'));
     panel.appendChild(arrowFs);
 
     const aRow1 = this.row();
-    aRow1.appendChild(this.label('시작 모양(S):'));
+    aRow1.appendChild(this.label(t('shape.label.start_shape_s')));
     // HWP 화살표 모양: attr bits 10-15 / 16-21
     this.arrowStartSelect = this.selectEl([
-      ['0', '없음'], ['1', '화살표'], ['2', '열린 화살표'],
-      ['3', '꼬리 화살표'], ['4', '마름모'], ['5', '원형'], ['6', '사각형'],
+      ['0', t('shape.arrow.none')], ['1', t('shape.arrow.solid')], ['2', t('shape.arrow.open')],
+      ['3', t('shape.arrow.tail')], ['4', t('shape.arrow.diamond')], ['5', t('shape.arrow.circle')], ['6', t('shape.arrow.square')],
     ]);
     aRow1.appendChild(this.arrowStartSelect);
-    aRow1.appendChild(this.label('끝 모양(Y):'));
+    aRow1.appendChild(this.label(t('shape.label.end_shape_y')));
     this.arrowEndSelect = this.selectEl([
-      ['0', '없음'], ['1', '화살표'], ['2', '열린 화살표'],
-      ['3', '꼬리 화살표'], ['4', '마름모'], ['5', '원형'], ['6', '사각형'],
+      ['0', t('shape.arrow.none')], ['1', t('shape.arrow.solid')], ['2', t('shape.arrow.open')],
+      ['3', t('shape.arrow.tail')], ['4', t('shape.arrow.diamond')], ['5', t('shape.arrow.circle')], ['6', t('shape.arrow.square')],
     ]);
     aRow1.appendChild(this.arrowEndSelect);
     arrowFs.appendChild(aRow1);
 
     const aRow2 = this.row();
-    aRow2.appendChild(this.label('시작 크기(Z):'));
+    aRow2.appendChild(this.label(t('shape.label.start_size_z')));
     // HWP 화살표 크기: attr bits 22-25 / 26-29 (0~8)
     this.arrowStartSizeSelect = this.selectEl([
-      ['0', '작은×작은'], ['1', '작은×중간'], ['2', '작은×큰'],
-      ['3', '중간×작은'], ['4', '중간×중간'], ['5', '중간×큰'],
-      ['6', '큰×작은'], ['7', '큰×중간'], ['8', '큰×큰'],
+      ['0', t('shape.fill.small_x_small')], ['1', t('shape.fill.small_x_medium')], ['2', t('shape.fill.small_x_big')],
+      ['3', t('shape.fill.medium_x_small')], ['4', t('shape.fill.medium_x_medium')], ['5', t('shape.fill.medium_x_big')],
+      ['6', t('shape.fill.big_x_small')], ['7', t('shape.fill.big_x_medium')], ['8', t('shape.fill.big_x_big')],
     ]);
     aRow2.appendChild(this.arrowStartSizeSelect);
-    aRow2.appendChild(this.label('끝 크기(N):'));
+    aRow2.appendChild(this.label(t('shape.label.end_size_n')));
     this.arrowEndSizeSelect = this.selectEl([
-      ['0', '작은×작은'], ['1', '작은×중간'], ['2', '작은×큰'],
-      ['3', '중간×작은'], ['4', '중간×중간'], ['5', '중간×큰'],
-      ['6', '큰×작은'], ['7', '큰×중간'], ['8', '큰×큰'],
+      ['0', t('shape.fill.small_x_small')], ['1', t('shape.fill.small_x_medium')], ['2', t('shape.fill.small_x_big')],
+      ['3', t('shape.fill.medium_x_small')], ['4', t('shape.fill.medium_x_medium')], ['5', t('shape.fill.medium_x_big')],
+      ['6', t('shape.fill.big_x_small')], ['7', t('shape.fill.big_x_medium')], ['8', t('shape.fill.big_x_big')],
     ]);
     aRow2.appendChild(this.arrowEndSizeSelect);
     arrowFs.appendChild(aRow2);
 
     // ── 사각형 모서리 곡률 ──
-    const cornerFs = this.fieldset('사각형 모서리 곡률');
+    const cornerFs = this.fieldset(t('shape.rect.corner_radius'));
     panel.appendChild(cornerFs);
 
     const cRow = this.row();
@@ -1246,14 +1246,14 @@ export class PicturePropsDialog {
     engRow.appendChild(this.label(''));
     this.tbEngLay = document.createElement('button');
     this.tbEngLay.className = 'pp-wrap-btn pp-eng-btn';
-    this.tbEngLay.textContent = '가\nA B';
-    this.tbEngLay.title = '영문 눕힘(O)';
+    this.tbEngLay.textContent = t('shape.preview.preview_basic');
+    this.tbEngLay.title = t('shape.textbox.text_horizontal');
     this.tbEngLay.disabled = true;
     engRow.appendChild(this.tbEngLay);
     this.tbEngStand = document.createElement('button');
     this.tbEngStand.className = 'pp-wrap-btn pp-eng-btn';
-    this.tbEngStand.textContent = '가\nA\nB';
-    this.tbEngStand.title = '영문 세움(U)';
+    this.tbEngStand.textContent = t('shape.preview.preview_stack');
+    this.tbEngStand.title = t('shape.textbox.text_vertical');
     this.tbEngStand.disabled = true;
     engRow.appendChild(this.tbEngStand);
     attrFs.appendChild(engRow);
@@ -1503,7 +1503,7 @@ export class PicturePropsDialog {
     ratioRow.appendChild(ratioLabel);
     const resetBtn = document.createElement('button');
     resetBtn.className = 'dialog-btn';
-    resetBtn.textContent = '원래 그림으로';
+    resetBtn.textContent = t('shape.btn.original');
     resetBtn.style.marginLeft = '12px';
     resetBtn.addEventListener('click', () => {
       this.picScaleXInput.value = '100';
@@ -1868,7 +1868,7 @@ export class PicturePropsDialog {
     panel.className = 'dialog-tab-panel';
     const msg = document.createElement('div');
     msg.className = 'pp-stub-msg';
-    msg.textContent = `[${name}] 탭은 추후 구현 예정입니다.`;
+    msg.textContent = t('shape.tab.unimplemented', { name });
     panel.appendChild(msg);
     return panel;
   }
