@@ -26,12 +26,19 @@ export const messages_ko = {
   'menu.edit.find_replace': '찾아 바꾸기(E)',
   'menu.edit.find_again': '다시 찾기(X)',
   'menu.edit.format_copy': '모양 복사',
+  'menu.edit.delete_object': '개체 지우기',
 
   // === §3. 메뉴바 — 보기 ===
   'menu.view.label': '보기',
   'menu.view.show_grid': '격자',
   'menu.view.show_paragraph_marks': '문단 부호',
   'menu.view.show_control_codes': '조판 부호',
+  'menu.view.zoom_in': '확대',
+  'menu.view.zoom_out': '축소',
+  'menu.view.zoom_percent': '배율',
+  'menu.view.transparent_lines': '투명 선',
+  'menu.view.show_clipped': '잘림 보기',
+  'menu.view.toolbox': '도구 상자',
 
   // === §4. 메뉴바 — 입력 ===
   'menu.insert.label': '입력',
@@ -85,6 +92,7 @@ export const messages_ko = {
   'menu.page.both': '양쪽',
   'menu.page.header': '머리말',
   'menu.page.footer': '꼬리말',
+  'menu.page.column': '단',
 
   // === §7. 메뉴바 — 표 ===
   'menu.table.label': '표',
@@ -119,6 +127,11 @@ export const messages_ko = {
   'toolbar.redo': '다시 실행',
   'toolbar.char_shape': '글자 모양',
   'toolbar.para_shape': '문단 모양',
+  'toolbar.level_up': '수준▲',
+  'toolbar.level_down': '수준▼',
+  'toolbar.table': '표 ▾',
+  'toolbar.shape': '도형 ▾',
+  'toolbar.find_menu': '찾기 메뉴',
 
   // === §9. 서식 도구 모음 ===
   'stylebar.style': '스타일',
@@ -150,12 +163,18 @@ export const messages_ko = {
   'stylebar.align.divide': '나눔 정렬',
   'stylebar.align.picker': '문단 정렬 --',
   'stylebar.editor_area': '에디터 영역 (눈금자 포함) --',
+  'stylebar.highlight': '형광펜',
+  'stylebar.line_spacing': '줄 간격',
 
   // === §10. 상태 표시줄 ===
   'statusbar.page': '{current} / {total} 쪽',
   'statusbar.section': '구역: {current} / {total}',
   'statusbar.insert_mode': '삽입',
   'statusbar.overwrite_mode': '수정',
+  'statusbar.zoom_fit_width': '폭 맞춤',
+  'statusbar.zoom_fit': '쪽 맞춤',
+  'statusbar.zoom_out': '축소',
+  'statusbar.zoom_in': '확대',
 
   // === §11. 글자 모양 대화상자 ===
   'char_shape.dialog_title': '글자 모양',
@@ -949,6 +968,9 @@ export const messages_ko = {
   // === §13. 표·셀 ===
   'cell.diagonal_direction': '대각선 방향',
   'cell.diagonal_x': 'X자',
+
+  // === 서식바 그래픽 아이콘 (글꼴 미리보기 글자) ===
+  'stylebar.icon_letter': '가',
 
   // === m700-7.1 sub-cycle: 누락 키 박음 ===
   'stylebar.text_color_other': '다른 색...',

@@ -27,12 +27,19 @@ export const messages_ja: Record<keyof typeof messages_ko, string> = {
   'menu.edit.find_replace': '検索/置換',
   'menu.edit.find_again': '次を検索',
   'menu.edit.format_copy': '書式コピー',
+  'menu.edit.delete_object': 'オブジェクトを削除',
 
   // === §3. 메뉴바 — 보기 ===
   'menu.view.label': '表示',
   'menu.view.show_grid': 'グリッド',
   'menu.view.show_paragraph_marks': '段落記号',
   'menu.view.show_control_codes': '組版記号',
+  'menu.view.zoom_in': '拡大',
+  'menu.view.zoom_out': '縮小',
+  'menu.view.zoom_percent': '倍率',
+  'menu.view.transparent_lines': '透明線',
+  'menu.view.show_clipped': '切り抜き表示',
+  'menu.view.toolbox': 'ツールボックス',
 
   // === §4. 메뉴바 — 입력 ===
   'menu.insert.label': '挿入',
@@ -86,6 +93,7 @@ export const messages_ja: Record<keyof typeof messages_ko, string> = {
   'menu.page.both': '両方',
   'menu.page.header': 'ヘッダー',
   'menu.page.footer': 'フッター',
+  'menu.page.column': '段',
 
   // === §7. 메뉴바 — 표 ===
   'menu.table.label': '表',
@@ -120,6 +128,11 @@ export const messages_ja: Record<keyof typeof messages_ko, string> = {
   'toolbar.redo': 'やり直し',
   'toolbar.char_shape': 'フォント',
   'toolbar.para_shape': '段落',
+  'toolbar.level_up': 'レベル▲',
+  'toolbar.level_down': 'レベル▼',
+  'toolbar.table': '表 ▾',
+  'toolbar.shape': '図形 ▾',
+  'toolbar.find_menu': '検索メニュー',
 
   // === §9. 서식 도구 모음 ===
   'stylebar.style': 'スタイル',
@@ -151,12 +164,18 @@ export const messages_ja: Record<keyof typeof messages_ko, string> = {
   'stylebar.align.divide': '分割',
   'stylebar.align.picker': '配置 --',
   'stylebar.editor_area': 'エディター領域 (ルーラ付き) --',
+  'stylebar.highlight': '蛍光ペン',
+  'stylebar.line_spacing': '行間',
 
   // === §10. 상태 표시줄 ===
   'statusbar.page': '{current} / {total} ページ',
   'statusbar.section': '区分: {current} / {total}',
   'statusbar.insert_mode': '挿入',
   'statusbar.overwrite_mode': '上書き',
+  'statusbar.zoom_fit_width': '幅に合わせる',
+  'statusbar.zoom_fit': 'ページに合わせる',
+  'statusbar.zoom_out': '縮小',
+  'statusbar.zoom_in': '拡大',
 
   // === §11. 글자 모양 대화상자 ===
   'char_shape.dialog_title': '文字書式',
@@ -950,6 +969,9 @@ export const messages_ja: Record<keyof typeof messages_ko, string> = {
   // === §13. 표·셀 ===
   'cell.diagonal_direction': '対角線の方向',
   'cell.diagonal_x': 'X字',
+
+  // === 서식바 아이콘 ===
+  'stylebar.icon_letter': 'あ',
 
   // === m700-7.1 누락 키 ===
   'stylebar.text_color_other': 'その他の色...',

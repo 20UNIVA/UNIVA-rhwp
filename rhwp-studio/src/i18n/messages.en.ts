@@ -28,12 +28,19 @@ export const messages_en: Record<keyof typeof messages_ko, string> = {
   'menu.edit.find_replace': 'Find & Replace',
   'menu.edit.find_again': 'Find Next',
   'menu.edit.format_copy': 'Format Painter',
+  'menu.edit.delete_object': 'Delete object',
 
   // === §3. 메뉴바 — 보기 ===
   'menu.view.label': 'View',
   'menu.view.show_grid': 'Grid',
   'menu.view.show_paragraph_marks': 'Paragraph Marks',
   'menu.view.show_control_codes': 'Control Codes',
+  'menu.view.zoom_in': 'Zoom In',
+  'menu.view.zoom_out': 'Zoom Out',
+  'menu.view.zoom_percent': 'Zoom',
+  'menu.view.transparent_lines': 'Transparent lines',
+  'menu.view.show_clipped': 'Show clipped',
+  'menu.view.toolbox': 'Toolbox',
 
   // === §4. 메뉴바 — 입력 ===
   'menu.insert.label': 'Insert',
@@ -87,6 +94,7 @@ export const messages_en: Record<keyof typeof messages_ko, string> = {
   'menu.page.both': 'Both',
   'menu.page.header': 'Header',
   'menu.page.footer': 'Footer',
+  'menu.page.column': 'Column',
 
   // === §7. 메뉴바 — 표 ===
   'menu.table.label': 'Table',
@@ -121,6 +129,11 @@ export const messages_en: Record<keyof typeof messages_ko, string> = {
   'toolbar.redo': 'Redo',
   'toolbar.char_shape': 'Font',
   'toolbar.para_shape': 'Paragraph',
+  'toolbar.level_up': 'Level ▲',
+  'toolbar.level_down': 'Level ▼',
+  'toolbar.table': 'Table ▾',
+  'toolbar.shape': 'Shape ▾',
+  'toolbar.find_menu': 'Find menu',
 
   // === §9. 서식 도구 모음 ===
   'stylebar.style': 'Style',
@@ -152,12 +165,18 @@ export const messages_en: Record<keyof typeof messages_ko, string> = {
   'stylebar.align.divide': 'Divide',
   'stylebar.align.picker': 'Align --',
   'stylebar.editor_area': 'Editor area (with ruler) --',
+  'stylebar.highlight': 'Highlight',
+  'stylebar.line_spacing': 'Line spacing',
 
   // === §10. 상태 표시줄 ===
   'statusbar.page': '{current} / {total} pages',
   'statusbar.section': 'Section: {current} / {total}',
   'statusbar.insert_mode': 'Insert',
   'statusbar.overwrite_mode': 'Overwrite',
+  'statusbar.zoom_fit_width': 'Fit width',
+  'statusbar.zoom_fit': 'Fit page',
+  'statusbar.zoom_out': 'Zoom out',
+  'statusbar.zoom_in': 'Zoom in',
 
   // === §11. 글자 모양 대화상자 ===
   'char_shape.dialog_title': 'Character',
@@ -951,6 +970,9 @@ export const messages_en: Record<keyof typeof messages_ko, string> = {
   // === §13. 표·셀 ===
   'cell.diagonal_direction': 'Diagonal direction',
   'cell.diagonal_x': 'X-shape',
+
+  // === 서식바 아이콘 ===
+  'stylebar.icon_letter': 'Aa',
 
   // === m700-7.1 누락 키 ===
   'stylebar.text_color_other': 'Other color...',

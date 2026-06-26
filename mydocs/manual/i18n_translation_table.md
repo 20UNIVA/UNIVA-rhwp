@@ -89,6 +89,7 @@
 | `menu.edit.find_replace` | 찾아 바꾸기(E) | Find & Replace | 検索/置換 | `edit:replace` — 키 자체 `replace` → `find_replace` 자리 갈람 |
 | `menu.edit.find_again` | 다시 찾기(X) | Find Next | 次を検索 | `edit:find-again` *(신규)* |
 | `menu.edit.format_copy` | 모양 복사 | Format Painter | 書式コピー | `edit:format-copy` *(신규)* |
+| `menu.edit.delete_object` | 개체 지우기 | Delete object | オブジェクトを削除 | `insert:picture-delete` — 그림·개체 지우기 *(신규)* |
 
 ## 3. 메뉴바 — 보기
 
@@ -98,6 +99,12 @@
 | `menu.view.show_grid` | 격자 | Grid | グリッド | 격자 표시 토글 |
 | `menu.view.show_paragraph_marks` | 문단 부호 | Paragraph Marks | 段落記号 | 조판부호 표시 — ↵/↓ 마커 자리 |
 | `menu.view.show_control_codes` | 조판 부호 | Control Codes | 組版記号 | 모든 컨트롤 마커 자리 — 일본어 *組版記号* 정정 |
+| `menu.view.zoom_in` | 확대 | Zoom In | 拡大 | `view:zoom-in` — 메뉴 자리 *(신규)* |
+| `menu.view.zoom_out` | 축소 | Zoom Out | 縮小 | `view:zoom-out` — 메뉴 자리 *(신규)* |
+| `menu.view.zoom_percent` | 배율 | Zoom | 倍率 | 배율 서브메뉴 라벨 *(신규)* |
+| `menu.view.transparent_lines` | 투명 선 | Transparent lines | 透明線 | `view:border-transparent` *(신규)* |
+| `menu.view.show_clipped` | 잘림 보기 | Show clipped | 切り抜き表示 | `view:toggle-clip` *(신규)* |
+| `menu.view.toolbox` | 도구 상자 | Toolbox | ツールボックス | 도구 상자 서브메뉴 라벨 *(신규)* |
 
 ## 4. 메뉴바 — 입력
 
@@ -110,6 +117,10 @@
 ## 6. 메뉴바 — 쪽
 
 *다음 cycle 자리에서 박는다.* 자리 후보: 머리말·꼬리말·구역·쪽 번호·여백.
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `menu.page.column` | 단 | Column | 段 | 단(다단) 서브메뉴 라벨 *(신규)* |
 
 ## 7. 메뉴바 — 표
 
@@ -126,10 +137,20 @@
 | `toolbar.redo` | 다시 실행 | Redo | やり直し | 도구 상자 버튼 |
 | `toolbar.char_shape` | 글자 모양 | Font | フォント | 도구 상자 버튼 — *Font* 자리. MS Word 관용 |
 | `toolbar.para_shape` | 문단 모양 | Paragraph | 段落 | 도구 상자 버튼 |
+| `toolbar.level_up` | 수준▲ | Level ▲ | レベル▲ | `tb-level-up` 라벨 *(신규)* |
+| `toolbar.level_down` | 수준▼ | Level ▼ | レベル▼ | `tb-level-down` 라벨 *(신규)* |
+| `toolbar.table` | 표 ▾ | Table ▾ | 表 ▾ | `table:create` 도구 상자 라벨 *(신규)* |
+| `toolbar.shape` | 도형 ▾ | Shape ▾ | 図形 ▾ | `tb-shape` 도구 상자 라벨 *(신규)* |
+| `toolbar.find_menu` | 찾기 메뉴 | Find menu | 検索メニュー | `tb-split-arrow` title 자리 *(신규)* |
 
 ## 9. 서식 도구 모음
 
 *다음 cycle 자리에서 박는다.* §11 글자 모양 대화상자 자리와 *별 키*로 분리 (vfinder playbook "같은 한국어 맥락 다르면 키 분리" 정합).
+
+| 키 | 한국어 | English | 日本語 | 맥락 |
+|---|---|---|---|---|
+| `stylebar.highlight` | 형광펜 | Highlight | 蛍光ペン | `btn-highlight` title 자리 *(신규)* |
+| `stylebar.line_spacing` | 줄 간격 | Line spacing | 行間 | `linespacing-select` title 자리 *(신규)* |
 
 ## 10. 상태 표시줄
 
@@ -139,6 +160,10 @@
 | `statusbar.section` | 구역: {current} / {total} | Section: {current} / {total} | 区分: {current} / {total} | 구역 표시 |
 | `statusbar.insert_mode` | 삽입 | Insert | 挿入 | 입력 모드 |
 | `statusbar.overwrite_mode` | 수정 | Overwrite | 上書き | 입력 모드 — 한컴 한국어판 *수정* |
+| `statusbar.zoom_fit_width` | 폭 맞춤 | Fit width | 幅に合わせる | `sb-zoom-fit-width` title 자리 *(신규)* |
+| `statusbar.zoom_fit` | 쪽 맞춤 | Fit page | ページに合わせる | `sb-zoom-fit` title 자리 *(신규)* |
+| `statusbar.zoom_out` | 축소 | Zoom out | 縮小 | `sb-zoom-out` title 자리 *(신규)* |
+| `statusbar.zoom_in` | 확대 | Zoom in | 拡大 | `sb-zoom-in` title 자리 *(신규)* |
 
 ## 32. 문서 비교·이력 — `compare.*` / `history.*`
 
