@@ -944,7 +944,16 @@ impl TypesetEngine {
                             cv < pv && pv > 5000
                         }
                     } else {
-                        (cv == 0 && pv > 5000 && !hwp3_content_vpos_zero_reset)
+                        // 표 host 문단(비-TAC 자리차지 float 표 등)은 흐름 텍스트가 없어
+                        // line_seg vpos=0 이 될 수 있다. 이 vpos=0 은 HWP5 변환본의
+                        // "새 페이지 첫 문단 vpos 리셋"이 아니라 float 표 anchor 의 정상
+                        // 상태이므로, cv==0 reset 트리거에서 제외한다(near_page_top_reset
+                        // 가 이미 !has_table_control 로 제외하는 것과 동일 의도 — 직접
+                        // 작성 문서에서 표가 여유 공간에도 다음 페이지로 밀리는 회귀 차단).
+                        (cv == 0
+                            && pv > 5000
+                            && !hwp3_content_vpos_zero_reset
+                            && !has_table_control)
                             || near_page_top_reset
                     };
                     if trigger {
@@ -977,7 +986,14 @@ impl TypesetEngine {
                     let next_para = &paragraphs[para_idx + 1];
                     let next_force_break = next_para.column_type == ColumnBreakType::Page
                         || next_para.column_type == ColumnBreakType::Section;
-                    if next_force_break {
+                    // 다음 문단이 표 host 면 그 first vpos=0 은 페이지 vpos 리셋 신호가
+                    // 아니다(float 표 host 는 흐름 텍스트가 없어 vpos=0). 이를 리셋으로
+                    // 오인하면 직전 빈 문단이 잘못 skip 되어 사라진다 — 제외한다.
+                    let next_has_table = next_para
+                        .controls
+                        .iter()
+                        .any(|c| matches!(c, Control::Table(_)));
+                    if next_force_break || next_has_table {
                         false
                     } else {
                         let next_first_vpos = next_para.line_segs.first().map(|s| s.vertical_pos);
