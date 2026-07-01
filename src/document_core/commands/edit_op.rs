@@ -1752,6 +1752,35 @@ mod tests {
         );
     }
 
+    /// [page-break base 서식] press_enter page_break=true 로 넘어간 새 페이지 첫 빈
+    /// 문단은 분할 원본(헤딩)의 char_shape 를 상속하지 않고 base(char_shape_id 0)로
+    /// 리셋되어야 한다. 리셋 안 하면 다음 replace_runs 가 상속된 헤딩 서식(bold·큰
+    /// 글꼴)을 base 로 물어 본문이 새어나온다(스크린샷 0701 사고).
+    #[test]
+    fn test_press_enter_page_break_resets_new_page_to_base_char_shape() {
+        use crate::model::paragraph::CharShapeRef;
+        let mut core = core_with_text("제목");
+        // 원 문단을 "헤딩"으로 — char_shape_id 7 (base 아님) 을 상속 대상으로 심는다.
+        core.document.sections[0].paragraphs[0].char_shapes =
+            vec![CharShapeRef { start_pos: 0, char_shape_id: 7 }];
+
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: Some(true),
+        };
+        core.apply_edit_op(&op).unwrap();
+
+        let new_para = &core.document.sections[0].paragraphs[1];
+        assert!(new_para.text.is_empty(), "새 페이지 첫 문단은 빈 문단");
+        assert_eq!(
+            new_para.char_shapes.first().map(|c| c.char_shape_id),
+            Some(0),
+            "새 페이지 첫 빈 문단은 base(char_shape_id 0)로 리셋되어야 (헤딩 7 상속 금지)"
+        );
+    }
+
     /// char_offset = len 자세 → -1 (끝) 과 동등.
     #[test]
     fn test_press_enter_body_offset_equals_len() {
