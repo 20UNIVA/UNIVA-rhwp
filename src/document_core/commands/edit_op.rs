@@ -1896,6 +1896,42 @@ mod tests {
         } else { panic!("Not a Table"); }
     }
 
+    /// [표 셀 base 서식] create_table_native 로 만든 셀 문단은 바깥(커서) 문단이
+    /// non-base 서식(bold char_shape·center para_shape)이어도 base(char_shape_id 0 /
+    /// para_shape_id 0)로 시작해야 한다 — 바깥 헤딩 서식이 셀에 새어들지 않도록
+    /// (로그 0701 2019: 표 셀에 바로 위 헤딩의 가운데정렬·bold 가 상속되던 사고).
+    #[test]
+    fn test_create_table_cells_use_base_format_not_inherited() {
+        use crate::model::paragraph::CharShapeRef;
+        let mut core = core_with_text("제목");
+        // 바깥 문단(para 0)을 헤딩으로 — non-base char_shape(7) + non-base para_shape(9).
+        core.document.sections[0].paragraphs[0].char_shapes =
+            vec![CharShapeRef { start_pos: 0, char_shape_id: 7 }];
+        core.document.sections[0].paragraphs[0].para_shape_id = 9;
+
+        core.create_table_native(0, 0, 0, 2, 2).unwrap();
+
+        let ctrl_idx = core.find_table_ctrl_idx(0, 1).unwrap();
+        let table_p = &core.document.sections[0].paragraphs[1];
+        if let crate::model::control::Control::Table(t) = &table_p.controls[ctrl_idx] {
+            for (i, cell) in t.cells.iter().enumerate() {
+                for cp in &cell.paragraphs {
+                    assert_eq!(
+                        cp.char_shapes.first().map(|c| c.char_shape_id),
+                        Some(0),
+                        "셀 {i} 문단 char_shape 이 base(0) 여야 (헤딩 7 상속 금지)"
+                    );
+                    assert_eq!(
+                        cp.para_shape_id, 0,
+                        "셀 {i} 문단 para_shape 이 base(0) 여야 (헤딩 9 상속 금지)"
+                    );
+                }
+            }
+        } else {
+            panic!("Not a Table");
+        }
+    }
+
     /// 셀 모드 시작 Enter — 빈 paragraph 가 앞.
     #[test]
     fn test_press_enter_cell_start() {

@@ -849,14 +849,15 @@ impl DocumentCore {
             }
         };
 
-        // 커서 위치 문단의 속성을 기본값으로 상속 (한컴 동작 일치)
-        let current_para = &self.document.sections[section_idx].paragraphs[para_idx];
-        let default_char_shape_id: u32 = current_para
-            .char_shapes
-            .first()
-            .map(|cs| cs.char_shape_id)
-            .unwrap_or(0);
-        let default_para_shape_id: u16 = current_para.para_shape_id;
+        // [표 셀 base 서식] 셀 문단은 커서 위치(표 바깥) 문단의 서식을 상속하지 않고
+        // 문서 base 서식(char_shape_id 0 / para_shape_id 0)으로 시작한다. 상속하면
+        // 바로 위 헤딩의 가운데정렬·bold·큰 글꼴 같은 바깥 서식이 셀 안으로 새어들어와,
+        // 짧은 셀 텍스트가 양쪽으로 벌어지거나 굵게 나오는 사고가 난다(로그 0701 2019).
+        // press_enter page_break 로 넘어간 새 페이지 문단을 base 로 리셋하는 것과 동일한
+        // 취지 — 새 표 = 깨끗한 base 출발. 이후 셀 편집(replace_cell_runs)은 셀 문단의
+        // 이 base 서식을 물려 base 로 입력된다.
+        let default_char_shape_id: u32 = 0;
+        let default_para_shape_id: u16 = 0;
 
         // 셀 목록 생성
         let mut cells = Vec::with_capacity((row_count as usize) * (col_count as usize));
@@ -1221,13 +1222,10 @@ impl DocumentCore {
             }
         };
 
-        let current_para = &self.document.sections[section_idx].paragraphs[para_idx];
-        let default_char_shape_id: u32 = current_para
-            .char_shapes
-            .first()
-            .map(|cs| cs.char_shape_id)
-            .unwrap_or(0);
-        let default_para_shape_id: u16 = current_para.para_shape_id;
+        // [표 셀 base 서식] create_table_native 와 동일 — 셀 문단은 바깥 문단 서식을
+        // 상속하지 않고 문서 base(char_shape_id 0 / para_shape_id 0)로 시작한다.
+        let default_char_shape_id: u32 = 0;
+        let default_para_shape_id: u16 = 0;
 
         // 셀 생성
         let mut cells = Vec::with_capacity((row_count as usize) * (col_count as usize));
