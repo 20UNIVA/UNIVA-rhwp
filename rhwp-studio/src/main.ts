@@ -364,12 +364,17 @@ function buildSessionClient(fileId: string): SessionClient {
                   for (let i = 0; i < count; i++) {
                     const targetPara = opPe.para + i;
                     const targetOffset = i === 0 ? bodyCharOffset : 0;
-                    wasm.splitParagraph(opPe.section, targetPara, targetOffset);
+                    // page_break(i==0): insertPageBreak *단독* = split + 쪽나누기 한 파이프라인
+                    // (native insert_page_break_native 와 동일) → 새 문단 1개에 break.
+                    // 그 외: 일반 split. (구: split + insertPageBreak = 이중 split, 또는
+                    // split + setPageBreak = 이중 파이프라인 → 다중 페이지 재페이지네이션 콜랩스.)
+                    if (i === 0 && pageBreak) {
+                      wasm.insertPageBreak(opPe.section, targetPara, targetOffset);
+                    } else {
+                      wasm.splitParagraph(opPe.section, targetPara, targetOffset);
+                    }
                     if (opPe.style && typeof opPe.style === 'object') {
                       wasm.applyParaFormat(opPe.section, targetPara + 1, JSON.stringify(opPe.style));
-                    }
-                    if (i === 0 && pageBreak) {
-                      wasm.insertPageBreak(opPe.section, targetPara + 1, 0);
                     }
                   }
                 }

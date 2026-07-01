@@ -1287,6 +1287,23 @@ impl HwpDocument {
         .map_err(|e| e.into())
     }
 
+    /// 기존 문단에 쪽 나누기를 *설정만* 한다 (분할 없음).
+    ///
+    /// press_enter(page_break) 재현 시, 이미 split 으로 만든 새 문단에 break 만
+    /// 세팅하기 위한 진입점. `insertPageBreak` 는 문단을 한 번 더 split 하므로
+    /// press_enter 뒤에 쓰면 빈 문단·빈 페이지가 과잉 생성된다(native
+    /// apply_edit_op 는 set_page_break_native 로 이미 수정됨 — WASM/studio 경로도
+    /// 동일하게 맞춘다).
+    #[wasm_bindgen(js_name = setPageBreak)]
+    pub fn set_page_break(
+        &mut self,
+        section_idx: u32,
+        para_idx: u32,
+    ) -> Result<String, JsValue> {
+        self.set_page_break_native(section_idx as usize, para_idx as usize)
+            .map_err(|e| e.into())
+    }
+
     /// 단 나누기 삽입 (Ctrl+Shift+Enter)
     #[wasm_bindgen(js_name = insertColumnBreak)]
     pub fn insert_column_break(

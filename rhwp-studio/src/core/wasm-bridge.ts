@@ -501,6 +501,13 @@ export class WasmBridge {
     return (this.doc as any).insertPageBreak(sec, para, charOffset);
   }
 
+  /** 기존 문단에 쪽 나누기를 *설정만* 한다(분할 없음). press_enter(page_break) 재현용 —
+   *  split 으로 만든 새 문단에 break 만 세팅해 이중 split(빈 문단·빈 페이지) 과잉 생성을 막는다. */
+  setPageBreak(sec: number, para: number): string {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    return (this.doc as any).setPageBreak(sec, para);
+  }
+
   insertColumnBreak(sec: number, para: number, charOffset: number): string {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     return (this.doc as any).insertColumnBreak(sec, para, charOffset);
