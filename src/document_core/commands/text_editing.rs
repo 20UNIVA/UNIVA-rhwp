@@ -1124,10 +1124,15 @@ impl DocumentCore {
         self.reflow_paragraph(section_idx, para_idx);
         self.reflow_paragraph(section_idx, new_para_idx);
 
-        // 삽입 지점부터 구역 끝까지 vpos 재계산 (페이지 재배치에 필요)
+        // vpos 재계산은 *분할 원본(para_idx)* 부터 — split_paragraph_native 와 동일.
+        // reflow_paragraph(para_idx) 가 para_idx 의 line_seg vpos 를 (상대)0 으로 리셋하는데,
+        // 시작점을 new_para_idx(=para_idx+1)로 잡으면 para_idx 의 절대 vpos 가 0 인 채 방치돼
+        // 페이지네이터가 "vpos 급락 → 새 페이지"로 오인, 분할 원본이 다음 페이지로 튄다
+        // (커버 1/4만 채운 페이지인데 footer 가 page 2 로 밀리고 break 문단이 page 3 로 →
+        // 1→3 오버슛). para_idx 부터 재계산하면 절대 vpos 가 바로잡힌다.
         crate::renderer::composer::recalculate_section_vpos(
             &mut self.document.sections[section_idx].paragraphs,
-            new_para_idx,
+            para_idx,
         );
 
         // 전체 구역 재구성 + 재페이지네이션
