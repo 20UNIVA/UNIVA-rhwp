@@ -369,7 +369,11 @@ function buildSessionClient(fileId: string): SessionClient {
                       wasm.applyParaFormat(opPe.section, targetPara + 1, JSON.stringify(opPe.style));
                     }
                     if (i === 0 && pageBreak) {
-                      wasm.insertPageBreak(opPe.section, targetPara + 1, 0);
+                      // split 으로 방금 만든 문단(targetPara+1)에 break 만 세팅.
+                      // 구: insertPageBreak = 문단을 *또* split → 빈 문단·빈 페이지 과잉 생성 →
+                      // 서버(native, set_page_break_native)와 구조 어긋나 "page_break 반영 안됨"·
+                      // 재열기 시 페이지 밀림. setPageBreak 로 native apply_edit_op 과 일치시킨다.
+                      wasm.setPageBreak(opPe.section, targetPara + 1);
                     }
                   }
                 }
