@@ -273,6 +273,10 @@ pub struct IrTextParagraph {
     pub style: ParagraphStyle,
     pub runs: Vec<IrRun>,
     #[serde(skip_serializing_if = "Option::is_none")] pub cell_locator: Option<CellLocator>,
+    /// 이 문단이 *새 페이지 시작*(ColumnBreakType::Page)이면 `Some(true)`. 아니면 None.
+    /// 모델이 어느 문단이 page break 를 지녔는지 outline 에서 바로 보게 해, page_break 후
+    /// "para N = 새 페이지" 를 추측하지 않게 한다(로그 0701 사고 대응).
+    #[serde(skip_serializing_if = "Option::is_none")] pub page_break: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -439,6 +443,16 @@ fn build_text_paragraph(core: &DocumentCore, sec: usize, para: usize) -> IrTextP
         }
     });
 
+    // 새 페이지 시작 문단이면 page_break 마커 노출.
+    let page_break = if matches!(
+        p.column_type,
+        rhwp::model::paragraph::ColumnBreakType::Page
+    ) {
+        Some(true)
+    } else {
+        None
+    };
+
     IrTextParagraph {
         id: format!("p_{}_{}", sec, para),
         sec,
@@ -447,6 +461,7 @@ fn build_text_paragraph(core: &DocumentCore, sec: usize, para: usize) -> IrTextP
         style: para_style,
         runs,
         cell_locator: None,
+        page_break,
     }
 }
 
@@ -539,6 +554,8 @@ fn build_cell_paragraph(
             col: cell_col,
             cell_para,
         }),
+        // 셀 안 문단의 page break 는 다루지 않는다(셀 모드 page_break 미지원).
+        page_break: None,
     }
 }
 
@@ -1103,6 +1120,11 @@ fn compact_text(
     }
     out.insert("para".into(), serde_json::json!(p.para));
     // type:"text" 는 기본값 — omit.
+    // 새 페이지 시작 문단이면 page_break 마커 노출 (compact 도 outline 과 동일).
+    // client get_document_outline 이 compact detail 을 쓰므로 여기서도 방출해야 한다.
+    if p.page_break == Some(true) {
+        out.insert("page_break".into(), serde_json::json!(true));
+    }
     if let Some(cl) = &p.cell_locator {
         out.insert(
             "cell_locator".into(),
@@ -1322,6 +1344,10 @@ fn build_outline_paragraph(
             out.insert("text".into(), serde_json::json!(text));
             if truncated {
                 out.insert("text_truncated".into(), serde_json::json!(true));
+            }
+            // 새 페이지 시작 문단이면 마커 노출 — 모델이 outline 만으로 page break 위치 파악.
+            if t.page_break == Some(true) {
+                out.insert("page_break".into(), serde_json::json!(true));
             }
             if let Some(align) = &t.style.align {
                 out.insert("style".into(), serde_json::json!({ "align": align }));
@@ -2646,6 +2672,7 @@ mod tests {
                 style: RunStyle::default(),
             }],
             cell_locator: None,
+            page_break: None,
         };
         let defaults = DocDefaults {
             run: RunStyle::default(),
@@ -2679,6 +2706,7 @@ mod tests {
                 },
             }],
             cell_locator: None,
+            page_break: None,
         };
         let defaults = DocDefaults {
             run: RunStyle {
@@ -3295,6 +3323,32 @@ mod tests {
         assert!(first.get("para").is_some());
         // outline 은 본문 text 또는 type:"table" 키 박혀 있음.
         assert!(first.get("text").is_some() || first.get("type").is_some());
+    }
+
+    /// outline 이 page break 문단에 `page_break: true` 마커를 노출한다 —
+    /// 모델이 outline 만으로 어느 문단이 새 페이지 시작인지 보게 함(로그 0701 대응).
+    #[test]
+    fn build_outline_slice_exposes_page_break_marker() {
+        let bytes = include_bytes!("../../samples/hwpx/blank_hwpx.hwpx");
+        let mut core = rhwp::document_core::DocumentCore::from_bytes(bytes).expect("load");
+        // para 0 을 split 하며 새 문단(para 1)에 페이지 나눔 설정.
+        core.insert_page_break_native(0, 0, 0).expect("page break");
+        let v = build_outline_slice(
+            &core,
+            &BuildOptions {
+                detail: Detail::Outline,
+                ..Default::default()
+            },
+        );
+        let paras = v.get("paragraphs").and_then(|p| p.as_array()).unwrap();
+        // 어느 한 문단이 page_break:true 마커를 지녀야.
+        let has_marker = paras
+            .iter()
+            .any(|p| p.get("page_break") == Some(&serde_json::json!(true)));
+        assert!(has_marker, "outline 에 page_break 마커가 노출돼야");
+        // break 없는 문단엔 마커가 생략돼야(None → 키 부재).
+        let no_marker = paras.iter().filter(|p| p.get("page_break").is_none()).count();
+        assert!(no_marker >= 1, "break 없는 문단엔 page_break 키 생략");
     }
 
     #[test]
