@@ -1130,6 +1130,54 @@ impl DocumentCore {
         )))
     }
 
+    /// 기존 문단에 쪽 나누기(ColumnBreakType::Page)를 설정한다 — *분할 없이*.
+    ///
+    /// `insert_page_break_native` 는 문단을 split 하면서 새 문단에 break 를 박지만,
+    /// 이미 존재하는(예: press_enter 로 방금 만든) 빈 문단을 새 페이지 시작으로
+    /// 만들고 싶을 때는 split 이 필요 없다. 이 헬퍼는 대상 문단에 break 플래그만
+    /// 세팅하고 리플로우·재페이지네이션한다. (press_enter page_break 경로의 이중
+    /// split — 빈 문단·빈 페이지 과잉 생성 — 를 없애기 위해 도입.)
+    pub fn set_page_break_native(
+        &mut self,
+        section_idx: usize,
+        para_idx: usize,
+    ) -> Result<String, HwpError> {
+        use crate::model::paragraph::ColumnBreakType;
+
+        if section_idx >= self.document.sections.len() {
+            return Err(HwpError::RenderError(format!(
+                "구역 인덱스 {} 범위 초과",
+                section_idx
+            )));
+        }
+        if para_idx >= self.document.sections[section_idx].paragraphs.len() {
+            return Err(HwpError::RenderError(format!(
+                "문단 인덱스 {} 범위 초과",
+                para_idx
+            )));
+        }
+
+        self.document.sections[section_idx].raw_stream = None;
+
+        self.document.sections[section_idx].paragraphs[para_idx].column_type =
+            ColumnBreakType::Page;
+        self.document.sections[section_idx].paragraphs[para_idx].raw_break_type = 0x04;
+
+        self.reflow_paragraph(section_idx, para_idx);
+        crate::renderer::composer::recalculate_section_vpos(
+            &mut self.document.sections[section_idx].paragraphs,
+            para_idx,
+        );
+        self.recompose_section(section_idx);
+        self.paginate_if_needed();
+        self.invalidate_page_tree_cache();
+
+        Ok(super::super::helpers::json_ok_with(&format!(
+            "\"paraIdx\":{},\"pageBreak\":true",
+            para_idx
+        )))
+    }
+
     /// 단 나누기 삽입 (Ctrl+Shift+Enter)
     /// 커서 위치에서 문단을 분리하고 새 문단에 단 나누기 설정.
     /// 1단 문서에서는 쪽 나누기와 동일하게 동작.

@@ -1285,9 +1285,14 @@ impl DocumentCore {
                             let props_json = partial_paragraph_style_to_native_json(s);
                             self.apply_para_format_native(*section, target_para + 1, &props_json)?;
                         }
-                        // page_break — 첫 번째 새 paragraph 만 페이지 분리
+                        // page_break — 첫 번째 새 paragraph 만 페이지 분리.
+                        // split_paragraph_native 가 방금 만든 문단(target_para+1)에
+                        // *break 플래그만* 세팅한다. (구 코드는 insert_page_break_native 로
+                        // 여기서 문단을 또 split 해 빈 문단·빈 페이지를 과잉 생성했다 —
+                        // 모델이 "para 8 = 2페이지"로 채우면 실제 break 는 다른 빈 문단에
+                        // 붙어 표지+본문이 한 페이지에 뭉치는 사고. 단일 문단 생성으로 수정.)
                         if i == 0 && page_break.unwrap_or(false) {
-                            self.insert_page_break_native(*section, target_para + 1, 0)?;
+                            self.set_page_break_native(*section, target_para + 1)?;
                         }
                     }
                 }
@@ -1710,6 +1715,41 @@ mod tests {
         assert_eq!(core.document.sections[0].paragraphs.len(), 2);
         assert_eq!(para_text(&core, 0, 0), "", "앞에 빈 paragraph");
         assert_eq!(para_text(&core, 0, 1), "hello", "원 본문이 +1 자리");
+    }
+
+    /// [page_break 단일 문단 수정] press_enter page_break=true 는 새 문단 *한 개* 만
+    /// 만들고 그 문단에 ColumnBreakType::Page 를 설정한다. 구 코드는 여기서
+    /// insert_page_break_native 로 문단을 *또* split 해 빈 문단·빈 페이지를 과잉
+    /// 생성했고(로그 0701), 그 결과 모델이 "para N = 새 페이지"로 채우면 실제 break 는
+    /// 다른 빈 문단에 붙어 표지+본문이 한 페이지에 뭉쳤다. 회귀 방지.
+    #[test]
+    fn test_press_enter_body_page_break_single_paragraph() {
+        use crate::model::paragraph::ColumnBreakType;
+        let mut core = core_with_text("cover");
+        let op = EditOperation::PressEnter {
+            section: 0, para: Some(0),
+            table_para: None, row: None, col: None, cell_para: None,
+            ctrl_idx: None, cell_idx: None,
+            char_offset: -1, count: 1, style: None, page_break: Some(true),
+        };
+        core.apply_edit_op(&op).unwrap();
+        // 새 문단 1개만 (총 2개) — 이중 split 의 3개가 아니어야.
+        assert_eq!(
+            core.document.sections[0].paragraphs.len(), 2,
+            "page_break 는 새 문단 1개만 생성해야 (이중 split 금지)"
+        );
+        // 새 문단(para 1)이 페이지 나눔 시작.
+        assert_eq!(
+            core.document.sections[0].paragraphs[1].column_type,
+            ColumnBreakType::Page,
+            "새 문단이 페이지 나눔을 지녀야"
+        );
+        // 원 문단(para 0)엔 break 없음.
+        assert_ne!(
+            core.document.sections[0].paragraphs[0].column_type,
+            ColumnBreakType::Page,
+            "원 문단엔 break 없음"
+        );
     }
 
     /// char_offset = len 자세 → -1 (끝) 과 동등.
