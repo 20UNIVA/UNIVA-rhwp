@@ -759,6 +759,25 @@ impl DocumentCore {
         para_idx: usize,
         runs_json: &str,
     ) -> Result<String, HwpError> {
+        // 인덱스 범위 검증 — 누락 시 아래 naked 인덱싱(`sections[..]`/`paragraphs[..]`)이
+        // index-out-of-bounds panic 을 내고, panic 이 세션 Mutex 를 poison 시켜 그 문서
+        // 세션이 영구 brick 된다(모델이 범위 밖 para 를 타깃 시 SESSION_BRICKED 재현).
+        // insert_text_native 등 형제 함수와 동일한 가드로 graceful error 를 반환한다.
+        if section_idx >= self.document.sections.len() {
+            return Err(HwpError::RenderError(format!(
+                "구역 인덱스 {} 범위 초과 (총 {}개)",
+                section_idx,
+                self.document.sections.len()
+            )));
+        }
+        if para_idx >= self.document.sections[section_idx].paragraphs.len() {
+            return Err(HwpError::RenderError(format!(
+                "문단 인덱스 {} 범위 초과 (총 {}개)",
+                para_idx,
+                self.document.sections[section_idx].paragraphs.len()
+            )));
+        }
+
         // 1. 기존 문단의 텍스트 길이 측정
         let para_len = self.document.sections[section_idx]
             .paragraphs[para_idx]
