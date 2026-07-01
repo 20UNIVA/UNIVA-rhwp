@@ -608,6 +608,27 @@ impl DocumentCore {
         end_offset: usize,
         cell_ctx: Option<(usize, usize, usize)>,
     ) -> Result<String, HwpError> {
+        // 인덱스 범위 검증 — replace_runs_native 와 동일 취지. 아래 본문 경로(else)는
+        // `sections[section_idx].paragraphs[start_para|end_para]` 를 naked 인덱싱하므로
+        // 범위 밖이면 index-out-of-bounds panic → 세션 Mutex poison → 영구 brick 된다.
+        // (셀 경로는 get_cell_paragraph_mut 가 안전하지만 section 인덱싱은 공통이라 함께 가드.)
+        if section_idx >= self.document.sections.len() {
+            return Err(HwpError::RenderError(format!(
+                "구역 인덱스 {} 범위 초과 (총 {}개)",
+                section_idx,
+                self.document.sections.len()
+            )));
+        }
+        if cell_ctx.is_none() {
+            let n = self.document.sections[section_idx].paragraphs.len();
+            if start_para >= n || end_para >= n {
+                return Err(HwpError::RenderError(format!(
+                    "문단 인덱스 범위 초과 (start={}, end={}, 총 {}개)",
+                    start_para, end_para, n
+                )));
+            }
+        }
+
         // Section raw 스트림 무효화 (재직렬화 유도)
         self.document.sections[section_idx].raw_stream = None;
         // DocInfo raw_stream은 유지 (전체 재직렬화 시 FIX-4 문제 발생)
