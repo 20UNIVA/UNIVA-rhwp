@@ -1279,20 +1279,27 @@ impl DocumentCore {
                     for i in 0..*count {
                         let target_para = para + i;
                         let target_offset = if i == 0 { resolved_offset } else { 0 };
-                        self.split_paragraph_native(*section, target_para, target_offset)?;
+                        // page_break(i==0): split + 쪽나누기를 *한 파이프라인* 인
+                        // insert_page_break_native 로 원자 수행 → 새 문단 1개(target_para+1)에
+                        // break. 그 외: 일반 split.
+                        //
+                        // 이력:
+                        // - v0(원본): split_paragraph_native + insert_page_break_native
+                        //   = 이중 split → 빈 문단·빈 페이지 과잉(모델이 잘못된 문단 채움).
+                        // - v1(오류): split_paragraph_native + set_page_break_native
+                        //   = 이중 *파이프라인*(각자 recompose+paginate) → 다중 페이지 문서에서
+                        //   재페이지네이션 콜랩스(3→2, 내용 앞 페이지로 당겨짐).
+                        // - v2(현재): insert_page_break_native 단독 = 단일 split + break +
+                        //   단일 파이프라인 → 문단 1개 & 페이지 안정.
+                        if i == 0 && page_break.unwrap_or(false) {
+                            self.insert_page_break_native(*section, target_para, target_offset)?;
+                        } else {
+                            self.split_paragraph_native(*section, target_para, target_offset)?;
+                        }
                         if let Some(s) = style {
                             // 새 paragraph 자리 = target_para + 1
                             let props_json = partial_paragraph_style_to_native_json(s);
                             self.apply_para_format_native(*section, target_para + 1, &props_json)?;
-                        }
-                        // page_break — 첫 번째 새 paragraph 만 페이지 분리.
-                        // split_paragraph_native 가 방금 만든 문단(target_para+1)에
-                        // *break 플래그만* 세팅한다. (구 코드는 insert_page_break_native 로
-                        // 여기서 문단을 또 split 해 빈 문단·빈 페이지를 과잉 생성했다 —
-                        // 모델이 "para 8 = 2페이지"로 채우면 실제 break 는 다른 빈 문단에
-                        // 붙어 표지+본문이 한 페이지에 뭉치는 사고. 단일 문단 생성으로 수정.)
-                        if i == 0 && page_break.unwrap_or(false) {
-                            self.set_page_break_native(*section, target_para + 1)?;
                         }
                     }
                 }

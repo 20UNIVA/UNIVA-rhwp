@@ -1104,6 +1104,22 @@ impl DocumentCore {
             ColumnBreakType::Page;
         self.document.sections[section_idx].paragraphs[new_para_idx].raw_break_type = 0x04;
 
+        // [page-break base 서식] 새 페이지 시작 문단이 *비어 있으면* char_shape 를 문서
+        // base(char_shape_id 0)로 리셋한다. press_enter page_break 는 직전 문단(예: 헤딩)을
+        // 끝에서 split 해 빈 새 문단을 만드는데, split 은 원본의 char_shape 를 상속한다. 그대로
+        // 두면 다음 페이지 첫 replace_runs 가 base_char_shape_id = 상속된 헤딩 서식을 물어
+        // 본문이 bold·큰 글꼴로 흘러나온다. 새 페이지는 깨끗한 출발이 맞으므로 base 로 리셋.
+        // *비어 있을 때만* — 내용이 있는 문단(중간 split)에 page-break 를 걸 때는 서식 보존.
+        {
+            let np = &mut self.document.sections[section_idx].paragraphs[new_para_idx];
+            if np.text.is_empty() {
+                np.char_shapes = vec![crate::model::paragraph::CharShapeRef {
+                    start_pos: 0,
+                    char_shape_id: 0,
+                }];
+            }
+        }
+
         // 분할된 두 문단 리플로우
         self.reflow_paragraph(section_idx, para_idx);
         self.reflow_paragraph(section_idx, new_para_idx);
