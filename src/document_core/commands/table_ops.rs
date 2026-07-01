@@ -608,16 +608,25 @@ impl DocumentCore {
         let json_owned = normalize_cell_style_keys(json);
         let json = json_owned.as_str();
 
+        // [셀 width/height top-level 파싱] json_u32 는 순진한 첫 "\"width\":" 부분 문자열
+        // 검색이라, border(borderLeft/Right/Top/Bottom) 객체 안의 "width" 를 먼저 집는다.
+        // serde 직렬화가 키를 알파벳 정렬하므로 "borderBottom":{...,"width":2} 가 top-level
+        // "width":13000 보다 앞서고, 결국 셀 폭이 테두리 두께(2)로 덮여 표가 실처럼 얇아졌다
+        // (로그 0701 2025). width/height 는 반드시 *최상위* 키에서만 읽는다.
+        let top: serde_json::Value =
+            serde_json::from_str(json).unwrap_or(serde_json::Value::Null);
+        let top_u32 = |k: &str| top.get(k).and_then(|x| x.as_u64()).map(|x| x as u32);
+
         let table = self.get_table_mut(section_idx, parent_para_idx, control_idx)?;
         let cell = table
             .cells
             .get_mut(cell_idx)
             .ok_or_else(|| HwpError::RenderError(format!("셀 인덱스 {} 범위 초과", cell_idx)))?;
 
-        if let Some(v) = json_u32(json, "width") {
+        if let Some(v) = top_u32("width") {
             cell.width = v;
         }
-        if let Some(v) = json_u32(json, "height") {
+        if let Some(v) = top_u32("height") {
             cell.height = v;
         }
         if let Some(v) = json_i16(json, "paddingLeft") {
@@ -2215,6 +2224,55 @@ mod tests {
         assert_eq!(
             solid.background_color, 0x000000FF,
             "단색 빨강 기대 (r=FF,g=00,b=00 → BGR 0x000000FF)"
+        );
+    }
+
+    /// [로그 0701 2025] set_cell_style 에서 border.all.width 가 셀 width 를 덮어쓰던
+    /// 사고. json_u32 는 순진한 첫 "\"width\":" 검색이고, serde 가 키를 알파벳 정렬해
+    /// "borderBottom":{...,"width":2} 가 top-level "width":13000 보다 앞서므로 셀 폭이
+    /// 테두리 두께(2)로 뭉개져 표가 실처럼 얇아졌다. 셀 width 는 top-level 값이어야 한다.
+    #[test]
+    fn set_cell_style_width_not_clobbered_by_border_width() {
+        use crate::document_core::DocumentCore;
+
+        let mut core = DocumentCore::new_empty();
+        core.create_blank_document_native().unwrap();
+        core.create_table_native(0, 0, 0, 1, 2).unwrap();
+
+        let (tp, ci) = {
+            let section = &core.document.sections[0];
+            let mut found = None;
+            for (pi, para) in section.paragraphs.iter().enumerate() {
+                for (cix, ctrl) in para.controls.iter().enumerate() {
+                    if let crate::model::control::Control::Table(_) = ctrl {
+                        found = Some((pi, cix));
+                        break;
+                    }
+                }
+                if found.is_some() {
+                    break;
+                }
+            }
+            found.expect("표가 생성되어야 함")
+        };
+
+        // 모델이 보낸 형태 — 셀 width 13000 + border.all.width 2 공존.
+        core.set_cell_properties_native(
+            0,
+            tp,
+            ci,
+            0,
+            r##"{"bgcolor":"#2A5BD7","border":{"all":{"width":2,"color":"#E0E0E0","type":1}},"width":13000}"##,
+        )
+        .expect("set_cell_properties_native 성공");
+
+        let table = match &core.document.sections[0].paragraphs[tp].controls[ci] {
+            crate::model::control::Control::Table(t) => t,
+            _ => panic!("Table 기대"),
+        };
+        assert_eq!(
+            table.cells[0].width, 13000,
+            "셀 width 는 top-level 13000 이어야 (border width 2 로 덮이면 안 됨)"
         );
     }
 
