@@ -419,8 +419,9 @@ export class CellBorderBgDialog extends ModalDialog {
 
     const patTypeRow = this.row();
     patTypeRow.appendChild(this.label(t('table.fill.pattern_shape')));
+    // HWP 스펙: -1 = 무늬 없음. 0 은 "가로줄 무늬" 이므로 절대 "없음" 자리에 두지 않음.
     this.bgPatternTypeSelect = this.selectOptions([
-      ['0', t('char_shape.misc.none')], ['1', t('table.border.horizontal_line')], ['2', t('table.border.vertical_line')], ['3', t('table.border.backslash')],
+      ['-1', t('char_shape.misc.none')], ['1', t('table.border.horizontal_line')], ['2', t('table.border.vertical_line')], ['3', t('table.border.backslash')],
       ['4', t('table.border.slash')], ['5', t('table.border.cross')], ['6', t('cell.diagonal_x')],
     ]);
     this.bgPatternTypeSelect.addEventListener('change', () => {
@@ -604,7 +605,9 @@ export class CellBorderBgDialog extends ModalDialog {
       this.bgColorRadio.checked = true;
       this.bgColorPicker.value = cp.fillColor;
       if (cp.patternColor) this.bgPatternColorPicker.value = cp.patternColor;
-      if (cp.patternType != null) this.bgPatternTypeSelect.value = String(cp.patternType);
+      // 예전 rhwp 로 저장된 파일은 pattern_type=0 이 "없음" 을 뜻하는데 스펙상 0 은 가로줄이므로 -1 로 정규화.
+      const patType = (cp.patternType != null && cp.patternType > 0) ? cp.patternType : -1;
+      this.bgPatternTypeSelect.value = String(patType);
     } else {
       this.bgNoneRadio.checked = true;
     }
@@ -627,7 +630,8 @@ export class CellBorderBgDialog extends ModalDialog {
       newProps.fillType = 'solid';
       newProps.fillColor = this.bgColorPicker.value;
       newProps.patternColor = this.bgPatternColorPicker.value;
-      newProps.patternType = parseInt(this.bgPatternTypeSelect.value, 10);
+      const pt = parseInt(this.bgPatternTypeSelect.value, 10);
+      newProps.patternType = Number.isNaN(pt) ? -1 : pt;
     } else {
       newProps.fillType = 'none';
     }

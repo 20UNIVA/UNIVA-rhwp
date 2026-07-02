@@ -695,7 +695,8 @@ export class ParaShapeDialog {
     this.borderResult.bgFillSelect.value = p.fillType === 'solid' ? 'solid' : 'none';
     this.borderResult.bgFillPicker.value = p.fillColor || '#ffffff';
     this.borderResult.bgPatColorInput.value = p.patternColor || '#000000';
-    this.borderResult.bgPatShapeSelect.value = String(p.patternType ?? 0);
+    // 예전 rhwp 로 저장된 파일은 pattern_type=0 이 "없음" 을 뜻하는데 스펙상 0 은 가로줄이므로 -1 로 정규화.
+    this.borderResult.bgPatShapeSelect.value = String((p.patternType != null && p.patternType > 0) ? p.patternType : -1);
     // 간격 (HWPUNIT → mm)
     const sp = p.borderSpacing ?? [0, 0, 0, 0];
     // bdSpacingInputs: [0]=left, [1]=top, [2]=right, [3]=bottom
@@ -877,8 +878,11 @@ export class ParaShapeDialog {
     if (newFillColor !== (p.fillColor ?? '#ffffff')) mods.fillColor = newFillColor;
     const newPatColor = this.borderResult.bgPatColorInput.value;
     if (newPatColor !== (p.patternColor ?? '#000000')) mods.patternColor = newPatColor;
-    const newPatType = parseInt(this.borderResult.bgPatShapeSelect.value) || 0;
-    if (newPatType !== (p.patternType ?? 0)) mods.patternType = newPatType;
+    const newPatTypeRaw = parseInt(this.borderResult.bgPatShapeSelect.value);
+    const newPatType = Number.isNaN(newPatTypeRaw) ? -1 : newPatTypeRaw;
+    // 정규화된 origPatType (0 → -1) 을 비교에 씀 — 값 변경 없이 OK 로 나가도 mod 없음.
+    const origPatType = (p.patternType != null && p.patternType > 0) ? p.patternType : -1;
+    if (newPatType !== origPatType) mods.patternType = newPatType;
     // 배경이 변경되었으면 fillType도 함께 전송
     if (mods.fillColor || mods.patternColor || mods.patternType !== undefined) {
       if (!mods.fillType) mods.fillType = newFillType;

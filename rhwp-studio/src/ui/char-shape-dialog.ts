@@ -766,8 +766,11 @@ export class CharShapeDialog {
     this.patShapeSelect = document.createElement('select');
     this.patShapeSelect.className = 'dialog-select';
     this.patShapeSelect.style.width = '90px';
+    // HWP 스펙: pattern_type=-1 이 "무늬 없음". 예전에 rhwp UI 는 value='0' 을
+    // "없음" 자리에 두었는데, HWP 스펙에서 0 은 "가로줄 무늬" 이므로 Hangul 편집기가
+    // 글자 배경을 가로 줄무늬로 렌더링. 스펙 규약대로 -1 = 없음.
     for (const [val, lbl] of [
-      ['0', t('char_shape.misc.none')], ['1', t('char_shape.bg.pattern.horizontal')], ['2', t('char_shape.bg.pattern.vertical')],
+      ['-1', t('char_shape.misc.none')], ['1', t('char_shape.bg.pattern.horizontal')], ['2', t('char_shape.bg.pattern.vertical')],
       ['3', '╲'], ['4', '╱'], ['5', '╳'], ['6', '┼'],
     ] as const) {
       const o = document.createElement('option');
@@ -906,7 +909,8 @@ export class CharShapeDialog {
     this.faceColorSelect.value = ft === 'solid' ? 'solid' : 'none';
     this.faceColorPicker.value = p.fillColor || '#ffffff';
     this.patColorInput.value = p.patternColor || '#000000';
-    this.patShapeSelect.value = String(p.patternType || 0);
+    // 예전 rhwp 로 저장된 파일은 pattern_type=0 이 "없음" 을 뜻하는데 스펙상 0 은 가로줄이므로 -1 로 정규화.
+    this.patShapeSelect.value = String((p.patternType != null && p.patternType > 0) ? p.patternType : -1);
 
     this.updatePreview();
   }
@@ -1048,11 +1052,14 @@ export class CharShapeDialog {
     const fillType = this.faceColorSelect.value === 'solid' ? 'solid' : 'none';
     const fillColor = this.faceColorPicker.value;
     const patColor = this.patColorInput.value;
-    const patType = parseInt(this.patShapeSelect.value);
+    const patTypeRaw = parseInt(this.patShapeSelect.value);
+    const patType = Number.isNaN(patTypeRaw) ? -1 : patTypeRaw;
     const origFillType = p.fillType || 'none';
     const origFillColor = p.fillColor || '#ffffff';
     const origPatColor = p.patternColor || '#000000';
-    const origPatType = p.patternType || 0;
+    // 정규화된 origPatType 을 비교에 씀 — 예전 파일의 0 을 로드 시 -1 로 표시했으니
+    // 값 변경 없이 OK 로 나가도 mod 가 생기지 않게 동일 규칙 적용.
+    const origPatType = (p.patternType != null && p.patternType > 0) ? p.patternType : -1;
     if (fillType !== origFillType) mods.fillType = fillType;
     if (fillColor !== origFillColor) mods.fillColor = fillColor;
     if (patColor !== origPatColor) mods.patternColor = patColor;

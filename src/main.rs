@@ -44,6 +44,35 @@ fn main() {
         Some("gen-table") => gen_table(&args[2..]),
         Some("gen-pua") => gen_pua_test(&args[2..]),
         Some("test-field") => test_field_roundtrip(&args[2..]),
+        Some("fix-stripe-pattern") => {
+            // rhwp-studio 대화상자에서 셀·문단 배경색을 지정할 때 pattern_type=0 으로 저장되어
+            // Hangul 편집기에서 열면 가로 줄무늬로 렌더링되는 결함을 일회성으로 교정한다.
+            // 진단 자세히는 mydocs/troubleshootings 아래 문서 참조.
+            let input = args.get(2).expect("사용법: rhwp fix-stripe-pattern <in.hwp> <out.hwp>");
+            let output = args.get(3).expect("사용법: rhwp fix-stripe-pattern <in.hwp> <out.hwp>");
+            let data = std::fs::read(input).expect("파일 읽기 실패");
+            let mut core = rhwp::document_core::DocumentCore::from_bytes(&data).expect("파싱 실패");
+            use rhwp::model::style::FillType;
+            core.document_mut().doc_info.raw_stream_dirty = true;
+            let bfs = &mut core.document_mut().doc_info.border_fills;
+            let mut patched = 0usize;
+            for bf in bfs.iter_mut() {
+                if bf.fill.fill_type != FillType::Solid { continue; }
+                let raw = match bf.raw_data.as_mut() { Some(r) => r, None => continue };
+                if raw.len() < 48 { continue; }
+                // solid fill 안 pattern_type (i32, pos 44-47) 이 0 이면 -1 로 교정
+                if raw[44..48] == [0x00, 0x00, 0x00, 0x00] {
+                    raw[44..48].copy_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF]);
+                    if let Some(ref mut s) = bf.fill.solid {
+                        s.pattern_type = -1;
+                    }
+                    patched += 1;
+                }
+            }
+            let saved = core.export_hwp_native().expect("직렬화 실패");
+            std::fs::write(output, &saved).expect("저장 실패");
+            println!("patched {} border_fills (pattern_type 0 → -1) → {}", patched, output);
+        }
         Some("ir-diff") => ir_diff(&args[2..]),
         Some("thumbnail") => extract_thumbnail(&args[2..]),
         _ => {
