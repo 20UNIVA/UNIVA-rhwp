@@ -790,7 +790,8 @@ impl DocumentCore {
         let fill = if fill_type_str == "solid" {
             let bg = json_color(json, "fillColor").unwrap_or(0xFFFFFF);
             let pat_c = json_color(json, "patternColor").unwrap_or(0);
-            let pat_t = json_i32(json, "patternType").unwrap_or(0);
+            // HWP 스펙: pattern_type=-1 이 "무늬 없음". 0 은 "가로줄" 이므로 fallback 을 -1 로.
+            let pat_t = json_i32(json, "patternType").unwrap_or(-1);
             Fill {
                 fill_type: FillType::Solid,
                 solid: Some(SolidFill {

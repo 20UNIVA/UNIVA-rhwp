@@ -1126,8 +1126,11 @@ export class TableCellPropsDialog extends ModalDialog {
 
     const patTypeRow = this.row();
     patTypeRow.appendChild(this.label(t('table.fill.pattern_shape')));
+    // HWP 스펙: pattern_type=-1 이 "무늬 없음". 예전에 rhwp UI 는 value='0' 을
+    // "없음" 으로 두었는데, HWP 스펙에서 0 은 "가로줄 무늬" 이므로 Hangul 편집기가
+    // 셀 배경을 가로 줄무늬로 렌더링하는 결함이 발생. 스펙 규약대로 -1 = 없음.
     this.bgPatternTypeSelect = this.selectOptions([
-      ['0', t('char_shape.misc.none')], ['1', t('table.border.horizontal_line')], ['2', t('table.border.vertical_line')], ['3', t('table.border.backslash')],
+      ['-1', t('char_shape.misc.none')], ['1', t('table.border.horizontal_line')], ['2', t('table.border.vertical_line')], ['3', t('table.border.backslash')],
       ['4', t('table.border.slash')], ['5', t('table.border.cross')], ['6', 'X자'],
     ]);
     this.bgPatternTypeSelect.addEventListener('change', () => {
@@ -1187,7 +1190,10 @@ export class TableCellPropsDialog extends ModalDialog {
       this.bgColorRadio.checked = true;
       this.bgColorPicker.value = props.fillColor;
       if (props.patternColor) this.bgPatternColorPicker.value = props.patternColor;
-      if (props.patternType != null) this.bgPatternTypeSelect.value = String(props.patternType);
+      // 예전 rhwp 로 저장된 파일은 pattern_type=0 이 "없음" 을 뜻하는데 스펙상 0 은
+      // 가로줄이므로 -1 로 정규화해 셀렉트에 표시.
+      const patType = (props.patternType != null && props.patternType > 0) ? props.patternType : -1;
+      this.bgPatternTypeSelect.value = String(patType);
     } else {
       this.bgNoneRadio.checked = true;
     }
@@ -1344,7 +1350,8 @@ export class TableCellPropsDialog extends ModalDialog {
         newCellProps.fillType = 'solid';
         newCellProps.fillColor = this.bgColorPicker.value;
         newCellProps.patternColor = this.bgPatternColorPicker.value;
-        newCellProps.patternType = parseInt(this.bgPatternTypeSelect.value, 10);
+        const pt = parseInt(this.bgPatternTypeSelect.value, 10);
+        newCellProps.patternType = Number.isNaN(pt) ? -1 : pt;
       } else {
         newCellProps.fillType = 'none';
       }
@@ -1404,7 +1411,8 @@ export class TableCellPropsDialog extends ModalDialog {
         newTableProps.fillType = 'solid';
         newTableProps.fillColor = this.bgColorPicker.value;
         newTableProps.patternColor = this.bgPatternColorPicker.value;
-        newTableProps.patternType = parseInt(this.bgPatternTypeSelect.value, 10);
+        const pt = parseInt(this.bgPatternTypeSelect.value, 10);
+        newTableProps.patternType = Number.isNaN(pt) ? -1 : pt;
       } else {
         newTableProps.fillType = 'none';
       }

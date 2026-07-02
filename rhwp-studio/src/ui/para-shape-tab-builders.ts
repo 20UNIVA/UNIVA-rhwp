@@ -551,8 +551,9 @@ export function buildBorderTab(
   const bgPatShapeSelect = document.createElement('select');
   bgPatShapeSelect.className = 'dialog-select';
   bgPatShapeSelect.style.width = '90px';
+  // HWP 스펙: pattern_type=-1 이 "무늬 없음". 스펙 규약대로 -1 = 없음.
   for (const [val, lbl] of [
-    ['0', t('char_shape.misc.none')], ['1', t('para_shape.line_kind.horizontal')], ['2', t('para_shape.line_kind.vertical')],
+    ['-1', t('char_shape.misc.none')], ['1', t('para_shape.line_kind.horizontal')], ['2', t('para_shape.line_kind.vertical')],
     ['3', '╲'], ['4', '╱'], ['5', '┼'], ['6', '╳'],
   ] as const) {
     const o = document.createElement('option');

@@ -372,7 +372,7 @@ impl DocumentCore {
                         "\"borderRight\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                         "\"borderTop\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                         "\"borderBottom\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
-                        "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":0",
+                        "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":-1",
                         "}}"
                     ),
                     char_shape_id
@@ -546,7 +546,7 @@ impl DocumentCore {
                         "\"borderRight\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                         "\"borderTop\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                         "\"borderBottom\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
-                        "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":0",
+                        "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":-1",
                         "}}"
                     ),
                     char_shape_id
@@ -568,7 +568,7 @@ impl DocumentCore {
                 "\"borderRight\":{\"type\":0,\"width\":0,\"color\":\"#000000\"},",
                 "\"borderTop\":{\"type\":0,\"width\":0,\"color\":\"#000000\"},",
                 "\"borderBottom\":{\"type\":0,\"width\":0,\"color\":\"#000000\"},",
-                "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":0"
+                "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":-1"
             ).to_string();
         }
         let bf = self
@@ -594,7 +594,8 @@ impl DocumentCore {
                         ("solid", color_ref_to_css(sf.background_color),
                          color_ref_to_css(sf.pattern_color), sf.pattern_type)
                     }
-                    _ => ("none", "#ffffff".to_string(), "#000000".to_string(), 0),
+                    // HWP 스펙: -1 = 무늬 없음. fill=none 자리에 patternType 은 무관하나 UI 규약과 통일.
+                    _ => ("none", "#ffffff".to_string(), "#000000".to_string(), -1),
                 };
                 format!(
                     "\"borderFillId\":{},{},\"fillType\":\"{}\",\"fillColor\":\"{}\",\"patternColor\":\"{}\",\"patternType\":{}",
@@ -610,7 +611,7 @@ impl DocumentCore {
                     "\"borderRight\":{\"type\":0,\"width\":0,\"color\":\"#000000\"},",
                     "\"borderTop\":{\"type\":0,\"width\":0,\"color\":\"#000000\"},",
                     "\"borderBottom\":{\"type\":0,\"width\":0,\"color\":\"#000000\"},",
-                    "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":0"
+                    "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":-1"
                 ).to_string()
             }
         }
@@ -684,7 +685,8 @@ impl DocumentCore {
                         color_ref_to_css(sf.pattern_color),
                         sf.pattern_type,
                     ),
-                    _ => ("none", "#ffffff".to_string(), "#000000".to_string(), 0),
+                    // HWP 스펙: -1 = 무늬 없음. fill=none 자리에 patternType 은 무관하나 UI 규약과 통일.
+                    _ => ("none", "#ffffff".to_string(), "#000000".to_string(), -1),
                 };
                 format!(
                     "\"borderFillId\":{},{},\"fillType\":\"{}\",\"fillColor\":\"{}\",\"patternColor\":\"{}\",\"patternType\":{}",
@@ -698,7 +700,7 @@ impl DocumentCore {
                         "\"borderRight\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                         "\"borderTop\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                         "\"borderBottom\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
-                        "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":0"
+                        "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":-1"
                     )
                 )
             }
@@ -710,7 +712,7 @@ impl DocumentCore {
                     "\"borderRight\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                     "\"borderTop\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                     "\"borderBottom\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
-                    "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":0"
+                    "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":-1"
                 )
             )
         };
@@ -817,7 +819,7 @@ impl DocumentCore {
                         "\"borderRight\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                         "\"borderTop\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
                         "\"borderBottom\":{{\"type\":0,\"width\":0,\"color\":\"#000000\"}},",
-                        "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":0,",
+                        "\"fillType\":\"none\",\"fillColor\":\"#ffffff\",\"patternColor\":\"#000000\",\"patternType\":-1,",
                         "\"borderSpacing\":[0,0,0,0]}}"
                     ),
                     para_shape_id, default_tab_spacing
